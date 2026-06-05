@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "kind": "portable-rules-registry",
+  "description": "Layered rule registry for GUI-managed company, agent, and project rules.",
+  "layers": [
+    {
+      "name": "system",
+      "path": "rules/global/000-system-bootstrap.md",
+      "priority": 1000,
+      "editable_in_gui": false,
+      "purpose": "Non-negotiable autoload, routing, security, and knowledge governance."
+    },
+    {
+      "name": "company_global",
+      "path": "rules/global",
+      "priority": 800,
+      "editable_in_gui": true,
+      "purpose": "Company-wide operating rules shared by all agents and projects."
+    },
+    {
+      "name": "project",
+      "path": "projects/<project_id>/rules",
+      "priority": 600,
+      "editable_in_gui": true,
+      "purpose": "Project-specific rules, constraints, client preferences, and delivery standards."
+    },
+    {
+      "name": "agent",
+      "path": "rules/agents/<agent>.md",
+      "priority": 500,
+      "editable_in_gui": true,
+      "purpose": "Agent-specific behavior, role boundaries, and quality checks."
+    },
+    {
+      "name": "task",
+      "path": "runtime",
+      "priority": 400,
+      "editable_in_gui": false,
+      "purpose": "Current user request and temporary task constraints."
+    }
+  ],
+  "conflict_policy": {
+    "default": "higher_priority_wins_with_visible_conflict_report",
+    "project_exception_requires_user_confirmation": true,
+    "agent_may_not_override_system_or_company_security_rules": true
+  },
+  "gui_contract": {
+    "create_global_rule": "office-system rule add --scope global --title <title> --body <body>",
+    "create_agent_rule": "office-system rule add --scope agent --agent <agent> --title <title> --body <body>",
+    "create_project_rule": "office-system rule add --scope project --project <project_id> --title <title> --body <body>",
+    "render_context": "office-system context --project <project_id> --agent <agent>"
+  }
+}

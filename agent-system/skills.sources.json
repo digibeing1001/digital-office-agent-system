@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "kind": "skill-source-manifest",
+  "description": "Portable manifest for updating installed skills from their source repositories or registries.",
+  "update_policy": {
+    "default_mode": "check_stage_verify_approve",
+    "backup_before_update": true,
+    "allow_dirty_git_update": false,
+    "production_direct_update": false,
+    "gui_button_label": "Check updates",
+    "production_flow": [
+      "check",
+      "download_to_candidate",
+      "run_health_checks",
+      "run_route_tests",
+      "show_release_diff",
+      "admin_approve",
+      "switch_active_version",
+      "keep_rollback_snapshot"
+    ],
+    "notes": "In enterprise production, the GUI update button must not overwrite the active Hermes or skill set directly. Use bin/update-system for status and candidate staging. GitHub-backed skills update via git in a candidate copy. Registry-backed skills are checked through skills hub metadata. Manual skills are reported as manual."
+  },
+  "hermes": {
+    "type": "git",
+    "path": "../hermes-agent",
+    "remote": "https://github.com/NousResearch/hermes-agent.git",
+    "branch": "main",
+    "update": "pull_ff_only"
+  },
+  "skills_root": "../skills",
+  "sources": [
+    {
+      "name": "Product-Manager-Skills",
+      "type": "git",
+      "path": "../skills/_imported/Product-Manager-Skills",
+      "remote": "https://github.com/deanpeters/Product-Manager-Skills.git",
+      "branch": "main",
+      "used_by": ["pm"]
+    },
+    {
+      "name": "lenny-skills",
+      "type": "git",
+      "path": "../skills/_imported/lenny-skills",
+      "remote": "https://github.com/RefoundAI/lenny-skills.git",
+      "branch": "main",
+      "used_by": ["pm"]
+    },
+    {
+      "name": "ai-pm",
+      "type": "git",
+      "path": "../skills/_imported/ai-pm",
+      "remote": "https://github.com/SmileLiuuuu/ai-pm.git",
+      "branch": "main",
+      "used_by": ["pm"]
+    },
+    {
+      "name": "huashu-md-html",
+      "type": "git",
+      "path": "../skills/huashu-md-html",
+      "remote": "https://github.com/alchaincyf/huashu-md-html.git",
+      "branch": "main",
+      "used_by": ["writer", "vibe-designer"]
+    },
+    {
+      "name": "frontend-design",
+      "type": "skills.sh",
+      "path": "../skills/frontend-design",
+      "identifier": "skills-sh/anthropics/skills/frontend-design",
+      "used_by": ["vibe-designer"]
+    },
+    {
+      "name": "find-skills",
+      "type": "skills.sh",
+      "path": "../skills/find-skills",
+      "identifier": "skills-sh/vercel-labs/skills/find-skills",
+      "used_by": ["secretary"]
+    }
+  ],
+  "manual_skill_policy": {
+    "include_in_status": true,
+    "message": "No source is registered for this skill. Add a source entry before enabling automatic update."
+  }
+}

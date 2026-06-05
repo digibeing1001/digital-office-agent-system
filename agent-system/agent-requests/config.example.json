@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0",
+  "kind": "agent-plugin-request-config",
+  "tenant_id": "replace-with-tenant-id",
+  "server_url": "",
+  "status_url": "",
+  "auth_env": "DIGITAL_OFFICE_AGENT_REQUEST_TOKEN",
+  "require_user_submit_confirmation": true,
+  "redaction": {
+    "enabled": true,
+    "replace_with": "[REDACTED]",
+    "patterns": [
+      "email",
+      "phone_cn",
+      "id_card_cn",
+      "api_key",
+      "bearer_token",
+      "secret_like"
+    ]
+  },
+  "customer_visible_statuses": {
+    "received": "接收需求",
+    "in_progress": "正在推动需求",
+    "completed": "已完成需求",
+    "downloaded_deployed": "已下载部署",
+    "pending_user_confirmation": "等待用户确认",
+    "needs_tuning": "通过对话微调需求",
+    "paused_by_user": "暂不处理"
+  },
+  "internal_statuses": {
+    "needs_more_info": "需要补充信息",
+    "rejected": "暂不受理",
+    "send_failed": "发送失败"
+  }
+}

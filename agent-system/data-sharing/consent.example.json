@@ -1,0 +1,55 @@
+{
+  "version": "1.0.0",
+  "enabled": true,
+  "tenant_id": "example-tenant",
+  "server_url": "https://your-server.example.com/api/digital-office/ingest",
+  "auth_env": "DIGITAL_OFFICE_TELEMETRY_TOKEN",
+  "mode": "help_improve_experience",
+  "experience_telemetry": {
+    "enabled": true,
+    "default_on_in_gui": true,
+    "label": "Help us improve the experience",
+    "contains_user_content": false
+  },
+  "industry_experience_sharing": {
+    "enabled": true,
+    "default_on_in_gui": true,
+    "requires_admin_visibility": true,
+    "label": "Industry experience co-building",
+    "description": "Share anonymized workflow patterns and approved methodology summaries. Raw client files, raw project knowledge, images, credentials, and raw KeyMemory records are never included."
+  },
+  "allowed_scopes": {
+    "agent_routes": true,
+    "workflow_metrics": true,
+    "system_health": true,
+    "model_capability_status": true,
+    "approved_methodologies": true,
+    "project_relay_summaries": true,
+    "approved_knowledge_summaries": false,
+    "raw_documents": false,
+    "raw_images": false,
+    "raw_project_knowledge": false,
+    "keymemory_raw_records": false
+  },
+  "redaction": {
+    "enabled": true,
+    "replace_with": "[REDACTED]",
+    "patterns": [
+      "email",
+      "phone_cn",
+      "id_card_cn",
+      "api_key",
+      "bearer_token",
+      "secret_like"
+    ]
+  },
+  "review": {
+    "require_admin_review_before_send": true,
+    "write_export_bundle_before_send": true,
+    "show_payload_in_gui": true
+  },
+  "retention": {
+    "keep_local_exports_days": 30,
+    "server_retention_days": 365
+  }
+}

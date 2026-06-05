@@ -1,0 +1,396 @@
+#!/usr/bin/env python3
+"""Portable router for the digital-office agent system.
+
+The router is intentionally Hermes-adapter-shaped, but the routing truth lives
+in ../agent-system/agents.registry.json so the same team can migrate to another
+office product by changing the registry and runner adapter, not this script.
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+
+def discover_home() -> Path:
+    configured = os.environ.get("HERMES_HOME")
+    if configured:
+        return Path(configured).expanduser()
+    return Path(__file__).resolve().parent.parent
+
+
+def registry_path(home: Path) -> Path:
+    configured = os.environ.get("HERMES_AGENT_REGISTRY")
+    if configured:
+        return Path(configured).expanduser()
+    home_registry = home / "agent-system" / "agents.registry.json"
+    if home_registry.exists():
+        return home_registry
+    script_registry = Path(__file__).resolve().parent.parent / "agent-system" / "agents.registry.json"
+    if script_registry.exists():
+        return script_registry
+    return home_registry
+
+
+def load_registry(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            registry = json.load(handle)
+    except FileNotFoundError:
+        print(f"agent-router: registry not found: {path}", file=sys.stderr)
+        raise SystemExit(2)
+    except json.JSONDecodeError as exc:
+        print(f"agent-router: invalid registry JSON: {path}: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+
+    if not isinstance(registry.get("agents"), dict):
+        print("agent-router: registry must contain an agents object", file=sys.stderr)
+        raise SystemExit(2)
+    return registry
+
+
+def normalize_agent_name(name: str, registry: dict[str, Any]) -> str:
+    agents = registry["agents"]
+    aliases = registry.get("aliases", {})
+    normalized = aliases.get(name, name)
+    if normalized not in agents:
+        valid = ", ".join(sorted([*agents.keys(), *aliases.keys()]))
+        print(f"agent-router: unknown agent '{name}'. Valid agents: {valid}", file=sys.stderr)
+        raise SystemExit(2)
+    return normalized
+
+
+def keyword_score(prompt: str, cfg: dict[str, Any]) -> int:
+    text = prompt.lower()
+    score = 0
+    for item in cfg.get("routing", {}).get("keywords", []):
+        if isinstance(item, str):
+            term = item
+            weight = 1
+        else:
+            term = str(item.get("term", ""))
+            weight = int(item.get("weight", 1))
+        if term and term.lower() in text:
+            score += weight
+    return score
+
+
+def choose_agent(prompt: str, registry: dict[str, Any]) -> tuple[str | None, dict[str, int]]:
+    scores = {
+        name: keyword_score(prompt, cfg)
+        for name, cfg in registry["agents"].items()
+    }
+    ranked = sorted(
+        registry["agents"].items(),
+        key=lambda item: (
+            scores[item[0]],
+            int(item[1].get("routing", {}).get("priority", 0)),
+            item[0],
+        ),
+        reverse=True,
+    )
+    winner = ranked[0][0] if ranked and scores[ranked[0][0]] > 0 else None
+    return winner, scores
+
+
+def workflow_steps(agent_name: str, registry: dict[str, Any], workflow_name: str | None) -> tuple[str, list[str]]:
+    agent = registry["agents"][agent_name]
+    selected = workflow_name or agent.get("routing", {}).get("default_workflow", "single")
+    workflow = registry.get("workflows", {}).get(selected)
+    if not workflow:
+        print(f"agent-router: unknown workflow '{selected}'", file=sys.stderr)
+        raise SystemExit(2)
+
+    steps: list[str] = []
+    for step in workflow.get("steps", []):
+        resolved = agent_name if step == "{primary_agent}" else str(step)
+        steps.append(normalize_agent_name(resolved, registry))
+    return selected, steps
+
+
+def route(prompt: str, requested_agent: str, registry: dict[str, Any], workflow_name: str | None) -> dict[str, Any]:
+    scores: dict[str, int] = {}
+    if requested_agent == "auto":
+        agent_name, scores = choose_agent(prompt, registry)
+        if agent_name is None:
+            defaults = registry.get("defaults", {})
+            fallback_agent = normalize_agent_name(defaults.get("fallback_agent", "secretary"), registry)
+            cfg = registry["agents"][fallback_agent]
+            selected_workflow, steps = workflow_steps(fallback_agent, registry, workflow_name)
+            return {
+                "matched": True,
+                "fallback": True,
+                "agent": fallback_agent,
+                "display_name": cfg.get("display_name", fallback_agent),
+                "profile": cfg.get("profile", defaults.get("fallback_profile", "__default__")),
+                "model": cfg.get("model", defaults.get("fallback_model", "MiniMax-M3")),
+                "provider": cfg.get("provider", defaults.get("fallback_provider", "minimax-cn")),
+                "workflow": selected_workflow,
+                "steps": steps,
+                "scores": scores,
+                "memory_policy": cfg.get("memory_policy", registry.get("defaults", {}).get("memory_policy", "keymemory")),
+            }
+    else:
+        agent_name = normalize_agent_name(requested_agent, registry)
+
+    assert agent_name is not None
+    cfg = registry["agents"][agent_name]
+    selected_workflow, steps = workflow_steps(agent_name, registry, workflow_name)
+    return {
+        "matched": True,
+        "agent": agent_name,
+        "display_name": cfg.get("display_name", agent_name),
+        "profile": cfg["profile"],
+        "model": cfg["model"],
+        "provider": cfg["provider"],
+        "workflow": selected_workflow,
+        "steps": steps,
+        "scores": scores,
+        "memory_policy": cfg.get("memory_policy", registry.get("defaults", {}).get("memory_policy", "keymemory")),
+    }
+
+
+def append_route_log(home: Path, prompt: str, requested_agent: str, route_info: dict[str, Any]) -> None:
+    if os.environ.get("DIGITAL_OFFICE_LOG_ROUTE_EVENTS", "1") in {"0", "false", "False"}:
+        return
+    event = {
+        "time": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "event": "agent_route",
+        "requested_agent": requested_agent,
+        "matched": route_info.get("matched"),
+        "fallback": route_info.get("fallback", False),
+        "agent": route_info.get("agent"),
+        "profile": route_info.get("profile"),
+        "model": route_info.get("model"),
+        "provider": route_info.get("provider"),
+        "workflow": route_info.get("workflow"),
+        "steps": route_info.get("steps", []),
+        "scores": route_info.get("scores", {}),
+        "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+        "prompt_chars": len(prompt),
+    }
+    path = home / "agent-system" / "logs" / "router-events.jsonl"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    except Exception:
+        pass
+
+
+def hermes_binary() -> str:
+    return (
+        os.environ.get("HERMES_BIN")
+        or shutil.which("hermes")
+        or os.path.expanduser("~/.hermes/hermes-agent/venv/bin/hermes")
+    )
+
+
+def switch_notice(
+    registry: dict[str, Any],
+    agent_name: str,
+    cfg: dict[str, Any],
+    workflow_name: str,
+    step_index: int,
+    step_count: int,
+) -> str:
+    template = registry.get("defaults", {}).get(
+        "notification_template",
+        "AGENT_SWITCH: {agent} ({profile}) / model: {model} / provider: {provider} / workflow: {workflow} step {step_index}/{step_count}",
+    )
+    return template.format(
+        agent=agent_name,
+        profile=cfg["profile"],
+        model=cfg["model"],
+        provider=cfg["provider"],
+        workflow=workflow_name,
+        step_index=step_index,
+        step_count=step_count,
+    )
+
+
+def prompt_for_step(
+    original_prompt: str,
+    registry: dict[str, Any],
+    workflow_name: str,
+    step_name: str,
+    step_index: int,
+    step_count: int,
+    previous_outputs: list[str],
+) -> str:
+    if step_count == 1:
+        return original_prompt
+
+    workflow = registry.get("workflows", {}).get(workflow_name, {})
+    contract = workflow.get("handoff_contract", "")
+    parts = [
+        f"Workflow: {workflow.get('label', workflow_name)}",
+        f"Step: {step_index}/{step_count} ({step_name})",
+        f"Handoff contract: {contract}",
+        "",
+        "Original user task:",
+        original_prompt,
+    ]
+    if previous_outputs:
+        parts.extend(["", "Previous step outputs:"])
+        for index, output in enumerate(previous_outputs, start=1):
+            parts.extend([f"--- output {index} ---", output])
+    if step_index < step_count:
+        parts.extend(["", "Produce a concise handoff report for the next specialist."])
+    else:
+        parts.extend(["", "Produce the final user-facing answer based on the prior handoff reports."])
+    return "\n".join(parts)
+
+
+def run_step(prompt: str, cfg: dict[str, Any]) -> subprocess.CompletedProcess[str]:
+    cmd = [hermes_binary()]
+    if cfg.get("profile") not in {"__default__", "default", ""}:
+        cmd.extend(["-p", cfg["profile"]])
+    cmd.extend(["-m", cfg["model"], "--provider", cfg["provider"], "-z", prompt])
+    env = os.environ.copy()
+    env["HERMES_AGENT_ROUTER_BYPASS"] = "1"
+    return subprocess.run(cmd, text=True, capture_output=True, env=env)
+
+
+def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, Any]) -> int:
+    if not route_info["matched"]:
+        print(f"AGENT_SWITCH: {route_info['agent']} / model: {route_info['model']}")
+        print("No specialist route matched. Handle in secretary agent.")
+        return 0
+
+    outputs: list[str] = []
+    workflow_name = route_info["workflow"]
+    steps = route_info["steps"]
+    for index, agent_name in enumerate(steps, start=1):
+        cfg = registry["agents"][agent_name]
+        print(switch_notice(registry, agent_name, cfg, workflow_name, index, len(steps)), flush=True)
+        step_prompt = prompt_for_step(prompt, registry, workflow_name, agent_name, index, len(steps), outputs)
+        proc = run_step(step_prompt, cfg)
+        if proc.stdout:
+            print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
+            outputs.append(proc.stdout)
+        if proc.stderr:
+            print(proc.stderr, file=sys.stderr, end="" if proc.stderr.endswith("\n") else "\n")
+        if proc.returncode != 0:
+            return proc.returncode
+    return 0
+
+
+def print_agents(registry: dict[str, Any]) -> None:
+    for name, cfg in sorted(registry["agents"].items()):
+        routing = cfg.get("routing", {})
+        print(
+            "\t".join(
+                [
+                    name,
+                    cfg.get("profile", ""),
+                    cfg.get("model", ""),
+                    cfg.get("provider", ""),
+                    routing.get("default_workflow", "single"),
+                    str(routing.get("priority", 0)),
+                ]
+            )
+        )
+
+
+def health_check(home: Path, registry_path_value: Path, registry: dict[str, Any]) -> int:
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    for name, cfg in sorted(registry["agents"].items()):
+        for field in ("profile", "model", "provider"):
+            if not cfg.get(field):
+                errors.append(f"{name}: missing {field}")
+        profile = str(cfg.get("profile", ""))
+        if profile in {"__default__", "default", ""}:
+            if not (home / "SOUL.md").exists():
+                errors.append(f"{name}: default secretary SOUL not found: {home / 'SOUL.md'}")
+        else:
+            profile_path = home / "profiles" / profile
+            if not profile_path.exists():
+                errors.append(f"{name}: profile not found: {profile_path}")
+        if cfg.get("memory_policy") != "keymemory":
+            warnings.append(f"{name}: memory_policy is {cfg.get('memory_policy')}, expected keymemory")
+
+    for test in registry.get("route_tests", []):
+        prompt = test.get("prompt", "")
+        expected = test.get("expect")
+        result = route(prompt, "auto", registry, None)
+        actual = result["agent"] if result["matched"] else None
+        if actual != expected:
+            errors.append(f"route test failed: {prompt!r}: expected {expected}, got {actual}")
+
+    print(f"registry={registry_path_value}")
+    print(f"agents={len(registry['agents'])}")
+    print(f"route_tests={len(registry.get('route_tests', []))}")
+    for warning in warnings:
+        print(f"WARN {warning}")
+    for error in errors:
+        print(f"FAIL {error}")
+    if not errors:
+        print("OK agent-router health check passed")
+    return 1 if errors else 0
+
+
+def parse_args(registry: dict[str, Any]) -> argparse.Namespace:
+    agents = sorted(registry["agents"].keys())
+    aliases = sorted(registry.get("aliases", {}).keys())
+    workflows = sorted(registry.get("workflows", {}).keys())
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--agent", choices=["auto", *agents, *aliases], default="auto")
+    parser.add_argument("--workflow", choices=workflows, default=None)
+    parser.add_argument("--route-only", action="store_true")
+    parser.add_argument("--route-json", action="store_true")
+    parser.add_argument("--list", action="store_true")
+    parser.add_argument("--health", action="store_true")
+    parser.add_argument("prompt", nargs="*")
+    return parser.parse_args()
+
+
+def main() -> int:
+    home = discover_home()
+    path = registry_path(home)
+    registry = load_registry(path)
+    args = parse_args(registry)
+
+    if args.list:
+        print_agents(registry)
+        return 0
+
+    if args.health:
+        return health_check(home, path, registry)
+
+    prompt = " ".join(args.prompt).strip() or sys.stdin.read().strip()
+    if not prompt:
+        print("agent-router: prompt is required", file=sys.stderr)
+        return 2
+
+    route_info = route(prompt, args.agent, registry, args.workflow)
+    append_route_log(home, prompt, args.agent, route_info)
+
+    if args.route_json:
+        print(json.dumps(route_info, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0 if route_info["matched"] else 3
+
+    if args.route_only:
+        if not route_info["matched"]:
+            return 3
+        print(
+            f"{route_info['agent']}\t{route_info['profile']}\t{route_info['model']}\t{route_info['provider']}"
+        )
+        return 0
+
+    return execute_route(prompt, route_info, registry)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

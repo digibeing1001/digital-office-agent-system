@@ -1,0 +1,454 @@
+{
+  "version": "1.0.0",
+  "kind": "portable-agent-registry",
+  "description": "Canonical registry for the experimental digital-office agent team. Keep domain roles, routing rules, workflows, skills, models, and migration metadata here instead of hard-coding them in the router.",
+  "portable": {
+    "home_env": "HERMES_HOME",
+    "registry_env": "HERMES_AGENT_REGISTRY",
+    "runner_env": "HERMES_BIN",
+    "target_packages": [
+      "digital-office",
+      "digital-law-firm",
+      "digital-accounting-firm",
+      "digital-media-studio"
+    ],
+    "rule": "A migration may change paths, credentials, profiles, skills, models, and domain vocabulary, but must not require rewriting the routing framework."
+  },
+  "defaults": {
+    "fallback_agent": "secretary",
+    "fallback_profile": "__default__",
+    "fallback_model": "MiniMax-M3",
+    "fallback_provider": "minimax-cn",
+    "memory_policy": "keymemory",
+    "notification_template": "AGENT_SWITCH: {agent} ({profile}) / model: {model} / provider: {provider} / workflow: {workflow} step {step_index}/{step_count}"
+  },
+  "aliases": {
+    "planner": "planer",
+    "designer": "vibe-designer",
+    "vibe_designer": "vibe-designer",
+    "research": "researcher",
+    "dev": "coder",
+    "developer": "coder",
+    "product": "pm"
+  },
+  "workflows": {
+    "single": {
+      "label": "Single specialist",
+      "steps": [
+        "{primary_agent}"
+      ],
+      "handoff_contract": "Handle the user task inside the selected specialist boundary. Include assumptions, evidence, and next actions when relevant."
+    },
+    "research_then_plan": {
+      "label": "Research before planning",
+      "steps": [
+        "researcher",
+        "planer"
+      ],
+      "handoff_contract": "Researcher produces key assumptions, first-principles breakdown, and fact chain. Planner must base the plan on that report."
+    },
+    "research_then_pm": {
+      "label": "Research before product decision",
+      "steps": [
+        "researcher",
+        "pm"
+      ],
+      "handoff_contract": "Researcher produces the evidence base. PM turns it into product judgment, scope, risks, and decision options."
+    },
+    "pm_to_design": {
+      "label": "Product to design",
+      "steps": [
+        "pm",
+        "vibe-designer"
+      ],
+      "handoff_contract": "PM clarifies product intent and user value. Designer turns it into interaction, visual direction, and prototype guidance."
+    },
+    "pm_to_design_to_code": {
+      "label": "Product to design to implementation",
+      "steps": [
+        "pm",
+        "vibe-designer",
+        "coder"
+      ],
+      "handoff_contract": "PM defines product shape, Designer creates UI direction, Coder implements or reviews the build."
+    }
+  },
+  "agents": {
+    "secretary": {
+      "display_name": "Digital Office Secretary",
+      "portable_role": "intake-orchestration-staffing-and-operations-advisor",
+      "profile": "__default__",
+      "model": "MiniMax-M3",
+      "provider": "minimax-cn",
+      "fallbacks": [
+        {
+          "model": "mimo-v2.5-pro",
+          "provider": "xiaomi"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "routing": {
+        "priority": 100,
+        "default_workflow": "single",
+        "keywords": [
+          {"term": "secretary", "weight": 8},
+          {"term": "agent request", "weight": 12},
+          {"term": "new agent", "weight": 12},
+          {"term": "agent plugin", "weight": 12},
+          {"term": "digital employee", "weight": 10},
+          {"term": "staffing gap", "weight": 12},
+          {"term": "hire an agent", "weight": 12},
+          {"term": "agent requirement", "weight": 12},
+          {"term": "agent deployment report", "weight": 12},
+          {"term": "downloaded agent", "weight": 12},
+          {"term": "agent workflow", "weight": 8},
+          {"term": "soul document", "weight": 10},
+          {"term": "SOUL.md", "weight": 10},
+          {"term": "workflow overlay", "weight": 10},
+          {"term": "秘书", "weight": 8},
+          {"term": "招聘", "weight": 8},
+          {"term": "新员工", "weight": 8},
+          {"term": "新 Agent", "weight": 12},
+          {"term": "新Agent", "weight": 12},
+          {"term": "Agent 员工", "weight": 12},
+          {"term": "Agent员工", "weight": 12},
+          {"term": "Agent 需求", "weight": 12},
+          {"term": "Agent需求", "weight": 12},
+          {"term": "Agent 插件", "weight": 12},
+          {"term": "Agent插件", "weight": 12},
+          {"term": "数字员工", "weight": 10},
+          {"term": "招聘 Agent", "weight": 12},
+          {"term": "招聘Agent", "weight": 12},
+          {"term": "聘请 Agent", "weight": 12},
+          {"term": "聘请Agent", "weight": 12},
+          {"term": "已下载部署", "weight": 12},
+          {"term": "部署报告", "weight": 12},
+          {"term": "加入工作流", "weight": 10},
+          {"term": "灵魂文档", "weight": 10},
+          {"term": "改进已有 Agent", "weight": 10},
+          {"term": "改进已有Agent", "weight": 10},
+          {"term": "工作流微调", "weight": 10},
+          {"term": "暂不处理", "weight": 8}
+        ]
+      },
+      "skills": [
+        "agent-team-staffing",
+        "find-skills",
+        "knowledge-ops",
+        "agent-architecture-audit"
+      ]
+    },
+    "planer": {
+      "display_name": "Kenny Planner",
+      "portable_role": "planning-and-architecture-specialist",
+      "profile": "kenny-planer",
+      "model": "gpt-5.5",
+      "provider": "openai-codex",
+      "fallbacks": [
+        {
+          "model": "deepseek/deepseek-v4-pro",
+          "provider": "deepseek"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "routing": {
+        "priority": 60,
+        "default_workflow": "research_then_plan",
+        "keywords": [
+          {"term": "plan", "weight": 4},
+          {"term": "planning", "weight": 4},
+          {"term": "requirements", "weight": 4},
+          {"term": "architecture", "weight": 5},
+          {"term": "roadmap", "weight": 4},
+          {"term": "scope this out", "weight": 5},
+          {"term": "how to implement", "weight": 3},
+          {"term": "feasibility plan", "weight": 5},
+          {"term": "规划", "weight": 5},
+          {"term": "计划", "weight": 4},
+          {"term": "方案", "weight": 4},
+          {"term": "架构", "weight": 5},
+          {"term": "可行性", "weight": 4},
+          {"term": "怎么实现", "weight": 4}
+        ]
+      },
+      "skills": [
+        "pm-clarity",
+        "brainstorming",
+        "writing-plans"
+      ]
+    },
+    "coder": {
+      "display_name": "Kenny Vibe Coder",
+      "portable_role": "implementation-specialist",
+      "profile": "kenny-vibe-coder",
+      "model": "moonshotai/kimi-k2.6",
+      "provider": "kimi-coding",
+      "fallbacks": [
+        {
+          "model": "mimo-v2.5-pro",
+          "provider": "xiaomi"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "routing": {
+        "priority": 50,
+        "default_workflow": "single",
+        "keywords": [
+          {"term": "code", "weight": 5},
+          {"term": "coding", "weight": 5},
+          {"term": "debug", "weight": 5},
+          {"term": "bug", "weight": 5},
+          {"term": "test", "weight": 3},
+          {"term": "refactor", "weight": 4},
+          {"term": "deploy", "weight": 4},
+          {"term": "ship", "weight": 3},
+          {"term": "frontend", "weight": 2},
+          {"term": "backend", "weight": 3},
+          {"term": "typescript", "weight": 3},
+          {"term": "python", "weight": 3},
+          {"term": "代码", "weight": 5},
+          {"term": "编程", "weight": 5},
+          {"term": "调试", "weight": 5},
+          {"term": "测试", "weight": 3},
+          {"term": "重构", "weight": 4},
+          {"term": "部署", "weight": 4},
+          {"term": "前端实现", "weight": 5},
+          {"term": "后端", "weight": 3}
+        ]
+      },
+      "skills": [
+        "vibe-ship",
+        "tdd",
+        "quality-review",
+        "autoplan"
+      ]
+    },
+    "writer": {
+      "display_name": "Kenny Writer",
+      "portable_role": "writing-and-editorial-specialist",
+      "profile": "kenny-writer",
+      "model": "MiniMax-M3",
+      "provider": "minimax-cn",
+      "fallbacks": [
+        {
+          "model": "mimo-v2.5-pro",
+          "provider": "xiaomi"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "routing": {
+        "priority": 40,
+        "default_workflow": "single",
+        "keywords": [
+          {"term": "write", "weight": 2},
+          {"term": "article", "weight": 5},
+          {"term": "copywriting", "weight": 5},
+          {"term": "humanize", "weight": 4},
+          {"term": "post", "weight": 3},
+          {"term": "essay", "weight": 4},
+          {"term": "newsletter", "weight": 4},
+          {"term": "press release", "weight": 2},
+          {"term": "写文章", "weight": 5},
+          {"term": "文章", "weight": 5},
+          {"term": "文案", "weight": 5},
+          {"term": "公众号", "weight": 5},
+          {"term": "小红书", "weight": 5},
+          {"term": "知乎", "weight": 4},
+          {"term": "润色", "weight": 4},
+          {"term": "去AI味", "weight": 5}
+        ]
+      },
+      "skills": [
+        "writing",
+        "copywriting",
+        "content-strategy"
+      ]
+    },
+    "researcher": {
+      "display_name": "Kenny Researcher",
+      "portable_role": "research-and-evidence-specialist",
+      "profile": "kenny-researcher",
+      "model": "kimi-k2.6",
+      "provider": "kimi-coding",
+      "fallbacks": [
+        {
+          "model": "mimo-v2.5-pro",
+          "provider": "xiaomi"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "routing": {
+        "priority": 55,
+        "default_workflow": "single",
+        "keywords": [
+          {"term": "research", "weight": 6},
+          {"term": "investigate", "weight": 6},
+          {"term": "analyze", "weight": 4},
+          {"term": "survey", "weight": 5},
+          {"term": "explore", "weight": 4},
+          {"term": "competitor", "weight": 5},
+          {"term": "market research", "weight": 7},
+          {"term": "compare", "weight": 4},
+          {"term": "evaluation", "weight": 4},
+          {"term": "first principles", "weight": 6},
+          {"term": "key assumption", "weight": 5},
+          {"term": "调研", "weight": 7},
+          {"term": "研究", "weight": 6},
+          {"term": "分析", "weight": 4},
+          {"term": "探索", "weight": 4},
+          {"term": "竞品", "weight": 6},
+          {"term": "市场调研", "weight": 7},
+          {"term": "对比", "weight": 4},
+          {"term": "评估", "weight": 4},
+          {"term": "第一性原理", "weight": 7},
+          {"term": "关键假设", "weight": 6},
+          {"term": "事实链", "weight": 6}
+        ]
+      },
+      "skills": [
+        "iterative-retrieval",
+        "deep-research",
+        "market-research"
+      ]
+    },
+    "vibe-designer": {
+      "display_name": "Kenny Vibe Designer",
+      "portable_role": "interaction-and-visual-design-specialist",
+      "profile": "kenny-vibe-designer",
+      "model": "kimi-k2.6",
+      "provider": "kimi-coding",
+      "fallbacks": [
+        {
+          "model": "mimo-v2.5-pro",
+          "provider": "xiaomi"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "routing": {
+        "priority": 70,
+        "default_workflow": "single",
+        "keywords": [
+          {"term": "frontend design", "weight": 8},
+          {"term": "ui design", "weight": 8},
+          {"term": "ux", "weight": 5},
+          {"term": "prototype", "weight": 6},
+          {"term": "wireframe", "weight": 6},
+          {"term": "mockup", "weight": 6},
+          {"term": "figma", "weight": 4},
+          {"term": "visual qa", "weight": 6},
+          {"term": "design review", "weight": 6},
+          {"term": "aesthetic", "weight": 4},
+          {"term": "typography", "weight": 4},
+          {"term": "palette", "weight": 4},
+          {"term": "skeuomorphism", "weight": 7},
+          {"term": "neumorphism", "weight": 7},
+          {"term": "拟物", "weight": 8},
+          {"term": "拟态", "weight": 8},
+          {"term": "界面设计", "weight": 8},
+          {"term": "交互设计", "weight": 8},
+          {"term": "视觉设计", "weight": 7},
+          {"term": "原型", "weight": 7},
+          {"term": "高保真", "weight": 7},
+          {"term": "设计审查", "weight": 7},
+          {"term": "配色", "weight": 5},
+          {"term": "字体", "weight": 4}
+        ]
+      },
+      "skills": [
+        "vibe-design",
+        "vibe-design-review",
+        "frontend-design",
+        "accessibility"
+      ]
+    },
+    "pm": {
+      "display_name": "Kenny PM",
+      "portable_role": "product-strategy-and-office-manager",
+      "profile": "kenny-pm",
+      "model": "gpt-5.5",
+      "provider": "openai-codex",
+      "fallbacks": [
+        {
+          "model": "mimo-v2.5-pro",
+          "provider": "xiaomi"
+        },
+        {
+          "model": "deepseek-reasoner",
+          "provider": "deepseek"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "routing": {
+        "priority": 90,
+        "default_workflow": "single",
+        "keywords": [
+          {"term": "product", "weight": 6},
+          {"term": "product manager", "weight": 8},
+          {"term": "pm", "weight": 6},
+          {"term": "prd", "weight": 12},
+          {"term": "requirements document", "weight": 10},
+          {"term": "user story", "weight": 7},
+          {"term": "mvp", "weight": 8},
+          {"term": "roadmap", "weight": 7},
+          {"term": "value proposition", "weight": 8},
+          {"term": "positioning", "weight": 6},
+          {"term": "go to market", "weight": 7},
+          {"term": "north star", "weight": 7},
+          {"term": "metric", "weight": 5},
+          {"term": "okr", "weight": 5},
+          {"term": "feature request", "weight": 6},
+          {"term": "jobs to be done", "weight": 8},
+          {"term": "jtbd", "weight": 8},
+          {"term": "lean canvas", "weight": 7},
+          {"term": "pricing", "weight": 5},
+          {"term": "monetization", "weight": 5},
+          {"term": "what should we build", "weight": 8},
+          {"term": "should we build", "weight": 8},
+          {"term": "build vs buy", "weight": 7},
+          {"term": "产品", "weight": 7},
+          {"term": "产品经理", "weight": 8},
+          {"term": "产品需求", "weight": 9},
+          {"term": "产品需求文档", "weight": 12},
+          {"term": "写个PRD", "weight": 12},
+          {"term": "写个 PRD", "weight": 12},
+          {"term": "做个PRD", "weight": 12},
+          {"term": "做个 PRD", "weight": 12},
+          {"term": "用户故事", "weight": 7},
+          {"term": "用户画像", "weight": 6},
+          {"term": "需求分析", "weight": 8},
+          {"term": "需求澄清", "weight": 8},
+          {"term": "功能优先级", "weight": 7},
+          {"term": "产品定位", "weight": 7},
+          {"term": "产品路线", "weight": 7},
+          {"term": "路线图", "weight": 7},
+          {"term": "立项", "weight": 6},
+          {"term": "价值主张", "weight": 7},
+          {"term": "数字办公室", "weight": 7},
+          {"term": "该不该做", "weight": 8},
+          {"term": "要不要做", "weight": 8},
+          {"term": "帮我想清楚", "weight": 7}
+        ]
+      },
+      "skills": [
+        "_pm-system/SKILL-INDEX.md",
+        "pm-clarity",
+        "product-vision",
+        "opportunity-solution-tree",
+        "prd-development"
+      ]
+    }
+  },
+  "route_tests": [
+    {"prompt": "规划一下产品方案", "expect": "planer"},
+    {"prompt": "帮我写代码修 bug", "expect": "coder"},
+    {"prompt": "写一篇公众号文章去AI味", "expect": "writer"},
+    {"prompt": "调研一下AI办公竞品", "expect": "researcher"},
+    {"prompt": "做一个拟物化数字办公室 UI 原型", "expect": "vibe-designer"},
+    {"prompt": "这个数字办公室产品该不该做", "expect": "pm"},
+    {"prompt": "help me write a PRD", "expect": "pm"},
+    {"prompt": "frontend design review", "expect": "vibe-designer"},
+    {"prompt": "我想招聘一个新的 Agent 员工", "expect": "secretary"},
+    {"prompt": "新 Agent 已下载部署，帮我生成加入工作流的报告", "expect": "secretary"},
+    {"prompt": "通过对话改进已有 Agent 的灵魂文档", "expect": "secretary"}
+  ]
+}

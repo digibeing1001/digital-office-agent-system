@@ -1,0 +1,67 @@
+{
+  "version": "1.0.0",
+  "kind": "enterprise-release-policy",
+  "product_name": "Digital Office",
+  "runtime_name": "Hermes",
+  "customer_position": "Customers see the Digital Office product, not the underlying Hermes runtime.",
+  "runtime_visibility": {
+    "default_customer_gui": "hidden",
+    "default_customer_entrypoint": "gui_only",
+    "raw_hermes_cli": "hidden_by_default",
+    "admin_gui": "show_product_version_and_health_only",
+    "support_mode": "may_show_runtime_diagnostics_when_enabled_by_admin"
+  },
+  "gui_first_policy": {
+    "all_capabilities_require_gui_contract": true,
+    "ordinary_users_must_not_use_raw_hermes_cli": true,
+    "backend_may_call_hermes_cli": true,
+    "support_mode_requires_admin_enablement": true,
+    "customer_deployment_forces_gui_shell": true
+  },
+  "update_policy": {
+    "customer_direct_update": false,
+    "provider_validated_release_only": true,
+    "channels": [
+      "stable",
+      "pilot",
+      "internal"
+    ],
+    "default_channel": "stable",
+    "release_flow": [
+      "internal_experiment",
+      "automated_health_checks",
+      "route_tests",
+      "knowledge_ingestion_tests",
+      "rag_tests",
+      "agent_workflow_regression_tests",
+      "pilot_deployment",
+      "stable_release_manifest",
+      "customer_admin_approve_install_window",
+      "rollback_snapshot"
+    ]
+  },
+  "gui_copy": {
+    "update_button": "Check for product updates",
+    "update_detail": "Updates are validated before release. Your current workspace will not be changed until an administrator approves an installation window.",
+    "runtime_detail_hidden": true
+  },
+  "packaging": {
+    "ship": [
+      "agent-system manifests",
+      "router adapter",
+      "office-system control plane",
+      "release manifest",
+      "local model installer",
+      "skill source manifest"
+    ],
+    "do_not_ship": [
+      "raw enterprise knowledge",
+      "project files",
+      "local model cache",
+      ".venv",
+      "logs",
+      "telemetry exports",
+      "credentials"
+    ]
+  }
+}
