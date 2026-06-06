@@ -2,6 +2,8 @@
 
 Portable Digital Office layer for Hermes.
 
+中文开发者文档: [README.zh-CN.md](README.zh-CN.md)
+
 This package contains:
 
 - `agent-system/`: registries, GUI-facing control plane, knowledge/rules/memory policies, local model installers, release policies
