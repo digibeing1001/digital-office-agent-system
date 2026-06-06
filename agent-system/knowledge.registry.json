@@ -33,6 +33,21 @@
         "draft_methodology_summary",
         "submit_for_company_review"
       ]
+    },
+    "licensed_industry_reference": {
+      "label": "Licensed industry reference layer",
+      "path": "knowledge/mounts",
+      "purpose": "Provider-sold online industry knowledge mounted as controlled retrieval. It is not copied into company or project knowledge source storage.",
+      "agent_visibility": "entitlement-and-permission-scoped",
+      "gui_actions": [
+        "browse_paid_knowledge_products",
+        "purchase_or_activate_entitlement",
+        "mount_to_company",
+        "mount_to_project",
+        "mount_to_agent",
+        "view_usage_logs",
+        "disable_mount"
+      ]
     }
   },
   "supported_inputs": {
@@ -70,11 +85,32 @@
       "projects/<project_id>/knowledge",
       "rules/agents/<agent>.md",
       "knowledge/company",
+      "knowledge/mounts",
       "keymemory/project-relay/<project_id>",
       "keymemory/company-approved-summaries"
     ],
-    "conflict_policy": "Report conflicts instead of silently overriding. Project source files win over KeyMemory relay memories for active project facts. System and company security rules still win over project rules unless the user explicitly approves a non-security exception.",
+    "conflict_policy": "Report conflicts instead of silently overriding. Project source files win over company knowledge, licensed industry references, and KeyMemory relay memories for active project facts. Company-approved knowledge wins over licensed references when it expresses tenant-specific policy. System and company security rules still win over project rules unless the user explicitly approves a non-security exception.",
     "citation_policy": "Agents must cite source entry ids or filenames when using knowledge base facts."
+  },
+  "external_source_policy": {
+    "customer_owned_external_kb": {
+      "allowed_targets": [
+        "company",
+        "project",
+        "agent_specialist_context"
+      ],
+      "default_target": "project",
+      "rule": "Customer-owned sources may be synced or indexed according to admin settings and third-party permissions."
+    },
+    "provider_sold_industry_kb": {
+      "allowed_targets": [
+        "licensed_company_reference",
+        "licensed_project_reference",
+        "licensed_agent_reference"
+      ],
+      "default_target": "licensed_project_reference",
+      "rule": "Provider-sold knowledge is mounted as controlled retrieval only. Do not store readable source documents in company or project knowledge bases."
+    }
   },
   "methodology_promotion": {
     "allowed_schedules": [
@@ -115,6 +151,7 @@
       "raw image storage",
       "unapproved project drafts",
       "active project facts that conflict with source files",
+      "provider-sold industry knowledge source documents",
       "plain text API keys in ordinary memory"
     ],
     "authority_rule": "KeyMemory can tell an Agent where the project left off, but not override current project source documents, user-uploaded evidence, or approved project decisions."

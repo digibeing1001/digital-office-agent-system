@@ -13,6 +13,13 @@
     "coder",
     "writer"
   ],
+  "human_members": [],
+  "access_policy": {
+    "human_user_required_for_workflow_start": true,
+    "human_approval_required_for_methodology_promotion": true,
+    "human_approval_required_for_regulated_outputs": true,
+    "agent_delegation_requires_project_membership": true
+  },
   "knowledge_base": {
     "path": "knowledge",
     "default_entry_status": "pending_review",

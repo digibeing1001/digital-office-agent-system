@@ -10,15 +10,43 @@ as Digital Law Firm, Digital Accounting Firm, or Digital Media Studio.
 
 1. Digital Office GUI
 2. Product backend API
-3. Hermes runtime
-4. `agent-system` registries and policies
-5. agent profiles and skills
-6. company/project knowledge bases
-7. KeyMemory relay and semantic memory
-8. local model capabilities for OCR and RAG
+3. tenant identity, roles, seats, and entitlement control
+4. Hermes runtime
+5. `agent-system` registries and policies
+6. agent profiles and skills
+7. company/project knowledge bases
+8. licensed industry reference layer
+9. KeyMemory relay and semantic memory
+10. local model capabilities for OCR and RAG
 
 The GUI should expose projects, digital employees, knowledge, rules, approvals,
 and product updates. It should not expose Hermes internals by default.
+
+## Team And Identity
+
+The first experiment can run as a single-user Digital Office, but the product
+must be designed as a team workspace from the beginning.
+
+Human users and Agent workers are separate identities:
+
+- human users hold tenant, project, approval, billing, and knowledge permissions
+- Agent workers execute tasks only when delegated by an authorized human user or
+  workflow
+- support operators are provider-side identities and require explicit,
+  time-limited admin approval
+
+Every workflow run should carry these claims:
+
+1. tenant id
+2. deployment id
+3. human user id and role
+4. project id
+5. Agent id
+6. workflow run id
+7. entitlement ids used during the run
+
+This lets multiple real employees use the same Digital Office later without
+rewriting the Agent runtime.
 
 ## Agent Routing
 
@@ -64,7 +92,8 @@ Fact authority:
 
 1. Project knowledge base
 2. Company global knowledge base
-3. KeyMemory
+3. Licensed industry reference layer
+4. KeyMemory
 
 Handoff authority:
 
@@ -72,6 +101,22 @@ Handoff authority:
 2. KeyMemory project relay
 3. Latest project decisions
 4. Company global methods
+
+Licensed industry reference layer:
+
+- contains provider-sold or provider-licensed online industry knowledge
+- is mounted by entitlement, not copied into tenant source storage
+- can be scoped to the whole company, one project, or selected specialist Agents
+- returns authorized snippets, citations, and source ids only
+- forbids download, export, bulk copy, direct filesystem access, or use outside
+  Digital Office
+
+Online knowledge injection rule:
+
+- customer-owned external knowledge can be synced into company knowledge, project
+  knowledge, or specialist Agent context according to admin settings
+- provider-sold industry knowledge must be mounted as licensed reference, never
+  as readable company/project source files
 
 ## Rules
 

@@ -27,6 +27,7 @@ Project lifecycle:
 ```bash
 ~/.hermes/agent-system/bin/office-system project-create --project <project_id> --name "<name>"
 ~/.hermes/agent-system/bin/office-system context --project <project_id> --agent <agent_id>
+~/.hermes/agent-system/bin/office-system identity-context --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --agent <agent_id> --workflow-run <run_id>
 ```
 
 Knowledge:
@@ -35,7 +36,17 @@ Knowledge:
 ~/.hermes/agent-system/bin/office-system knowledge-add --scope company --file <path>
 ~/.hermes/agent-system/bin/office-system knowledge-add --scope project --project <project_id> --file <path>
 ~/.hermes/agent-system/bin/office-system knowledge-add-text --scope project --project <project_id> --title "<title>" --body "<text>"
+~/.hermes/agent-system/bin/office-system knowledge-source-mount --source-class customer_owned_external_kb --source-id <source_id> --tenant <tenant_id> --deployment <deployment_id> --created-by <user_id> --mount-target project_knowledge --project <project_id>
+~/.hermes/agent-system/bin/office-system knowledge-source-mount --source-class provider_sold_industry_kb --source-id <pack_id> --tenant <tenant_id> --deployment <deployment_id> --created-by <user_id> --mount-target licensed_project_reference --project <project_id> --entitlement <entitlement_id>
+~/.hermes/agent-system/bin/office-system knowledge-access-log --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --agent <agent_id> --source-class provider_sold_industry_kb --source-id <pack_id> --mount-id <mount_id> --knowledge-pack <pack_id> --entitlement <entitlement_id> --decision allow
 ```
+
+Online knowledge injection:
+
+- Customer-owned third-party knowledge sources can be synced or indexed into the company knowledge base, project knowledge base, or specialist Agent context.
+- Provider-sold industry knowledge products must be mounted as licensed reference layers. They are not copied into company/project source storage.
+- Licensed industry knowledge can be queried only inside Digital Office. The GUI must not expose download, export, copy-all, raw source path, or external API access.
+- Every licensed industry knowledge query must write an access log identifying tenant, deployment, human user, user role, project, Agent, workflow run, knowledge pack, entitlement, query hash, result source ids, and allow/deny decision.
 
 Rules:
 
@@ -104,7 +115,8 @@ Fact authority:
 
 1. Project knowledge base
 2. Company global knowledge base
-3. KeyMemory relay and semantic memory
+3. Licensed industry reference layer
+4. KeyMemory relay and semantic memory
 
 Handoff authority:
 
@@ -121,7 +133,23 @@ Rule priority:
 4. Agent rules
 5. Task instructions
 
-KeyMemory should help agents continue work across sessions, agents, and subprojects. It should not override source documents, approved company knowledge, or explicit project decisions.
+KeyMemory should help agents continue work across sessions, agents, and subprojects. It should not override source documents, approved company knowledge, licensed industry reference access policy, or explicit project decisions.
+
+## Team And Permissions
+
+The GUI must treat Digital Office as a team workspace even when a deployment has only one real human user.
+
+Required future surfaces:
+
+1. Team Members
+2. Roles and Permissions
+3. Project Members
+4. Agent Delegation
+5. Knowledge Access Logs
+6. Seat and Entitlement Usage
+7. Support Access
+
+Human users and Agent workers are separate identities. A human user can delegate work to an Agent only when the user has project permission and the Agent is on the project roster. Professional outputs, such as legal, tax, accounting, or regulated advice, require a human reviewer role before final delivery.
 
 ## Multimodal Knowledge
 

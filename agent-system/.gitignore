@@ -18,6 +18,8 @@ agent-plugins/reports/*
 agent-plugins/status/*
 knowledge/company/entries/*
 knowledge/company/index/*
+knowledge/mounts/*
+!knowledge/mounts/.gitignore
 projects/*
 !projects/_template/
 !projects/_template/**

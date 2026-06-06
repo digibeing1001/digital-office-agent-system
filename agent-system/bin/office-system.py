@@ -64,11 +64,22 @@ def slugify(value: str) -> str:
 
 
 SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fff][A-Za-z0-9._\-\u4e00-\u9fff]{0,127}$")
+SAFE_CLAIM_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,256}$")
 
 
 def safe_component(value: str, label: str) -> str:
     value = str(value or "").strip()
     if not SAFE_COMPONENT_RE.fullmatch(value) or "/" in value or "\\" in value or value in {".", ".."}:
+        print(f"office-system: invalid {label}: {value!r}", file=sys.stderr)
+        raise SystemExit(2)
+    return value
+
+
+def safe_claim(value: str | None, label: str, required: bool = True) -> str:
+    value = str(value or "").strip()
+    if not value and not required:
+        return ""
+    if not SAFE_CLAIM_RE.fullmatch(value):
         print(f"office-system: invalid {label}: {value!r}", file=sys.stderr)
         raise SystemExit(2)
     return value
@@ -605,11 +616,12 @@ def context(args: argparse.Namespace) -> int:
     print("3. Active project rules and project knowledge source files")
     print("4. Agent-specific rules")
     print("5. Company global knowledge and approved methodologies")
-    print("6. KeyMemory project relay snapshots, preferences, approved summaries, and retrieval pointers")
+    print("6. Licensed industry references mounted by entitlement")
+    print("7. KeyMemory project relay snapshots, preferences, approved summaries, and retrieval pointers")
     print()
-    print("Fact authority: project knowledge > company global knowledge > KeyMemory.")
+    print("Fact authority: project knowledge > company global knowledge > licensed industry reference > KeyMemory.")
     print("Handoff authority: current task > KeyMemory project relay > project latest decisions > company methods.")
-    print("If KeyMemory conflicts with source-backed project or company knowledge, source-backed knowledge wins.")
+    print("If KeyMemory or licensed references conflict with source-backed project or company knowledge, source-backed knowledge wins.")
     print()
 
     print("## Rule Layers")
@@ -1479,12 +1491,139 @@ def telemetry_send(args: argparse.Namespace) -> int:
     return 0
 
 
+def identity_context(args: argparse.Namespace) -> int:
+    root = system_root()
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    if project:
+        ensure_project(root, project)
+    claims = {
+        "version": "1.0.0",
+        "kind": "digital-office-identity-context",
+        "tenant_id": safe_claim(args.tenant, "tenant id"),
+        "deployment_id": safe_claim(args.deployment, "deployment id"),
+        "user_id": safe_claim(args.user, "user id"),
+        "user_role": safe_claim(args.role, "user role"),
+        "project_id": project,
+        "agent_id": agent,
+        "workflow_run_id": safe_claim(args.workflow_run, "workflow run id", required=False),
+        "session_id": safe_claim(args.session, "session id", required=False),
+        "created_at": now_iso(),
+    }
+    append_log(root, {"event": "identity_context", "tenant_id": claims["tenant_id"], "deployment_id": claims["deployment_id"], "user_id": claims["user_id"], "project": project, "agent": agent})
+    print(json.dumps(claims, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+CUSTOMER_OWNED_MOUNT_TARGETS = {"company_knowledge", "project_knowledge", "agent_specialist_context"}
+PROVIDER_SOLD_MOUNT_TARGETS = {"licensed_company_reference", "licensed_project_reference", "licensed_agent_reference"}
+
+
+def knowledge_source_mount(args: argparse.Namespace) -> int:
+    root = system_root()
+    source_class = args.source_class
+    mount_target = args.mount_target
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    if project:
+        ensure_project(root, project)
+    if mount_target in {"project_knowledge", "licensed_project_reference"} and not project:
+        print("office-system: project-scoped knowledge mounts require --project", file=sys.stderr)
+        return 2
+    if mount_target in {"agent_specialist_context", "licensed_agent_reference"} and not agent:
+        print("office-system: agent-scoped knowledge mounts require --agent", file=sys.stderr)
+        return 2
+    if source_class == "customer_owned_external_kb" and mount_target not in CUSTOMER_OWNED_MOUNT_TARGETS:
+        print("office-system: customer-owned external KB cannot be mounted as licensed industry reference", file=sys.stderr)
+        return 2
+    if source_class == "provider_sold_industry_kb" and mount_target not in PROVIDER_SOLD_MOUNT_TARGETS:
+        print("office-system: provider-sold industry KB must be mounted as licensed reference, not company/project source storage", file=sys.stderr)
+        return 2
+    mount_id = args.mount_id or f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{slugify(args.source_id)}"
+    mount_id = safe_component(mount_id, "mount id")
+    provider_sold = source_class == "provider_sold_industry_kb"
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-knowledge-source-mount",
+        "mount_id": mount_id,
+        "source_class": source_class,
+        "source_id": safe_claim(args.source_id, "source id"),
+        "display_name": safe_claim(args.display_name or args.source_id, "display name"),
+        "provider": safe_claim(args.provider, "provider", required=False),
+        "tenant_id": safe_claim(args.tenant, "tenant id"),
+        "deployment_id": safe_claim(args.deployment, "deployment id"),
+        "created_by": safe_claim(args.created_by, "created by"),
+        "mount_target": mount_target,
+        "project_id": project,
+        "agent_id": agent,
+        "entitlement_id": safe_claim(args.entitlement, "entitlement id", required=provider_sold),
+        "license_sku": safe_claim(args.license_sku, "license sku", required=False),
+        "allowed_users": [safe_claim(item, "allowed user") for item in (args.allowed_user or [])],
+        "allowed_roles": [safe_claim(item, "allowed role") for item in (args.allowed_role or [])],
+        "inside_digital_office_only": provider_sold,
+        "download_allowed": not provider_sold,
+        "export_allowed": not provider_sold,
+        "plain_source_files_on_customer_host": not provider_sold,
+        "retrieval_mode": "controlled_remote_retrieval" if provider_sold else args.sync_mode,
+        "created_at": now_iso(),
+        "status": "active",
+    }
+    target = root / "knowledge" / "mounts" / f"{mount_id}.json"
+    if target.exists() and not args.replace:
+        print(f"office-system: knowledge mount already exists: {mount_id}; pass --replace to replace", file=sys.stderr)
+        return 2
+    write_json(target, record)
+    append_log(root, {"event": "knowledge_source_mounted", "mount_id": mount_id, "source_class": source_class, "mount_target": mount_target, "tenant_id": record["tenant_id"], "deployment_id": record["deployment_id"], "created_by": record["created_by"]})
+    print(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def knowledge_access_log(args: argparse.Namespace) -> int:
+    root = system_root()
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    if project:
+        ensure_project(root, project)
+    query_hash = hashlib.sha256((args.query or "").encode("utf-8")).hexdigest() if args.query else ""
+    event = {
+        "time": now_iso(),
+        "event": "knowledge_access",
+        "tenant_id": safe_claim(args.tenant, "tenant id"),
+        "deployment_id": safe_claim(args.deployment, "deployment id"),
+        "user_id": safe_claim(args.user, "user id"),
+        "user_role": safe_claim(args.role, "user role"),
+        "project_id": project,
+        "agent_id": agent,
+        "workflow_run_id": safe_claim(args.workflow_run, "workflow run id", required=False),
+        "source_class": args.source_class,
+        "source_id": safe_claim(args.source_id, "source id"),
+        "mount_id": safe_component(args.mount_id, "mount id"),
+        "knowledge_pack_id": safe_claim(args.knowledge_pack, "knowledge pack id", required=False),
+        "entitlement_id": safe_claim(args.entitlement, "entitlement id", required=False),
+        "query_hash": query_hash,
+        "result_source_ids": [safe_claim(item, "result source id") for item in (args.result_source_id or [])],
+        "snippet_count": args.snippet_count,
+        "decision": args.decision,
+        "deny_reason": safe_claim(args.deny_reason, "deny reason", required=False),
+    }
+    log = root / "logs" / "knowledge-access.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    append_log(root, {"event": "knowledge_access_log", "mount_id": event["mount_id"], "source_class": args.source_class, "decision": args.decision, "tenant_id": event["tenant_id"], "deployment_id": event["deployment_id"], "user_id": event["user_id"]})
+    print(json.dumps(event, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def health(args: argparse.Namespace) -> int:
     root = system_root()
     checks = {
         "root": str(root),
         "agents_registry": (root / "agents.registry.json").exists(),
         "knowledge_registry": (root / "knowledge.registry.json").exists(),
+        "identity_access_registry": (root / "identity.access.registry.json").exists(),
+        "industry_solutions_registry": (root / "industry-solutions.registry.json").exists(),
+        "external_knowledge_sources_registry": (root / "external-knowledge-sources.registry.json").exists(),
         "rules_registry": (root / "rules" / "rules.registry.json").exists(),
         "multimodal_pipeline": (root / "multimodal.pipeline.json").exists(),
         "rag_pipeline": (root / "rag.pipeline.json").exists(),
@@ -1497,7 +1636,7 @@ def health(args: argparse.Namespace) -> int:
         "python_docx_builtin": True,
     }
     print(json.dumps(checks, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if all(checks[k] for k in ("agents_registry", "knowledge_registry", "rules_registry", "multimodal_pipeline")) else 1
+    return 0 if all(checks[k] for k in ("agents_registry", "knowledge_registry", "identity_access_registry", "industry_solutions_registry", "external_knowledge_sources_registry", "rules_registry", "multimodal_pipeline")) else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1541,6 +1680,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--project")
     p.add_argument("--agent")
     p.set_defaults(func=context)
+
+    p = sub.add_parser("identity-context")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--workflow-run")
+    p.add_argument("--session")
+    p.set_defaults(func=identity_context)
 
     p = sub.add_parser("methodology-draft")
     p.add_argument("--project", required=True)
@@ -1641,6 +1791,46 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=5)
     p.add_argument("--embedding-model", default="BAAI/bge-small-zh-v1.5")
     p.set_defaults(func=rag_search)
+
+    p = sub.add_parser("knowledge-source-mount")
+    p.add_argument("--source-class", choices=["customer_owned_external_kb", "provider_sold_industry_kb"], required=True)
+    p.add_argument("--source-id", required=True)
+    p.add_argument("--display-name")
+    p.add_argument("--provider", default="")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--created-by", required=True)
+    p.add_argument("--mount-target", choices=["company_knowledge", "project_knowledge", "agent_specialist_context", "licensed_company_reference", "licensed_project_reference", "licensed_agent_reference"], required=True)
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--entitlement")
+    p.add_argument("--license-sku")
+    p.add_argument("--sync-mode", choices=["metadata_only", "selected_items", "excerpt_index", "embedding_index", "full_customer_owned_sync", "controlled_remote_retrieval"], default="excerpt_index")
+    p.add_argument("--allowed-user", action="append")
+    p.add_argument("--allowed-role", action="append")
+    p.add_argument("--mount-id")
+    p.add_argument("--replace", action="store_true")
+    p.set_defaults(func=knowledge_source_mount)
+
+    p = sub.add_parser("knowledge-access-log")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--workflow-run")
+    p.add_argument("--source-class", choices=["customer_owned_external_kb", "provider_sold_industry_kb"], required=True)
+    p.add_argument("--source-id", required=True)
+    p.add_argument("--mount-id", required=True)
+    p.add_argument("--knowledge-pack")
+    p.add_argument("--entitlement")
+    p.add_argument("--query")
+    p.add_argument("--result-source-id", action="append")
+    p.add_argument("--snippet-count", type=int, default=0)
+    p.add_argument("--decision", choices=["allow", "deny"], required=True)
+    p.add_argument("--deny-reason")
+    p.set_defaults(func=knowledge_access_log)
 
     p = sub.add_parser("telemetry-status")
     p.set_defaults(func=telemetry_status)
