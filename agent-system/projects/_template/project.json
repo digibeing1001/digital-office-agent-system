@@ -23,7 +23,7 @@
   "knowledge_base": {
     "path": "knowledge",
     "default_entry_status": "pending_review",
-    "agent_read_requires_approval": false
+    "agent_read_requires_approval": true
   },
   "rules": {
     "path": "rules",

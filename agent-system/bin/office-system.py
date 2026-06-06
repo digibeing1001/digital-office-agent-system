@@ -28,6 +28,19 @@ TEXT_EXTS = {".md", ".txt", ".json", ".csv"}
 DOCX_EXTS = {".docx"}
 PDF_EXTS = {".pdf"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}
+STATUS_LABELS = {
+    "received": "接收需求",
+    "in_progress": "正在推动需求",
+    "completed": "已完成需求",
+    "downloaded_deployed": "已下载部署",
+    "pending_user_confirmation": "等待用户确认",
+    "confirmed_for_activation": "已确认，等待注册部署",
+    "needs_tuning": "通过对话微调需求",
+    "paused_by_user": "暂不处理",
+    "needs_more_info": "需要补充信息",
+    "rejected": "暂不受理",
+    "send_failed": "发送失败",
+}
 
 
 def maybe_reexec_venv() -> None:
@@ -377,7 +390,8 @@ def add_rule(args: argparse.Namespace) -> int:
         if not args.agent:
             print("office-system: --agent is required for agent rule", file=sys.stderr)
             return 2
-        target = root / "rules" / "agents" / f"{args.agent}.md"
+        agent = registered_agent(root, args.agent)
+        target = root / "rules" / "agents" / f"{agent}.md"
         body = f"\n\n## {args.title}\n\n{body.rstrip()}\n"
         if target.exists():
             target.write_text(target.read_text(encoding="utf-8") + body, encoding="utf-8")
@@ -483,6 +497,8 @@ def rag_index(args: argparse.Namespace) -> int:
     records: list[dict[str, Any]] = []
     for entry in entries:
         if entry.get("status") == "archived":
+            continue
+        if not args.include_pending and not entry.get("agent_readable") and entry.get("status") != "approved_for_agent_use":
             continue
         text = extracted_text_for_entry(root, entry)
         for index, chunk in enumerate(chunk_text(text, args.chunk_chars, args.chunk_overlap), start=1):
@@ -678,7 +694,7 @@ def context(args: argparse.Namespace) -> int:
 def create_project(args: argparse.Namespace) -> int:
     root = system_root()
     project_id = args.project or slugify(args.name)
-    agents = [item.strip() for item in args.agents.split(",") if item.strip()] if args.agents else []
+    agents = [registered_agent(root, item.strip()) for item in args.agents.split(",") if item.strip()] if args.agents else []
     target = copy_template_project(root, project_id, args.name, agents, args.methodology_schedule)
     append_log(root, {"event": "project_create", "project": project_id})
     print(str(target))
@@ -763,6 +779,7 @@ def methodology_approve(args: argparse.Namespace) -> int:
 def relay_add(args: argparse.Namespace) -> int:
     root = system_root()
     project_dir = ensure_project(root, args.project)
+    agent = registered_agent(root, args.agent)
     refs = args.source_ref or []
     next_actions = args.next_action or []
     body = args.body if args.body is not None else sys.stdin.read()
@@ -771,7 +788,7 @@ def relay_add(args: argparse.Namespace) -> int:
         "relay_id": f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
         "project_id": args.project,
         "subproject_id": args.subproject,
-        "agent": args.agent,
+        "agent": agent,
         "title": args.title,
         "summary": body.strip(),
         "status": args.status,
@@ -785,7 +802,7 @@ def relay_add(args: argparse.Namespace) -> int:
     outbox.parent.mkdir(parents=True, exist_ok=True)
     with outbox.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(relay, ensure_ascii=False, sort_keys=True) + "\n")
-    append_log(root, {"event": "relay_add", "project": args.project, "agent": args.agent, "relay_id": relay["relay_id"]})
+    append_log(root, {"event": "relay_add", "project": args.project, "agent": agent, "relay_id": relay["relay_id"]})
     print(json.dumps(relay, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
@@ -809,15 +826,7 @@ def load_agent_request_config(root: Path) -> dict[str, Any]:
         "server_url": "",
         "status_url": "",
         "auth_env": "DIGITAL_OFFICE_AGENT_REQUEST_TOKEN",
-        "customer_visible_statuses": {
-            "received": "接收需求",
-            "in_progress": "正在推动需求",
-            "completed": "已完成需求",
-            "downloaded_deployed": "已下载部署",
-            "pending_user_confirmation": "等待用户确认",
-            "needs_tuning": "通过对话微调需求",
-            "paused_by_user": "暂不处理",
-        },
+        "customer_visible_statuses": STATUS_LABELS,
     }
 
 
@@ -859,7 +868,7 @@ def agent_request_submit(args: argparse.Namespace) -> int:
         "priority": args.priority,
         "body": body.strip(),
         "status": "received",
-        "status_label": labels.get("received", "接收需求"),
+        "status_label": labels.get("received", STATUS_LABELS["received"]),
         "created_at": now_iso(),
         "source": "digital_office_secretary_agent",
         "skill_changes_requested": False,
@@ -946,8 +955,8 @@ def agent_request_status(args: argparse.Namespace) -> int:
 SKILL_CHANGE_PATTERNS = [
     re.compile(r"(?i)\b(add|remove|delete|install|uninstall|replace|compose|recompose)\b.{0,40}\bskill\b"),
     re.compile(r"(?i)\bskill\b.{0,40}\b(add|remove|delete|install|uninstall|replace|compose|recompose)\b"),
-    re.compile(r"(增加|新增|删除|移除|安装|卸载|替换|重新组合).{0,20}skill", re.IGNORECASE),
-    re.compile(r"skill.{0,20}(增加|新增|删除|移除|安装|卸载|替换|重新组合)", re.IGNORECASE),
+    re.compile(r"(增加|新增|删除|移除|安装|卸载|替换|重新组合|重组).{0,20}skill", re.IGNORECASE),
+    re.compile(r"skill.{0,20}(增加|新增|删除|移除|安装|卸载|替换|重新组合|重组)", re.IGNORECASE),
 ]
 
 
@@ -1043,6 +1052,9 @@ def agent_plugin_report(args: argparse.Namespace) -> int:
         print("office-system: Agent plugin manifest must contain agent_id", file=sys.stderr)
         return 2
     agent_id = safe_component(agent_id, "agent id")
+    project_id = safe_component(args.project, "project id") if args.project else ""
+    if project_id:
+        ensure_project(root, project_id)
     registry = read_json(root / "agents.registry.json")
     current_agents = sorted(registry.get("agents", {}).keys())
     workflows = manifest.get("workflows", {})
@@ -1063,7 +1075,7 @@ def agent_plugin_report(args: argparse.Namespace) -> int:
         "## Current System",
         "",
         f"- Existing agents: {', '.join(current_agents)}",
-        f"- Target project: {args.project or 'global / not project-specific'}",
+        f"- Target project: {project_id or 'global / not project-specific'}",
         "",
         "## How This Agent Will Be Added",
         "",
@@ -1107,11 +1119,11 @@ def agent_plugin_report(args: argparse.Namespace) -> int:
         "request_id": safe_component(args.request_id, "request id") if args.request_id else None,
         "agent_id": agent_id,
         "status": "pending_user_confirmation",
-        "status_label": "等待用户确认",
+        "status_label": STATUS_LABELS["pending_user_confirmation"],
         "package": str(package_dir),
         "manifest": str(manifest_path),
         "report": str(target.relative_to(root)),
-        "project_id": args.project,
+        "project_id": project_id,
         "created_at": now_iso(),
         "allowed_actions": ["confirm", "tune", "pause"],
     }
@@ -1121,7 +1133,7 @@ def agent_plugin_report(args: argparse.Namespace) -> int:
         status_file = root / "agent-requests" / "status" / f"{request_id}.json"
         request_state = read_json(status_file) if status_file.exists() else {"request_id": args.request_id}
         request_state["status"] = "pending_user_confirmation"
-        request_state["status_label"] = "等待用户确认"
+        request_state["status_label"] = STATUS_LABELS["pending_user_confirmation"]
         request_state["agent_plugin_report"] = str(target.relative_to(root))
         request_state["agent_plugin_report_id"] = report_id
         request_state["status_updated_at"] = now_iso()
@@ -1141,19 +1153,19 @@ def agent_plugin_decision(args: argparse.Namespace) -> int:
     state = read_json(status_file)
     if args.decision == "confirm":
         state["status"] = "confirmed_for_activation"
-        state["status_label"] = "已确认，等待注册部署"
-        state["next_action"] = "run agent-plugin-activate --confirmed"
+        state["status_label"] = STATUS_LABELS["confirmed_for_activation"]
+        state["next_action"] = f"run agent-plugin-activate --report-id {report_id} --confirmed"
         state.pop("pause_reason", None)
     elif args.decision == "tune":
         state["status"] = "needs_tuning"
-        state["status_label"] = "通过对话微调需求"
+        state["status_label"] = STATUS_LABELS["needs_tuning"]
         state.pop("pause_reason", None)
         if args.message:
             state.setdefault("tuning_notes", []).append({"time": now_iso(), "message": args.message})
         state["next_action"] = "secretary continues requirement conversation and regenerates the integration report"
     elif args.decision == "pause":
         state["status"] = "paused_by_user"
-        state["status_label"] = "暂不处理"
+        state["status_label"] = STATUS_LABELS["paused_by_user"]
         if args.message:
             state["pause_reason"] = args.message
         state["next_action"] = "do nothing until the user resumes"
@@ -1167,12 +1179,37 @@ def agent_plugin_decision(args: argparse.Namespace) -> int:
 def agent_plugin_activate(args: argparse.Namespace) -> int:
     root = system_root()
     request_id = safe_component(args.request_id, "request id") if args.request_id else None
+    project_id = safe_component(args.project, "project id") if args.project else ""
     if not args.confirmed:
         print("office-system: Agent plugin activation requires --confirmed after user review of the integration report", file=sys.stderr)
         return 2
-    if args.report and not Path(args.report).expanduser().exists():
-        print(f"office-system: integration report not found: {args.report}", file=sys.stderr)
+    if not args.report_id:
+        print("office-system: Agent plugin activation requires --report-id after the user confirms an integration report", file=sys.stderr)
         return 2
+    report_id = safe_component(args.report_id, "report id")
+    report_status_file = root / "agent-plugins" / "status" / f"{report_id}.json"
+    if not report_status_file.exists():
+        print(f"office-system: plugin report status not found: {report_id}", file=sys.stderr)
+        return 2
+    report_state = read_json(report_status_file)
+    if report_state.get("status") != "confirmed_for_activation":
+        print("office-system: Agent plugin activation requires a confirmed integration report", file=sys.stderr)
+        return 2
+    report_request = report_state.get("request_id") or None
+    if request_id != report_request:
+        print("office-system: activation request id must match the confirmed integration report", file=sys.stderr)
+        return 2
+    report_project = report_state.get("project_id") or ""
+    if project_id != report_project:
+        print("office-system: activation project must match the confirmed integration report", file=sys.stderr)
+        return 2
+    if args.report:
+        report_path = Path(args.report).expanduser()
+        if not report_path.is_absolute():
+            report_path = root / args.report
+        if not report_path.exists():
+            print(f"office-system: integration report not found: {args.report}", file=sys.stderr)
+            return 2
     package_dir, manifest_path, manifest = resolve_plugin_manifest(args.package)
     registry_entry = manifest.get("registry_entry")
     if not isinstance(registry_entry, dict):
@@ -1183,6 +1220,9 @@ def agent_plugin_activate(args: argparse.Namespace) -> int:
         print("office-system: Agent plugin manifest must contain agent_id", file=sys.stderr)
         return 2
     agent_id = safe_component(agent_id, "agent id")
+    if report_state.get("agent_id") and report_state.get("agent_id") != agent_id:
+        print("office-system: Agent plugin package does not match the confirmed integration report", file=sys.stderr)
+        return 2
 
     registry_path_value = root / "agents.registry.json"
     registry = read_json(registry_path_value)
@@ -1220,8 +1260,8 @@ def agent_plugin_activate(args: argparse.Namespace) -> int:
 
     project_file: Path | None = None
     project_backup: dict[str, Any] | None = None
-    if args.project:
-        project_dir = ensure_project(root, args.project)
+    if project_id:
+        project_dir = ensure_project(root, project_id)
         project_file = project_dir / "project.json"
         project = read_json(project_file)
         project_backup = json.loads(json.dumps(project))
@@ -1250,23 +1290,29 @@ def agent_plugin_activate(args: argparse.Namespace) -> int:
     state = {
         "agent_id": agent_id,
         "status": "activated",
-        "status_label": "已下载部署",
+        "status_label": STATUS_LABELS["downloaded_deployed"],
         "request_id": request_id,
+        "report_id": report_id,
         "package": str(package_dir),
         "manifest": str(manifest_path),
         "registry_backup": str(backup),
-        "project_id": args.project,
+        "project_id": project_id,
         "router_health": "passed",
     }
     if request_id:
         status_file = root / "agent-requests" / "status" / f"{request_id}.json"
         request_state = read_json(status_file) if status_file.exists() else {"request_id": request_id}
         request_state["status"] = "downloaded_deployed"
-        request_state["status_label"] = "已下载部署"
+        request_state["status_label"] = STATUS_LABELS["downloaded_deployed"]
         request_state["deployed_agent_id"] = agent_id
         request_state["status_updated_at"] = now_iso()
         write_json(status_file, request_state)
-    append_log(root, {"event": "agent_plugin_activate", "agent": agent_id, "project": args.project})
+    report_state["status"] = "activated"
+    report_state["status_label"] = STATUS_LABELS["downloaded_deployed"]
+    report_state["activated_agent_id"] = agent_id
+    report_state["activated_at"] = now_iso()
+    write_json(report_status_file, report_state)
+    append_log(root, {"event": "agent_plugin_activate", "agent": agent_id, "project": project_id})
     print(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
@@ -1578,12 +1624,68 @@ def knowledge_source_mount(args: argparse.Namespace) -> int:
     return 0
 
 
+def load_mount_record(root: Path, mount_id: str) -> dict[str, Any]:
+    mount_id = safe_component(mount_id, "mount id")
+    path = root / "knowledge" / "mounts" / f"{mount_id}.json"
+    if not path.exists():
+        print(f"office-system: knowledge mount not found: {mount_id}", file=sys.stderr)
+        raise SystemExit(2)
+    return read_json(path)
+
+
+def validate_mount_access(args: argparse.Namespace, mount: dict[str, Any], project: str, agent: str) -> int:
+    if mount.get("status") != "active":
+        print("office-system: knowledge mount is not active", file=sys.stderr)
+        return 2
+    if mount.get("source_class") != args.source_class:
+        print("office-system: knowledge access source class does not match mount", file=sys.stderr)
+        return 2
+    if mount.get("source_id") != args.source_id:
+        print("office-system: knowledge access source id does not match mount", file=sys.stderr)
+        return 2
+    if mount.get("project_id") and mount.get("project_id") != project:
+        print("office-system: knowledge access project does not match mount scope", file=sys.stderr)
+        return 2
+    if mount.get("agent_id") and mount.get("agent_id") != agent:
+        print("office-system: knowledge access Agent does not match mount scope", file=sys.stderr)
+        return 2
+
+    allowed_users = mount.get("allowed_users") or []
+    allowed_roles = mount.get("allowed_roles") or []
+    if args.decision == "allow":
+        if allowed_users and args.user not in allowed_users:
+            print("office-system: user is not allowed by this knowledge mount", file=sys.stderr)
+            return 2
+        if allowed_roles and args.role not in allowed_roles:
+            print("office-system: role is not allowed by this knowledge mount", file=sys.stderr)
+            return 2
+        if args.source_class == "provider_sold_industry_kb":
+            if not args.entitlement:
+                print("office-system: provider-sold industry knowledge access requires --entitlement", file=sys.stderr)
+                return 2
+            if not args.knowledge_pack:
+                print("office-system: provider-sold industry knowledge access requires --knowledge-pack", file=sys.stderr)
+                return 2
+            if args.knowledge_pack != mount.get("source_id"):
+                print("office-system: knowledge pack does not match knowledge mount", file=sys.stderr)
+                return 2
+            if mount.get("entitlement_id") and mount.get("entitlement_id") != args.entitlement:
+                print("office-system: entitlement does not match knowledge mount", file=sys.stderr)
+                return 2
+    return 0
+
+
 def knowledge_access_log(args: argparse.Namespace) -> int:
     root = system_root()
     project = safe_component(args.project, "project id") if args.project else ""
     agent = registered_agent(root, args.agent) if args.agent else ""
     if project:
         ensure_project(root, project)
+    mount_id = safe_component(args.mount_id, "mount id")
+    mount = load_mount_record(root, mount_id)
+    validation = validate_mount_access(args, mount, project, agent)
+    if validation != 0:
+        return validation
     query_hash = hashlib.sha256((args.query or "").encode("utf-8")).hexdigest() if args.query else ""
     event = {
         "time": now_iso(),
@@ -1597,7 +1699,7 @@ def knowledge_access_log(args: argparse.Namespace) -> int:
         "workflow_run_id": safe_claim(args.workflow_run, "workflow run id", required=False),
         "source_class": args.source_class,
         "source_id": safe_claim(args.source_id, "source id"),
-        "mount_id": safe_component(args.mount_id, "mount id"),
+        "mount_id": mount_id,
         "knowledge_pack_id": safe_claim(args.knowledge_pack, "knowledge pack id", required=False),
         "entitlement_id": safe_claim(args.entitlement, "entitlement id", required=False),
         "query_hash": query_hash,
@@ -1769,6 +1871,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--package", required=True)
     p.add_argument("--project")
     p.add_argument("--report")
+    p.add_argument("--report-id")
     p.add_argument("--request-id")
     p.add_argument("--confirmed", action="store_true")
     p.add_argument("--replace-agent", action="store_true")
@@ -1782,6 +1885,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--embedding-model", default="BAAI/bge-small-zh-v1.5")
     p.add_argument("--chunk-chars", type=int, default=1200)
     p.add_argument("--chunk-overlap", type=int, default=180)
+    p.add_argument("--include-pending", action="store_true")
     p.set_defaults(func=rag_index)
 
     p = sub.add_parser("rag-search")

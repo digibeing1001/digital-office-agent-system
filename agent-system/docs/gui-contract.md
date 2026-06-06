@@ -106,7 +106,7 @@ Downloaded Agent plugin package:
 ~/.hermes/agent-system/bin/office-system agent-plugin-decision --report-id <report_id> --decision confirm
 ~/.hermes/agent-system/bin/office-system agent-plugin-decision --report-id <report_id> --decision tune --message "<user tuning note>"
 ~/.hermes/agent-system/bin/office-system agent-plugin-decision --report-id <report_id> --decision pause --message "<optional reason>"
-~/.hermes/agent-system/bin/office-system agent-plugin-activate --package <package_dir> --request-id <request_id> --project <project_id> --confirmed
+~/.hermes/agent-system/bin/office-system agent-plugin-activate --package <package_dir> --report-id <report_id> --request-id <request_id> --project <project_id> --confirmed
 ```
 
 ## Knowledge And Memory Priority
@@ -194,6 +194,6 @@ The flow is:
 5. The customer host downloads the package.
 6. Secretary immediately shows an integration report describing how the new Agent will enter the current system and workflows.
 7. The GUI shows three actions: Confirm, Tune Through Conversation, Pause.
-8. Only Confirm runs registration and deployment. Tune updates the report through dialogue. Pause keeps the task suspended.
+8. Only Confirm moves the report to `confirmed_for_activation`; registration and deployment must include that `report_id`. Tune updates the report through dialogue. Pause keeps the task suspended.
 
 Existing Agents may be improved through conversation, but only by updating SOUL/workflow overlays. Customer production must not add, remove, install, or recompose skills. Skill bundles belong to provider-validated Agent plugin packages.

@@ -241,7 +241,7 @@ industry_solutions/<solution_id>/
 5. 企业本地下载插件包
 6. 秘书 Agent 生成部署报告
 7. 用户确认、微调或暂不处理
-8. 只有确认后才注册和部署 Agent
+8. 只有确认后的报告 ID 才能用于注册和部署 Agent
 
 客户可以通过对话改进已有 Agent 的 SOUL 或工作流，但不允许在生产环境里自行增删、安装、替换或重组 skill。
 

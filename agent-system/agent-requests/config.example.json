@@ -24,6 +24,7 @@
     "completed": "已完成需求",
     "downloaded_deployed": "已下载部署",
     "pending_user_confirmation": "等待用户确认",
+    "confirmed_for_activation": "已确认，等待注册部署",
     "needs_tuning": "通过对话微调需求",
     "paused_by_user": "暂不处理"
   },
