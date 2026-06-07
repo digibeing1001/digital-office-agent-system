@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -40,15 +40,85 @@ if not eval(expr, {"__builtins__": {"len": len}}, {"data": data}):
 PY
 }
 
-cp -a "$REPO_ROOT" "$WORK_DIR/repo"
+copy_required_path() {
+  local path="$1"
+  if [ ! -e "$SOURCE_ROOT/$path" ]; then
+    fail "missing required installed path: $path"
+  fi
+  cp -a "$SOURCE_ROOT/$path" "$WORK_DIR/repo/"
+}
+
+clean_dir_keep_placeholder() {
+  local path="$1"
+  [ -d "$path" ] || mkdir -p "$path"
+  find "$path" -mindepth 1 -maxdepth 1 ! -name ".gitignore" -exec rm -rf {} +
+}
+
+clean_runtime_state() {
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/approvals"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/logs"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/notifications"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/runs"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/tasks"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/agent-requests/outbox"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/agent-requests/status"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/data-sharing/exports"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/data-sharing/outbox"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/data-sharing/receipts"
+  rm -f "$WORK_DIR/repo/agent-system/data-sharing/consent.json"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/harness/reports"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/iterations/applied"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/iterations/proposals"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/iterations/status"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/knowledge/company"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/knowledge/mounts"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/models/cache"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/models/locks"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/rules/projects"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/agent-improvements"
+  find "$WORK_DIR/repo/agent-system/projects" -mindepth 1 -maxdepth 1 ! -name "_template" -exec rm -rf {} +
+}
+
+if [ -f "$SOURCE_ROOT/install.sh" ]; then
+  SOURCE_MODE="repo"
+  cp -a "$SOURCE_ROOT" "$WORK_DIR/repo"
+else
+  SOURCE_MODE="install"
+  mkdir -p "$WORK_DIR/repo"
+  copy_required_path "SOUL.md"
+  copy_required_path "README.md"
+  copy_required_path "README.zh-CN.md"
+  copy_required_path "agent-system"
+  if [ ! -f "$SOURCE_ROOT/scripts/agent-router" ]; then
+    fail "missing required installed script: scripts/agent-router"
+  fi
+  mkdir -p "$WORK_DIR/repo/scripts"
+  cp -a "$SOURCE_ROOT/scripts/agent-router" "$WORK_DIR/repo/scripts/"
+  copy_required_path "profiles"
+  mkdir -p "$WORK_DIR/repo/skills"
+  for skill in vibe-coding-production-harness vibe-design-production-harness; do
+    if [ ! -d "$SOURCE_ROOT/skills/$skill" ]; then
+      fail "missing required installed skill: $skill"
+    fi
+    cp -a "$SOURCE_ROOT/skills/$skill" "$WORK_DIR/repo/skills/"
+  done
+fi
+clean_runtime_state
 cd "$WORK_DIR/repo"
 
 bash -n agent-system/tests/smoke.sh
 python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
-for file in $(git ls-files "*.json"); do
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  json_files="$(git ls-files "*.json")"
+else
+  json_files="$(find agent-system scripts skills profiles -type f -name "*.json" | sort)"
+fi
+for file in $json_files; do
   python3 -m json.tool "$file" >/dev/null
 done
-git diff --check
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git diff --check
+fi
 python3 - <<'PY'
 from pathlib import Path
 
@@ -94,8 +164,12 @@ json_assert agent-system/ai-native-loop.manifest.json '"silent self-iteration" i
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
 test -f skills/vibe-design-production-harness/SKILL.md || fail "missing vibe design harness skill"
 
-./install.sh "$WORK_DIR/hermes" >/dev/null
-HOME_DIR="$WORK_DIR/hermes"
+if [ "$SOURCE_MODE" = "repo" ]; then
+  ./install.sh "$WORK_DIR/hermes" >/dev/null
+  HOME_DIR="$WORK_DIR/hermes"
+else
+  HOME_DIR="$WORK_DIR/repo"
+fi
 ROUTER="$HOME_DIR/scripts/agent-router"
 OFFICE="$HOME_DIR/agent-system/bin/office-system"
 

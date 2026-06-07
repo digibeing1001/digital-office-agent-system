@@ -1863,6 +1863,7 @@ def methodology_approve(args: argparse.Namespace) -> int:
         print("office-system: approval requires --confirmed after GUI user review/edit", file=sys.stderr)
         return 2
     target = root / "knowledge" / "company" / "methodologies" / "approved" / draft.name
+    target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(draft, target)
     append_log(root, {"event": "methodology_approve", "project": args.project, "target": str(target.relative_to(root))})
     print(str(target))

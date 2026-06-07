@@ -16,6 +16,8 @@ rsync -a "$SOURCE_DIR/scripts/" "$TARGET/scripts/"
 rsync -a "$SOURCE_DIR/profiles/" "$TARGET/profiles/"
 rsync -a "$SOURCE_DIR/skills/" "$TARGET/skills/"
 cp "$SOURCE_DIR/SOUL.md" "$TARGET/SOUL.md"
+cp "$SOURCE_DIR/README.md" "$TARGET/README.md"
+cp "$SOURCE_DIR/README.zh-CN.md" "$TARGET/README.zh-CN.md"
 
 chmod +x "$TARGET/scripts/agent-router"
 chmod +x "$TARGET/agent-system/bin/office-system"
