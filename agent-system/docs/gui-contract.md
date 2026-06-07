@@ -22,6 +22,15 @@ All commands are relative to the Hermes home directory.
 ~/.hermes/scripts/agent-router --route-json "<user request>"
 ```
 
+Router contract:
+
+- The GUI must not hard-code current Agent names as product logic.
+- The router returns `agent`, `workflow`, `steps`, `confidence`, `routing_reason`, `workflow_reason`, `candidates`, and `scores`.
+- `workflow_reason.source == "workflow_route"` means the task matched a multi-Agent orchestration route.
+- `fallback == true` or `clarification_required == true` means the secretary should clarify, reflect, or ask for confirmation before dispatching.
+- Workflow steps are resolved from portable `orchestration_roles` in `agents.registry.json`; industry packages may remap those roles to different Agent ids without changing the router code.
+- GUI labels should describe the role and workflow to the user, while backend calls use the concrete `agent` and `steps` returned by the router.
+
 Project lifecycle:
 
 ```bash

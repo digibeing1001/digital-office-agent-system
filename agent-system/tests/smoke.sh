@@ -53,9 +53,11 @@ python3 - <<'PY'
 from pathlib import Path
 
 critical_files = [
+    "SOUL.md",
     "README.zh-CN.md",
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
+    "agent-system/secretary.capabilities.json",
     "agent-system/bin/office-system.py",
     "agent-system/docs/gui-contract.md",
 ]
@@ -68,6 +70,12 @@ for name in critical_files:
 if bad:
     raise SystemExit("mojibake markers found in critical files: " + ", ".join(bad))
 PY
+grep -q "## Boundary And Pushback" SOUL.md || fail "default secretary SOUL missing pushback boundary"
+grep -q "## Reflective Advisory Mode" SOUL.md || fail "default secretary SOUL missing reflective advisory mode"
+grep -q "## Agent Routing And Workflow Orchestration" SOUL.md || fail "default secretary SOUL missing routing orchestration rules"
+json_assert agent-system/secretary.capabilities.json 'data["persona_policy"]["default_stance"].startswith("Act as a capable digital chief of staff")'
+json_assert agent-system/secretary.capabilities.json '"reflective_pushback" in [item["id"] for item in data["core_capabilities"]]'
+json_assert agent-system/secretary.capabilities.json 'data["routing_orchestration_policy"]["role_first_rule"].startswith("Select the needed orchestration role first")'
 
 ./install.sh "$WORK_DIR/hermes" >/dev/null
 HOME_DIR="$WORK_DIR/hermes"
@@ -80,12 +88,114 @@ OFFICE="$HOME_DIR/agent-system/bin/office-system"
 
 [ -f "$HOME_DIR/SOUL.md" ] || fail "default SOUL.md missing"
 [ ! -e "$HOME_DIR/profiles/secretary" ] || fail "secretary profile must not be duplicated"
+grep -q "## Boundary And Pushback" "$HOME_DIR/SOUL.md" || fail "installed secretary SOUL missing pushback boundary"
+grep -q "## Reflective Advisory Mode" "$HOME_DIR/SOUL.md" || fail "installed secretary SOUL missing reflective advisory mode"
+grep -q "## Agent Routing And Workflow Orchestration" "$HOME_DIR/SOUL.md" || fail "installed secretary SOUL missing routing orchestration rules"
 
 HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "hello there" >"$WORK_DIR/route-fallback.json"
-json_assert "$WORK_DIR/route-fallback.json" 'data["agent"] == "secretary" and data["profile"] == "__default__" and data.get("fallback") is True'
+json_assert "$WORK_DIR/route-fallback.json" 'data["agent"] == "secretary" and data["profile"] == "__default__" and data.get("fallback") is True and data.get("clarification_required") is True'
 
 HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "please debug this bug" >"$WORK_DIR/route-coder.json"
-json_assert "$WORK_DIR/route-coder.json" 'data["agent"] == "coder"'
+json_assert "$WORK_DIR/route-coder.json" 'data["agent"] == "coder" and data["workflow"] == "single" and data["confidence"] == "high"'
+
+HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "先调研竞品，再规划数字办公室的产品方案" >"$WORK_DIR/route-research-plan.json"
+json_assert "$WORK_DIR/route-research-plan.json" 'data["agent"] == "planer" and data["workflow"] == "research_then_plan" and data["steps"] == ["researcher", "planer"] and data["workflow_reason"]["source"] == "workflow_route"'
+
+HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "先做市场调研，再判断这个产品该不该做和路线图" >"$WORK_DIR/route-research-pm.json"
+json_assert "$WORK_DIR/route-research-pm.json" 'data["agent"] == "pm" and data["workflow"] == "research_then_pm" and data["steps"] == ["researcher", "pm"]'
+
+HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "先明确产品需求，再做拟态 GUI 设计" >"$WORK_DIR/route-pm-design.json"
+json_assert "$WORK_DIR/route-pm-design.json" 'data["agent"] == "vibe-designer" and data["workflow"] == "pm_to_design" and data["steps"] == ["pm", "vibe-designer"]'
+
+HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "先梳理产品需求，再设计界面，最后实现前端原型代码" >"$WORK_DIR/route-end-to-end.json"
+json_assert "$WORK_DIR/route-end-to-end.json" 'data["agent"] == "coder" and data["workflow"] == "pm_to_design_to_code" and data["steps"] == ["pm", "vibe-designer", "coder"]'
+
+HERMES_HOME="$HOME_DIR" "$ROUTER" --agent coder --route-json "先调研竞品，再规划数字办公室的产品方案" >"$WORK_DIR/route-explicit-coder.json"
+json_assert "$WORK_DIR/route-explicit-coder.json" 'data["agent"] == "coder" and data["workflow_reason"]["source"] == "agent_default"'
+
+cat >"$WORK_DIR/portable-registry.json" <<'EOF'
+{
+  "version": "1.0.0",
+  "kind": "portable-agent-registry",
+  "defaults": {
+    "fallback_agent": "frontdesk",
+    "fallback_profile": "__default__",
+    "fallback_model": "model-a",
+    "fallback_provider": "provider-a",
+    "memory_policy": "keymemory"
+  },
+  "routing_policy": {
+    "minimum_score": 4,
+    "ambiguity_margin": 2,
+    "candidate_limit": 3,
+    "workflow_minimum_score": 6
+  },
+  "orchestration_roles": {
+    "intake": {"preferred_agents": ["frontdesk"]},
+    "evidence": {"preferred_agents": ["domain-evidence"]},
+    "implementation": {"preferred_agents": ["builder"]}
+  },
+  "workflows": {
+    "evidence_to_execution": {
+      "label": "Evidence to execution",
+      "steps": ["@role:evidence", "@role:implementation"],
+      "handoff_contract": "Evidence Agent verifies; implementation Agent executes."
+    },
+    "single": {
+      "label": "Single specialist",
+      "steps": ["{primary_agent}"],
+      "handoff_contract": "Handle within boundary."
+    }
+  },
+  "workflow_routes": [
+    {
+      "workflow": "evidence_to_execution",
+      "primary_role": "implementation",
+      "priority": 10,
+      "minimum_score": 6,
+      "match_all": [
+        [{"term": "verify", "weight": 3}, {"term": "evidence", "weight": 3}],
+        [{"term": "execute", "weight": 3}, {"term": "build", "weight": 3}]
+      ]
+    }
+  ],
+  "agents": {
+    "frontdesk": {
+      "display_name": "Frontdesk",
+      "portable_role": "office-intake",
+      "profile": "__default__",
+      "model": "model-a",
+      "provider": "provider-a",
+      "memory_policy": "keymemory",
+      "orchestration_roles": ["intake"],
+      "routing": {"priority": 100, "default_workflow": "single", "keywords": [{"term": "clarify", "weight": 5}]}
+    },
+    "domain-evidence": {
+      "display_name": "Domain Evidence",
+      "portable_role": "domain-evidence",
+      "profile": "__default__",
+      "model": "model-b",
+      "provider": "provider-b",
+      "memory_policy": "keymemory",
+      "orchestration_roles": ["evidence"],
+      "routing": {"priority": 40, "default_workflow": "single", "keywords": [{"term": "verify", "weight": 5}]}
+    },
+    "builder": {
+      "display_name": "Builder",
+      "portable_role": "execution",
+      "profile": "__default__",
+      "model": "model-c",
+      "provider": "provider-c",
+      "memory_policy": "keymemory",
+      "orchestration_roles": ["implementation"],
+      "routing": {"priority": 50, "default_workflow": "single", "keywords": [{"term": "execute", "weight": 5}]}
+    }
+  },
+  "route_tests": []
+}
+EOF
+HERMES_HOME="$HOME_DIR" HERMES_AGENT_REGISTRY="$WORK_DIR/portable-registry.json" "$ROUTER" --route-json "verify the evidence then execute the build" >"$WORK_DIR/route-portable.json"
+json_assert "$WORK_DIR/route-portable.json" 'data["agent"] == "builder" and data["workflow"] == "evidence_to_execution" and data["steps"] == ["domain-evidence", "builder"] and data["workflow_reason"]["primary_role"] == "implementation"'
 
 "$OFFICE" project-create --project p1 --name "Project One" --agents pm,coder >/dev/null
 must_fail "$OFFICE" project-create --project bad --name "Bad Project" --agents unknown-agent

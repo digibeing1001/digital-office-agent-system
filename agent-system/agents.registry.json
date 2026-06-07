@@ -22,6 +22,43 @@
     "memory_policy": "keymemory",
     "notification_template": "AGENT_SWITCH: {agent} ({profile}) / model: {model} / provider: {provider} / workflow: {workflow} step {step_index}/{step_count}"
   },
+  "routing_policy": {
+    "minimum_score": 4,
+    "ambiguity_margin": 2,
+    "candidate_limit": 3,
+    "workflow_minimum_score": 8,
+    "secretary_fallback_rule": "Route to secretary when the prompt is low-confidence, ambiguous, asks for staffing/new Agent work, requires user clarification, or crosses policy/approval boundaries."
+  },
+  "orchestration_roles": {
+    "intake": {
+      "description": "Clarifies ambiguous work, handles approvals, staffing, memory/knowledge boundaries, and workflow dispatch.",
+      "preferred_agents": ["secretary"]
+    },
+    "evidence": {
+      "description": "Gathers facts, source material, market/domain evidence, comparisons, and assumptions.",
+      "preferred_agents": ["researcher"]
+    },
+    "planning": {
+      "description": "Turns intent and evidence into plans, architecture, milestones, dependencies, and feasible execution paths.",
+      "preferred_agents": ["planer"]
+    },
+    "product": {
+      "description": "Owns product judgment, requirements, prioritization, roadmap, acceptance criteria, and build/no-build decisions.",
+      "preferred_agents": ["pm"]
+    },
+    "design": {
+      "description": "Owns GUI, UX, visual direction, prototype, accessibility, and design review.",
+      "preferred_agents": ["vibe-designer"]
+    },
+    "implementation": {
+      "description": "Owns code, debugging, tests, refactoring, deployment, and technical verification.",
+      "preferred_agents": ["coder"]
+    },
+    "writing": {
+      "description": "Owns articles, posts, copywriting, editing, and publishable narrative.",
+      "preferred_agents": ["writer"]
+    }
+  },
   "aliases": {
     "planner": "planer",
     "designer": "vibe-designer",
@@ -42,37 +79,152 @@
     "research_then_plan": {
       "label": "Research before planning",
       "steps": [
-        "researcher",
-        "planer"
+        "@role:evidence",
+        "@role:planning"
       ],
       "handoff_contract": "Researcher produces key assumptions, first-principles breakdown, and fact chain. Planner must base the plan on that report."
     },
     "research_then_pm": {
       "label": "Research before product decision",
       "steps": [
-        "researcher",
-        "pm"
+        "@role:evidence",
+        "@role:product"
       ],
       "handoff_contract": "Researcher produces the evidence base. PM turns it into product judgment, scope, risks, and decision options."
     },
     "pm_to_design": {
       "label": "Product to design",
       "steps": [
-        "pm",
-        "vibe-designer"
+        "@role:product",
+        "@role:design"
       ],
       "handoff_contract": "PM clarifies product intent and user value. Designer turns it into interaction, visual direction, and prototype guidance."
     },
     "pm_to_design_to_code": {
       "label": "Product to design to implementation",
       "steps": [
-        "pm",
-        "vibe-designer",
-        "coder"
+        "@role:product",
+        "@role:design",
+        "@role:implementation"
       ],
       "handoff_contract": "PM defines product shape, Designer creates UI direction, Coder implements or reviews the build."
     }
   },
+  "workflow_routes": [
+    {
+      "workflow": "research_then_plan",
+      "primary_role": "planning",
+      "priority": 80,
+      "minimum_score": 8,
+      "reason": "The task asks for evidence gathering before a plan, architecture, or implementation path.",
+      "match_all": [
+        [
+          {"term": "research", "weight": 5},
+          {"term": "investigate", "weight": 5},
+          {"term": "survey", "weight": 4},
+          {"term": "调研", "weight": 6},
+          {"term": "研究", "weight": 5},
+          {"term": "竞品", "weight": 5}
+        ],
+        [
+          {"term": "plan", "weight": 4},
+          {"term": "architecture", "weight": 4},
+          {"term": "implementation", "weight": 4},
+          {"term": "方案", "weight": 5},
+          {"term": "规划", "weight": 5},
+          {"term": "架构", "weight": 5},
+          {"term": "怎么实现", "weight": 5}
+        ]
+      ]
+    },
+    {
+      "workflow": "research_then_pm",
+      "primary_role": "product",
+      "priority": 85,
+      "minimum_score": 8,
+      "reason": "The task asks for evidence gathering before product judgment, priority, or roadmap decisions.",
+      "match_all": [
+        [
+          {"term": "research", "weight": 5},
+          {"term": "market", "weight": 4},
+          {"term": "competitor", "weight": 5},
+          {"term": "调研", "weight": 6},
+          {"term": "市场", "weight": 4},
+          {"term": "竞品", "weight": 5}
+        ],
+        [
+          {"term": "product", "weight": 5},
+          {"term": "roadmap", "weight": 5},
+          {"term": "priority", "weight": 5},
+          {"term": "should we build", "weight": 7},
+          {"term": "产品", "weight": 6},
+          {"term": "路线图", "weight": 5},
+          {"term": "优先级", "weight": 5},
+          {"term": "该不该做", "weight": 7}
+        ]
+      ]
+    },
+    {
+      "workflow": "pm_to_design",
+      "primary_role": "design",
+      "priority": 70,
+      "minimum_score": 8,
+      "reason": "The task needs product intent clarified before UI/UX design.",
+      "match_all": [
+        [
+          {"term": "product", "weight": 4},
+          {"term": "requirement", "weight": 4},
+          {"term": "prd", "weight": 5},
+          {"term": "产品", "weight": 5},
+          {"term": "需求", "weight": 4},
+          {"term": "PRD", "weight": 5}
+        ],
+        [
+          {"term": "design", "weight": 5},
+          {"term": "ui", "weight": 5},
+          {"term": "ux", "weight": 4},
+          {"term": "prototype", "weight": 5},
+          {"term": "设计", "weight": 5},
+          {"term": "界面", "weight": 5},
+          {"term": "原型", "weight": 5}
+        ]
+      ]
+    },
+    {
+      "workflow": "pm_to_design_to_code",
+      "primary_role": "implementation",
+      "priority": 90,
+      "minimum_score": 12,
+      "reason": "The task asks for end-to-end product clarification, design, and implementation.",
+      "match_all": [
+        [
+          {"term": "product", "weight": 4},
+          {"term": "requirement", "weight": 4},
+          {"term": "需求", "weight": 4},
+          {"term": "产品", "weight": 4},
+          {"term": "功能", "weight": 4}
+        ],
+        [
+          {"term": "design", "weight": 5},
+          {"term": "ui", "weight": 5},
+          {"term": "prototype", "weight": 5},
+          {"term": "设计", "weight": 5},
+          {"term": "界面", "weight": 5},
+          {"term": "原型", "weight": 5}
+        ],
+        [
+          {"term": "code", "weight": 5},
+          {"term": "implement", "weight": 5},
+          {"term": "build", "weight": 4},
+          {"term": "frontend", "weight": 5},
+          {"term": "代码", "weight": 5},
+          {"term": "实现", "weight": 5},
+          {"term": "开发", "weight": 5},
+          {"term": "前端", "weight": 5}
+        ]
+      ]
+    }
+  ],
   "agents": {
     "secretary": {
       "display_name": "Digital Office Secretary",
@@ -87,6 +239,25 @@
         }
       ],
       "memory_policy": "keymemory",
+      "orchestration_roles": ["intake"],
+      "decision": {
+        "use_when": [
+          "the task is unclear, ambiguous, or needs intent clarification",
+          "the user asks to hire, request, deploy, or improve an Agent",
+          "the task crosses approval, knowledge, memory, routing, or workflow boundaries",
+          "the router has low confidence or multiple plausible owners"
+        ],
+        "avoid_when": [
+          "a single specialist can safely complete the task without clarification",
+          "the user explicitly requests an existing specialist Agent"
+        ],
+        "primary_outputs": [
+          "clarified task brief",
+          "selected Agent or workflow",
+          "handoff summary",
+          "approval or deployment report"
+        ]
+      },
       "routing": {
         "priority": 100,
         "default_workflow": "single",
@@ -151,6 +322,25 @@
         }
       ],
       "memory_policy": "keymemory",
+      "orchestration_roles": ["planning"],
+      "decision": {
+        "use_when": [
+          "the user needs a plan, architecture, roadmap, feasibility path, or implementation sequence",
+          "research output must be turned into an actionable plan",
+          "the work needs scope, milestones, dependencies, or risk ordering"
+        ],
+        "avoid_when": [
+          "the user only needs factual research",
+          "the main task is writing final copy",
+          "the main task is coding without planning ambiguity"
+        ],
+        "primary_outputs": [
+          "plan",
+          "architecture direction",
+          "scope and milestone breakdown",
+          "risk and dependency list"
+        ]
+      },
       "routing": {
         "priority": 60,
         "default_workflow": "research_then_plan",
@@ -190,6 +380,25 @@
         }
       ],
       "memory_policy": "keymemory",
+      "orchestration_roles": ["implementation"],
+      "decision": {
+        "use_when": [
+          "the user asks to write, debug, test, refactor, deploy, or review code",
+          "the workflow has already clarified product/design intent and now needs implementation",
+          "technical verification or regression coverage is required"
+        ],
+        "avoid_when": [
+          "the user is still deciding what product to build",
+          "the task is only visual direction without implementation",
+          "the task is legal, accounting, or domain research without code"
+        ],
+        "primary_outputs": [
+          "code changes",
+          "technical review",
+          "test plan or test results",
+          "implementation notes"
+        ]
+      },
       "routing": {
         "priority": 50,
         "default_workflow": "single",
@@ -236,6 +445,25 @@
         }
       ],
       "memory_policy": "keymemory",
+      "orchestration_roles": ["writing"],
+      "decision": {
+        "use_when": [
+          "the user asks for articles, posts, copywriting, editing, or voice refinement",
+          "research or product notes need to become publishable text",
+          "the task is about tone, structure, readability, or audience fit"
+        ],
+        "avoid_when": [
+          "the user needs product strategy before writing",
+          "the user needs fresh evidence gathering before drafting",
+          "the task is UI design or code implementation"
+        ],
+        "primary_outputs": [
+          "draft copy",
+          "edited manuscript",
+          "content outline",
+          "voice and style suggestions"
+        ]
+      },
       "routing": {
         "priority": 40,
         "default_workflow": "single",
@@ -277,6 +505,25 @@
         }
       ],
       "memory_policy": "keymemory",
+      "orchestration_roles": ["evidence"],
+      "decision": {
+        "use_when": [
+          "the user asks for investigation, market research, competitor analysis, evidence, or comparison",
+          "another Agent needs a fact base before planning, product decision, or writing",
+          "the task depends on uncertain assumptions that should be verified first"
+        ],
+        "avoid_when": [
+          "the user already has enough evidence and needs a decision",
+          "the task is pure implementation",
+          "the task is final copywriting without research uncertainty"
+        ],
+        "primary_outputs": [
+          "evidence summary",
+          "assumption map",
+          "comparison table",
+          "research handoff"
+        ]
+      },
       "routing": {
         "priority": 55,
         "default_workflow": "single",
@@ -324,6 +571,25 @@
         }
       ],
       "memory_policy": "keymemory",
+      "orchestration_roles": ["design"],
+      "decision": {
+        "use_when": [
+          "the user asks for UI, UX, visual design, prototype, design review, or skeuomorphic interface work",
+          "PM output needs to become interaction flows or visual direction",
+          "the task concerns GUI consistency, usability, accessibility, or visual quality"
+        ],
+        "avoid_when": [
+          "the user only needs product prioritization",
+          "the user only needs code implementation after a finished design",
+          "the task is writing or market research"
+        ],
+        "primary_outputs": [
+          "interaction design",
+          "visual direction",
+          "prototype guidance",
+          "design review"
+        ]
+      },
       "routing": {
         "priority": 70,
         "default_workflow": "single",
@@ -378,6 +644,25 @@
         }
       ],
       "memory_policy": "keymemory",
+      "orchestration_roles": ["product"],
+      "decision": {
+        "use_when": [
+          "the user asks for product judgment, PRD, roadmap, MVP, user stories, positioning, or prioritization",
+          "research evidence must become product scope or product decisions",
+          "a workflow needs a product owner before design or implementation"
+        ],
+        "avoid_when": [
+          "the task is only code implementation",
+          "the task is only visual styling after product scope is fixed",
+          "the task only needs raw factual research"
+        ],
+        "primary_outputs": [
+          "product decision",
+          "PRD or requirement brief",
+          "priority and scope",
+          "user value and acceptance criteria"
+        ]
+      },
       "routing": {
         "priority": 90,
         "default_workflow": "single",
@@ -445,9 +730,14 @@
     {"prompt": "调研一下AI办公竞品", "expect": "researcher"},
     {"prompt": "做一个拟物化数字办公室 UI 原型", "expect": "vibe-designer"},
     {"prompt": "这个数字办公室产品该不该做", "expect": "pm"},
+    {"prompt": "先调研竞品，再规划数字办公室的产品方案", "expect": "planer", "expect_workflow": "research_then_plan", "expect_steps": ["researcher", "planer"]},
+    {"prompt": "先做市场调研，再判断这个产品该不该做和路线图", "expect": "pm", "expect_workflow": "research_then_pm", "expect_steps": ["researcher", "pm"]},
+    {"prompt": "先明确产品需求，再做拟态 GUI 设计", "expect": "vibe-designer", "expect_workflow": "pm_to_design", "expect_steps": ["pm", "vibe-designer"]},
+    {"prompt": "先梳理产品需求，再设计界面，最后实现前端原型代码", "expect": "coder", "expect_workflow": "pm_to_design_to_code", "expect_steps": ["pm", "vibe-designer", "coder"]},
     {"prompt": "help me write a PRD", "expect": "pm"},
     {"prompt": "frontend design review", "expect": "vibe-designer"},
     {"prompt": "我想招聘一个新的 Agent 员工", "expect": "secretary"},
+    {"prompt": "这个任务我没说清楚，你先帮我澄清需求并安排工作流", "expect": "secretary"},
     {"prompt": "新 Agent 已下载部署，帮我生成加入工作流的报告", "expect": "secretary"},
     {"prompt": "通过对话改进已有 Agent 的灵魂文档", "expect": "secretary"}
   ]
