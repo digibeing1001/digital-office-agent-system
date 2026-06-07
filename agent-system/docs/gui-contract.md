@@ -31,6 +31,18 @@ Router contract:
 - Workflow steps are resolved from portable `orchestration_roles` in `agents.registry.json`; industry packages may remap those roles to different Agent ids without changing the router code.
 - GUI labels should describe the role and workflow to the user, while backend calls use the concrete `agent` and `steps` returned by the router.
 
+Production harness:
+
+```bash
+~/.hermes/agent-system/bin/harness-check
+```
+
+- Product, design, and implementation workflows must show gate status before user-facing delivery.
+- `pm_to_design` must pass product and design gates.
+- `pm_to_design_to_code` must pass product, design, and implementation gates.
+- The GUI should show failed gates as rework actions, not as raw CLI errors.
+- External high-star skill sources are candidates only. They must be staged, reviewed, adapted, verified, and approved before enterprise use.
+
 Project lifecycle:
 
 ```bash

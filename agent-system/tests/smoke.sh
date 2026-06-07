@@ -44,7 +44,7 @@ cp -a "$REPO_ROOT" "$WORK_DIR/repo"
 cd "$WORK_DIR/repo"
 
 bash -n agent-system/tests/smoke.sh
-python3 -m py_compile agent-system/bin/office-system.py scripts/agent-router
+python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check scripts/agent-router
 for file in $(git ls-files "*.json"); do
   python3 -m json.tool "$file" >/dev/null
 done
@@ -57,6 +57,7 @@ critical_files = [
     "README.zh-CN.md",
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
+    "agent-system/harness/production-gates.json",
     "agent-system/secretary.capabilities.json",
     "agent-system/bin/office-system.py",
     "agent-system/docs/gui-contract.md",
@@ -76,6 +77,12 @@ grep -q "## Agent Routing And Workflow Orchestration" SOUL.md || fail "default s
 json_assert agent-system/secretary.capabilities.json 'data["persona_policy"]["default_stance"].startswith("Act as a capable digital chief of staff")'
 json_assert agent-system/secretary.capabilities.json '"reflective_pushback" in [item["id"] for item in data["core_capabilities"]]'
 json_assert agent-system/secretary.capabilities.json 'data["routing_orchestration_policy"]["role_first_rule"].startswith("Select the needed orchestration role first")'
+json_assert agent-system/secretary.capabilities.json 'data["production_harness_policy"]["role_skill_map"]["implementation"] == "vibe-coding-production-harness"'
+json_assert agent-system/agents.registry.json '"vibe-coding-production-harness" in data["agents"]["coder"]["skills"]'
+json_assert agent-system/agents.registry.json '"vibe-design-production-harness" in data["agents"]["vibe-designer"]["skills"]'
+json_assert agent-system/harness/production-gates.json 'data["role_gates"]["implementation"]["minimum_gates"][0] == "build_or_compile_passes"'
+test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
+test -f skills/vibe-design-production-harness/SKILL.md || fail "missing vibe design harness skill"
 
 ./install.sh "$WORK_DIR/hermes" >/dev/null
 HOME_DIR="$WORK_DIR/hermes"
@@ -84,6 +91,7 @@ OFFICE="$HOME_DIR/agent-system/bin/office-system"
 
 "$ROUTER" --health >/dev/null
 "$OFFICE" health >/dev/null
+"$HOME_DIR/agent-system/bin/harness-check" >/dev/null
 "$HOME_DIR/agent-system/bin/product-update" status >/dev/null
 
 [ -f "$HOME_DIR/SOUL.md" ] || fail "default SOUL.md missing"

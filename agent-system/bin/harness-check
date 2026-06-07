@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+
+def root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def read_json(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def require(condition: bool, errors: list[str], message: str) -> None:
+    if not condition:
+        errors.append(message)
+
+
+def main() -> int:
+    base = root()
+    hermes = base.parent
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    harness_path = base / "harness" / "production-gates.json"
+    registry_path = base / "agents.registry.json"
+    secretary_path = base / "secretary.capabilities.json"
+
+    require(harness_path.exists(), errors, f"missing harness config: {harness_path}")
+    require(registry_path.exists(), errors, f"missing agents registry: {registry_path}")
+    require(secretary_path.exists(), errors, f"missing secretary capabilities: {secretary_path}")
+
+    harness = read_json(harness_path) if harness_path.exists() else {}
+    registry = read_json(registry_path) if registry_path.exists() else {}
+    secretary = read_json(secretary_path) if secretary_path.exists() else {}
+
+    for role in ("product", "design", "implementation"):
+        require(role in harness.get("role_gates", {}), errors, f"harness role gate missing: {role}")
+    for workflow in ("pm_to_design", "pm_to_design_to_code"):
+        require(workflow in harness.get("workflow_gates", {}), errors, f"harness workflow gate missing: {workflow}")
+
+    skills_root = hermes / "skills"
+    required_skill_paths = {
+        "vibe-coding-production-harness": skills_root / "vibe-coding-production-harness" / "SKILL.md",
+        "vibe-design-production-harness": skills_root / "vibe-design-production-harness" / "SKILL.md",
+    }
+    for skill, path in required_skill_paths.items():
+        require(path.exists(), errors, f"missing production harness skill: {skill}")
+
+    agents = registry.get("agents", {})
+    coder_skills = set(agents.get("coder", {}).get("skills", []))
+    designer_skills = set(agents.get("vibe-designer", {}).get("skills", []))
+    require("vibe-coding-production-harness" in coder_skills, errors, "coder missing vibe-coding-production-harness")
+    require("vibe-design-production-harness" in designer_skills, errors, "vibe-designer missing vibe-design-production-harness")
+
+    role_policy = secretary.get("routing_orchestration_policy", {})
+    require("portable_roles" in role_policy, errors, "secretary missing portable role policy")
+    require("role_first_rule" in role_policy, errors, "secretary missing role-first routing rule")
+
+    router = hermes / "scripts" / "agent-router"
+    if router.exists():
+        proc = subprocess.run([str(router), "--health"], text=True, capture_output=True)
+        if proc.returncode != 0:
+            errors.append("agent-router health failed")
+            if proc.stdout:
+                warnings.append(proc.stdout.strip())
+            if proc.stderr:
+                warnings.append(proc.stderr.strip())
+    else:
+        errors.append(f"missing router: {router}")
+
+    result = {
+        "status": "error" if errors else "ok",
+        "root": str(base),
+        "harness_config": harness_path.exists(),
+        "required_skills": {skill: path.exists() for skill, path in required_skill_paths.items()},
+        "router_health": not any(error == "agent-router health failed" for error in errors),
+        "errors": errors,
+        "warnings": warnings,
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 1 if errors else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -68,6 +68,7 @@ SOUL.before-digital-office.<timestamp>.md
 ```bash
 ~/.hermes/scripts/agent-router --health
 ~/.hermes/agent-system/bin/office-system health
+~/.hermes/agent-system/bin/harness-check
 ~/.hermes/agent-system/bin/product-update status
 ```
 

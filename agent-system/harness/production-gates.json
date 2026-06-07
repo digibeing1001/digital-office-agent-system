@@ -1,0 +1,131 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-production-harness",
+  "description": "Portable production-quality gates for product, vibe design, and vibe coding workflows. The gates are role-based and can migrate across digital office variants.",
+  "inspired_by": [
+    {
+      "name": "OpenHands",
+      "source": "https://github.com/OpenHands/OpenHands",
+      "lesson": "Use an explicit runtime harness with action execution, observation, and feedback loops instead of one-shot coding prompts."
+    },
+    {
+      "name": "SWE-agent",
+      "source": "https://github.com/SWE-agent/SWE-agent",
+      "lesson": "Keep the Agent-computer interface narrow, observable, and tied to issue-to-patch workflows."
+    },
+    {
+      "name": "aider",
+      "source": "https://github.com/aider-ai/aider",
+      "lesson": "Use repository maps, git-visible changes, and automated commits/diffs as core coding-agent feedback."
+    },
+    {
+      "name": "SWE-bench",
+      "source": "https://github.com/princeton-nlp/SWE-bench",
+      "lesson": "Judge coding agents with reproducible tasks and deterministic tests, not with self-review alone."
+    }
+  ],
+  "default_quality_policy": {
+    "mode": "evidence_first_then_execute",
+    "must_have_deterministic_gate": true,
+    "llm_review_is_secondary": true,
+    "no_direct_production_write_without_approval": true,
+    "record_artifacts": true,
+    "rollback_required_for_deployment": true
+  },
+  "role_gates": {
+    "product": {
+      "entry_contract": [
+        "target user and job-to-be-done are stated",
+        "business outcome or project goal is stated",
+        "non-goals and constraints are stated"
+      ],
+      "exit_artifacts": [
+        "product brief",
+        "acceptance criteria",
+        "risk list",
+        "handoff to design or implementation"
+      ],
+      "minimum_gates": [
+        "scope_is_small_enough_for_one_iteration",
+        "acceptance_criteria_are_testable",
+        "dependencies_and_unknowns_are_named"
+      ]
+    },
+    "design": {
+      "entry_contract": [
+        "product intent is clear",
+        "target viewport and device assumptions are clear",
+        "existing design system or visual direction is known"
+      ],
+      "exit_artifacts": [
+        "interaction flow",
+        "layout and state spec",
+        "accessibility notes",
+        "visual QA checklist",
+        "handoff to implementation"
+      ],
+      "minimum_gates": [
+        "all primary states are specified",
+        "responsive behavior is specified",
+        "text overflow and spacing risks are checked",
+        "accessibility contrast and keyboard path are checked",
+        "visual style is not one-note or generic"
+      ]
+    },
+    "implementation": {
+      "entry_contract": [
+        "acceptance criteria are testable",
+        "files or modules likely to change are identified",
+        "risk and rollback plan are known"
+      ],
+      "exit_artifacts": [
+        "code diff",
+        "test output",
+        "smoke result",
+        "risk notes",
+        "rollback notes"
+      ],
+      "minimum_gates": [
+        "build_or_compile_passes",
+        "deterministic_tests_pass",
+        "smoke_tests_pass",
+        "secret_scan_has_no_hits",
+        "git_diff_is_reviewable",
+        "no_unapproved_scope_expansion"
+      ]
+    }
+  },
+  "workflow_gates": {
+    "pm_to_design": [
+      "product_gate_passed_before_design",
+      "design_gate_passed_before_user_confirmation"
+    ],
+    "pm_to_design_to_code": [
+      "product_gate_passed_before_design",
+      "design_gate_passed_before_implementation",
+      "implementation_gate_passed_before_delivery"
+    ],
+    "research_then_plan": [
+      "evidence_handoff_is_cited",
+      "planning_assumptions_trace_to_evidence"
+    ],
+    "research_then_pm": [
+      "evidence_handoff_is_cited",
+      "product_decision_names_uncertainty"
+    ]
+  },
+  "quality_metrics": {
+    "pass_rate": "percentage of tasks passing deterministic gates",
+    "rework_rate": "number of user or reviewer correction loops",
+    "route_stability": "percentage of route tests with unchanged expected Agent/workflow",
+    "design_escape_rate": "visual or usability defects found after implementation",
+    "regression_rate": "bugs reintroduced after previous fixes",
+    "time_to_green": "time from task start to all gates passing"
+  },
+  "gui_contract": {
+    "show_gate_status": true,
+    "show_artifacts": true,
+    "allow_user_override": "admin_only_with_reason",
+    "default_action_when_gate_fails": "return_to_secretary_for_clarification_or_rework"
+  }
+}

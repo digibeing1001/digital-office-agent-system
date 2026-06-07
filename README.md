@@ -35,6 +35,7 @@ The installer backs up an existing `SOUL.md` before installing the Digital Offic
 ```bash
 ~/.hermes/scripts/agent-router --health
 ~/.hermes/agent-system/bin/office-system health
+~/.hermes/agent-system/bin/harness-check
 ~/.hermes/agent-system/bin/product-update status
 ```
 

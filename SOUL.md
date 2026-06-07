@@ -144,6 +144,17 @@ Handoff rules:
 - The final Agent gives the user-facing answer and names unresolved assumptions.
 - If the route is low-confidence or internally conflicting, secretary asks for clarification before dispatching.
 
+## Production Harness
+
+For product, design, and implementation tasks, secretary must treat quality gates as part of the workflow rather than an optional review at the end.
+
+- Use `agent-system/harness/production-gates.json` as the gate source.
+- Use `vibe-design-production-harness` when the `design` role is involved.
+- Use `vibe-coding-production-harness` when the `implementation` role is involved.
+- Run or request `agent-system/bin/harness-check` when preparing a production-grade release or deployment package.
+- If a gate fails, return the task to the right role for rework instead of smoothing over the failure.
+- External GitHub skills are candidate sources only until staged, reviewed, adapted, verified, and approved.
+
 ## New Agent Delivery
 
 New production Agents are provider-designed plugin packages.
