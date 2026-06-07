@@ -235,6 +235,50 @@ json_assert "$WORK_DIR/route-portable.json" 'data["agent"] == "builder" and data
 "$OFFICE" project-create --project p1 --name "Project One" --agents pm,coder >/dev/null
 must_fail "$OFFICE" project-create --project bad --name "Bad Project" --agents unknown-agent
 
+"$OFFICE" auth-decision --tenant tenant-a --deployment dep-a --user user-a --role project_manager --action workflow.start --resource-type workflow_run --resource-id planned-run --project p1 --agent coder >"$WORK_DIR/auth-allow.json"
+json_assert "$WORK_DIR/auth-allow.json" 'data["allowed"] is True'
+must_fail "$OFFICE" auth-decision --tenant tenant-a --deployment dep-a --user user-a --role viewer --action workflow.start --resource-type workflow_run --resource-id planned-run --project p1 --agent coder
+
+"$OFFICE" workflow-start --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --task "product requirement design ui prototype code implement frontend" --idempotency-key smoke-workflow >"$WORK_DIR/workflow-start.json"
+json_assert "$WORK_DIR/workflow-start.json" 'data["status"] == "created" and data["task_status"] == "queued" and data["route"]["agent"] == "coder" and data["route"]["workflow"] == "pm_to_design_to_code"'
+workflow_run="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$WORK_DIR/workflow-start.json")"
+workflow_task="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["task_id"])' "$WORK_DIR/workflow-start.json")"
+"$OFFICE" workflow-start --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --task "product requirement design ui prototype code implement frontend" --idempotency-key smoke-workflow >"$WORK_DIR/workflow-idempotent.json"
+json_assert "$WORK_DIR/workflow-idempotent.json" 'data["idempotent"] is True and data["run"]["run_id"]'
+"$OFFICE" workflow-list --project p1 >"$WORK_DIR/workflow-list.json"
+json_assert "$WORK_DIR/workflow-list.json" 'len(data["runs"]) >= 1'
+"$OFFICE" task-list --project p1 --status queued >"$WORK_DIR/task-list.json"
+json_assert "$WORK_DIR/task-list.json" 'len(data["tasks"]) >= 1'
+
+must_fail "$OFFICE" approval-create --tenant tenant-a --deployment dep-a --title "Approve smoke workflow" --action workflow.continue --resource-type workflow_run --resource-id "$workflow_run" --requested-by user-a --requested-by-role viewer --approver-role project_manager --project p1 --workflow-run "$workflow_run" --task-id "$workflow_task"
+"$OFFICE" approval-create --tenant tenant-a --deployment dep-a --title "Approve smoke workflow" --action workflow.continue --resource-type workflow_run --resource-id "$workflow_run" --requested-by user-a --requested-by-role project_manager --approver-role project_manager --project p1 --workflow-run "$workflow_run" --task-id "$workflow_task" >"$WORK_DIR/approval-create.json"
+approval_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["approval"]["approval_id"])' "$WORK_DIR/approval-create.json")"
+"$OFFICE" task-status --task-id "$workflow_task" >"$WORK_DIR/task-waiting.json"
+json_assert "$WORK_DIR/task-waiting.json" 'data["status"] == "waiting_approval"'
+must_fail "$OFFICE" approval-decision --approval-id "$approval_id" --decision approve --decided-by user-a --role project_manager
+"$OFFICE" approval-decision --approval-id "$approval_id" --decision approve --decided-by user-a --role project_manager --confirmed >"$WORK_DIR/approval-decision.json"
+json_assert "$WORK_DIR/approval-decision.json" 'data["approval"]["status"] == "approved"'
+"$OFFICE" workflow-status --run-id "$workflow_run" >"$WORK_DIR/workflow-approved.json"
+json_assert "$WORK_DIR/workflow-approved.json" 'data["status"] == "perceiving"'
+must_fail "$OFFICE" task-update --task-id "$workflow_task" --status completed --summary "viewer cannot complete" --updated-by user-a --role viewer
+"$OFFICE" task-update --task-id "$workflow_task" --status completed --summary "workflow closed" --updated-by user-a --role project_manager >"$WORK_DIR/task-completed.json"
+json_assert "$WORK_DIR/task-completed.json" 'data["status"] == "completed"'
+"$OFFICE" workflow-status --run-id "$workflow_run" >"$WORK_DIR/workflow-completed.json"
+json_assert "$WORK_DIR/workflow-completed.json" 'data["status"] == "completed"'
+"$OFFICE" audit-events --resource-type approval --resource-id "$approval_id" >"$WORK_DIR/audit-approval.json"
+json_assert "$WORK_DIR/audit-approval.json" 'len(data["events"]) >= 1 and data["events"][-1]["event_hash"]'
+"$OFFICE" notification-list --user user-a >"$WORK_DIR/notification-list.json"
+json_assert "$WORK_DIR/notification-list.json" 'len(data["notifications"]) >= 1'
+
+"$OFFICE" workflow-start --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --task "hello there" >"$WORK_DIR/workflow-clarify.json"
+clarify_run="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$WORK_DIR/workflow-clarify.json")"
+json_assert "$WORK_DIR/workflow-clarify.json" 'data["status"] == "blocked" and data["route"]["agent"] == "secretary"'
+"$OFFICE" workflow-resume --run-id "$clarify_run" --requested-by user-a --role project_manager --reason "user clarified task" >"$WORK_DIR/workflow-resume.json"
+json_assert "$WORK_DIR/workflow-resume.json" 'data["status"] == "perceiving"'
+must_fail "$OFFICE" workflow-cancel --run-id "$clarify_run" --requested-by user-a --role project_manager --reason "stop"
+"$OFFICE" workflow-cancel --run-id "$clarify_run" --requested-by user-a --role project_manager --reason "stop" --confirmed >"$WORK_DIR/workflow-cancel.json"
+json_assert "$WORK_DIR/workflow-cancel.json" 'data["status"] == "cancelled"'
+
 "$OFFICE" knowledge-add-text --scope project --project p1 --title draft --body "alpha beta gamma" >"$WORK_DIR/kb-pending.json"
 "$OFFICE" rag-index --scope project --project p1 --mode lexical >"$WORK_DIR/rag-pending.json"
 json_assert "$WORK_DIR/rag-pending.json" 'data["chunks"] == 0'

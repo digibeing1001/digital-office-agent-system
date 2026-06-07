@@ -60,6 +60,8 @@ The production harness uses five layers:
 4. `agent-system/ai-native-loop.manifest.json`: Perceive, Plan, Execute, Reflect, Iterate loop contract.
 5. `agent-system/bin/harness-check` and `agent-system/bin/harness-runner`: deterministic local checks that validate registry wiring, loop policy, route stability, and CLI behavior.
 
+The required task set includes `workflow-control-plane-production`, which verifies the GUI-facing workflow run, task inbox, approval center, authorization decision, audit event, notification, and secretary clarification loop.
+
 ## Production Loop Contract
 
 Perceive:

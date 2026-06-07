@@ -10,6 +10,7 @@
 - 公司全局知识库、项目知识库、授权行业参考层和 KeyMemory 接力记忆
 - 本地多模态文档处理和 RAG 能力
 - AI native 产品闭环：感知、规划、执行、反思及迭代
+- 面向 GUI 的 WorkflowRun、任务台、审批中心、权限决策、审计日志和通知
 - 用户确认式迭代，不允许黑盒自我修改
 - 企业发布、Agent 插件包、行业知识库和权限审计预留
 
@@ -39,6 +40,11 @@ agent-system/harness/tasks/*.json           可执行 harness 任务
 agent-system/bin/office-system.py           GUI 后端控制面
 agent-system/docs/gui-contract.md           GUI 契约
 agent-system/docs/production-harness.md     生产 harness 设计
+agent-system/runs/                          WorkflowRun 运行态记录
+agent-system/tasks/                         任务台运行态记录
+agent-system/approvals/                     审批中心运行态记录
+agent-system/notifications/                 GUI 通知运行态记录
+agent-system/logs/                          审计和系统日志
 ```
 
 ## AI Native 闭环开发契约
@@ -58,6 +64,7 @@ agent-system/docs/production-harness.md     生产 harness 设计
 - `agent-system/ai-native-loop.manifest.json`
 - `agent-system/docs/gui-contract.md`
 - `agent-system/harness/tasks/ai-native-loop-production.json`
+- `agent-system/harness/tasks/workflow-control-plane-production.json`
 - `agent-system/tests/smoke.sh`
 
 ## 常用命令
@@ -94,6 +101,16 @@ AI native 闭环：
 ~/.hermes/agent-system/bin/office-system loop-status --run-id <run_id>
 ```
 
+GUI 工作流控制面：
+
+```bash
+~/.hermes/agent-system/bin/office-system workflow-start --tenant t1 --deployment d1 --user u1 --role project_manager --project p1 --task "product requirement design ui prototype code implement frontend"
+~/.hermes/agent-system/bin/office-system task-list --project p1
+~/.hermes/agent-system/bin/office-system approval-list --status pending
+~/.hermes/agent-system/bin/office-system audit-events --resource-type workflow_run --resource-id <run_id>
+~/.hermes/agent-system/bin/office-system notification-list --user u1 --unread-only
+```
+
 迭代提案：
 
 ```bash
@@ -117,6 +134,7 @@ git diff --check
 生产交付前还要做人工 review：
 
 - README 和 GUI 契约是否与实际命令一致
+- `workflow-control-plane-production` 是否覆盖 WorkflowRun、任务台、审批、权限、审计和通知闭环
 - router 是否仍然基于角色而不是硬编码 Agent
 - 迭代是否强制用户确认
 - 知识库优先级是否没有被 KeyMemory 或授权参考层覆盖

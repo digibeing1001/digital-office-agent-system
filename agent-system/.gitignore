@@ -2,6 +2,13 @@
 models/cache/*
 !models/cache/.gitignore
 logs/*
+!logs/.gitignore
+tasks/*
+!tasks/.gitignore
+approvals/*
+!approvals/.gitignore
+notifications/*
+!notifications/.gitignore
 tmp/*
 tmp/**
 data-sharing/exports/*

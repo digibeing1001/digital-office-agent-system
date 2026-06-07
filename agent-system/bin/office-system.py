@@ -55,6 +55,70 @@ STATUS_LABELS = {
     "rejected": "暂不受理",
     "send_failed": "发送失败",
 }
+TASK_STATUSES = {
+    "queued",
+    "running",
+    "waiting_approval",
+    "blocked",
+    "completed",
+    "failed",
+    "cancelled",
+}
+APPROVAL_STATUSES = {"pending", "approved", "rejected", "cancelled", "expired"}
+APPROVAL_DECISION_TO_STATUS = {
+    "approve": "approved",
+    "reject": "rejected",
+    "cancel": "cancelled",
+}
+TENANT_ADMIN_ROLES = {"owner", "enterprise_admin"}
+ROLE_ACTIONS = {
+    "owner": {"*"},
+    "enterprise_admin": {
+        "approval.create",
+        "approval.decide",
+        "audit.read",
+        "notification.read",
+        "project.manage",
+        "release.approve",
+        "support.grant",
+        "task.manage",
+        "task.read",
+        "workflow.cancel",
+        "workflow.read",
+        "workflow.resume",
+        "workflow.retry",
+        "workflow.start",
+    },
+    "project_manager": {
+        "agent.delegate",
+        "approval.create",
+        "approval.decide",
+        "notification.read",
+        "task.manage",
+        "task.read",
+        "workflow.cancel",
+        "workflow.read",
+        "workflow.resume",
+        "workflow.retry",
+        "workflow.start",
+    },
+    "professional_reviewer": {
+        "approval.decide",
+        "notification.read",
+        "regulated_output.approve",
+        "task.read",
+        "workflow.read",
+    },
+    "member": {
+        "agent.delegate",
+        "approval.create",
+        "notification.read",
+        "task.read",
+        "workflow.read",
+        "workflow.start",
+    },
+    "viewer": {"notification.read", "task.read", "workflow.read"},
+}
 
 
 def maybe_reexec_venv() -> None:
@@ -128,9 +192,21 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        handle.write("\n")
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def append_jsonl(path: Path, event: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
 
 def write_text(path: Path, text: str) -> None:
@@ -141,9 +217,170 @@ def write_text(path: Path, text: str) -> None:
 def append_log(root: Path, event: dict[str, Any]) -> None:
     event = {"time": now_iso(), **event}
     log = root / "logs" / "office-system.jsonl"
-    log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    append_jsonl(log, event)
+
+
+def read_last_jsonl(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    last = ""
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                last = line
+    if not last:
+        return None
+    try:
+        return json.loads(last)
+    except json.JSONDecodeError:
+        return None
+
+
+def append_audit_event(
+    root: Path,
+    event_type: str,
+    *,
+    actor_id: str = "",
+    actor_role: str = "",
+    tenant_id: str = "",
+    deployment_id: str = "",
+    project_id: str = "",
+    agent_id: str = "",
+    resource_type: str = "",
+    resource_id: str = "",
+    workflow_run_id: str = "",
+    task_id: str = "",
+    approval_id: str = "",
+    outcome: str = "recorded",
+    reason: str = "",
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    path = root / "logs" / "audit-events.jsonl"
+    previous = read_last_jsonl(path)
+    event = {
+        "version": "1.0.0",
+        "kind": "digital-office-audit-event",
+        "event_id": f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+        "time": now_iso(),
+        "event": event_type,
+        "actor": {"user_id": actor_id, "role": actor_role},
+        "tenant_id": tenant_id,
+        "deployment_id": deployment_id,
+        "project_id": project_id,
+        "agent_id": agent_id,
+        "resource": {"type": resource_type, "id": resource_id},
+        "links": {
+            "workflow_run_id": workflow_run_id,
+            "task_id": task_id,
+            "approval_id": approval_id,
+        },
+        "outcome": outcome,
+        "reason": reason,
+        "extra": extra or {},
+        "previous_event_hash": (previous or {}).get("event_hash", ""),
+    }
+    encoded = json.dumps(event, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    event["event_hash"] = hashlib.sha256(encoded).hexdigest()
+    append_jsonl(path, event)
+    append_log(root, {"event": "audit_event", "audit_event": event_type, "event_id": event["event_id"], "outcome": outcome})
+    return event
+
+
+def notification_path(root: Path, notification_id: str) -> Path:
+    return root / "notifications" / f"{safe_component(notification_id, 'notification id')}.json"
+
+
+def emit_notification(
+    root: Path,
+    *,
+    user_id: str,
+    title: str,
+    body: str,
+    topic: str,
+    resource_type: str,
+    resource_id: str,
+    severity: str = "info",
+) -> dict[str, Any]:
+    notification_id = f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-notification",
+        "notification_id": notification_id,
+        "user_id": safe_claim(user_id, "notification user", required=False),
+        "title": safe_claim(title, "notification title"),
+        "body": body,
+        "topic": safe_component(topic, "notification topic"),
+        "resource_type": safe_component(resource_type, "notification resource type"),
+        "resource_id": safe_claim(resource_id, "notification resource id", required=False),
+        "severity": safe_component(severity, "notification severity"),
+        "status": "unread",
+        "created_at": now_iso(),
+    }
+    write_json(notification_path(root, notification_id), record)
+    append_log(root, {"event": "notification_created", "notification_id": notification_id, "topic": topic, "user_id": record["user_id"]})
+    return record
+
+
+def read_records(directory: Path, kind: str | None = None) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    if not directory.exists():
+        return records
+    for path in sorted(directory.glob("*.json")):
+        try:
+            data = read_json(path)
+        except Exception:
+            continue
+        if kind and data.get("kind") != kind:
+            continue
+        records.append(data)
+    records.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    return records
+
+
+def find_by_idempotency(root: Path, directory: str, key: str | None) -> dict[str, Any] | None:
+    if not key:
+        return None
+    for record in read_records(root / directory):
+        if record.get("idempotency_key") == key:
+            return record
+    return None
+
+
+def task_path(root: Path, task_id: str) -> Path:
+    return root / "tasks" / f"{safe_component(task_id, 'task id')}.json"
+
+
+def approval_path(root: Path, approval_id: str) -> Path:
+    return root / "approvals" / f"{safe_component(approval_id, 'approval id')}.json"
+
+
+def load_task(root: Path, task_id: str) -> dict[str, Any]:
+    path = task_path(root, task_id)
+    if not path.exists():
+        print(f"office-system: task not found: {task_id}", file=sys.stderr)
+        raise SystemExit(2)
+    return read_json(path)
+
+
+def load_approval(root: Path, approval_id: str) -> dict[str, Any]:
+    path = approval_path(root, approval_id)
+    if not path.exists():
+        print(f"office-system: approval not found: {approval_id}", file=sys.stderr)
+        raise SystemExit(2)
+    return read_json(path)
+
+
+def update_task_status(root: Path, task_id: str, status: str, *, message: str = "", actor_id: str = "", actor_role: str = "") -> dict[str, Any]:
+    status = safe_component(status, "task status")
+    if status not in TASK_STATUSES:
+        print(f"office-system: invalid task status: {status}", file=sys.stderr)
+        raise SystemExit(2)
+    task = load_task(root, task_id)
+    task["status"] = status
+    task["updated_at"] = now_iso()
+    task.setdefault("history", []).append({"time": task["updated_at"], "status": status, "message": message, "actor_id": actor_id, "actor_role": actor_role})
+    write_json(task_path(root, task_id), task)
+    return task
 
 
 def project_path(root: Path, project: str) -> Path:
@@ -156,6 +393,118 @@ def ensure_project(root: Path, project: str) -> Path:
         print(f"office-system: project not found: {project}", file=sys.stderr)
         raise SystemExit(2)
     return path
+
+
+def load_project_record(root: Path, project: str) -> dict[str, Any] | None:
+    if not project:
+        return None
+    project_dir = ensure_project(root, project)
+    return read_json(project_dir / "project.json")
+
+
+def project_member(project_data: dict[str, Any] | None, user_id: str) -> dict[str, Any] | None:
+    if not project_data:
+        return None
+    for member in project_data.get("human_members", []) or []:
+        if member.get("user_id") == user_id and member.get("status", "active") == "active":
+            return member
+    return None
+
+
+def role_allows_action(role: str, action: str) -> bool:
+    allowed = ROLE_ACTIONS.get(role, set())
+    return "*" in allowed or action in allowed
+
+
+def compute_authorization_decision(
+    root: Path,
+    *,
+    tenant_id: str,
+    deployment_id: str,
+    user_id: str,
+    user_role: str,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+    project_id: str = "",
+    agent_id: str = "",
+    workflow_run_id: str = "",
+    reason: str = "",
+    audit: bool = True,
+) -> dict[str, Any]:
+    tenant_id = safe_claim(tenant_id, "tenant id")
+    deployment_id = safe_claim(deployment_id, "deployment id")
+    user_id = safe_claim(user_id, "user id")
+    user_role = safe_component(user_role, "user role")
+    action = safe_claim(action, "action")
+    resource_type = safe_component(resource_type, "resource type")
+    resource_id = safe_claim(resource_id, "resource id")
+    project_id = safe_component(project_id, "project id") if project_id else ""
+    agent_id = registered_agent(root, agent_id) if agent_id else ""
+    workflow_run_id = safe_claim(workflow_run_id, "workflow run id", required=False)
+
+    reasons: list[str] = []
+    project_data = load_project_record(root, project_id) if project_id else None
+    if not role_allows_action(user_role, action):
+        reasons.append(f"role {user_role} cannot perform {action}")
+
+    members = (project_data or {}).get("human_members", []) if project_data else []
+    if project_id and members and user_role not in TENANT_ADMIN_ROLES:
+        member = project_member(project_data, user_id)
+        if not member:
+            reasons.append("user is not an active project member")
+        elif member.get("role") and member.get("role") != user_role:
+            reasons.append("user role claim does not match project membership")
+
+    if action in {"workflow.start", "agent.delegate"} and project_data and agent_id:
+        roster = project_data.get("agent_roster", []) or []
+        global_intake_agent = action == "workflow.start" and agent_id == "secretary"
+        if agent_id not in roster and not global_intake_agent:
+            reasons.append("agent is not on the project roster")
+
+    if action == "regulated_output.approve" and user_role != "professional_reviewer":
+        reasons.append("regulated outputs require professional_reviewer approval")
+
+    allowed = not reasons
+    decision = {
+        "version": "1.0.0",
+        "kind": "digital-office-authorization-decision",
+        "decision_id": f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+        "allowed": allowed,
+        "outcome": "allow" if allowed else "deny",
+        "reasons": reasons,
+        "tenant_id": tenant_id,
+        "deployment_id": deployment_id,
+        "user_id": user_id,
+        "user_role": user_role,
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "project_id": project_id,
+        "agent_id": agent_id,
+        "workflow_run_id": workflow_run_id,
+        "reason": reason,
+        "created_at": now_iso(),
+    }
+    if audit:
+        event = append_audit_event(
+            root,
+            "authorization_decision",
+            actor_id=user_id,
+            actor_role=user_role,
+            tenant_id=tenant_id,
+            deployment_id=deployment_id,
+            project_id=project_id,
+            agent_id=agent_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            workflow_run_id=workflow_run_id,
+            outcome=decision["outcome"],
+            reason="; ".join(reasons) if reasons else reason,
+            extra={"action": action, "decision_id": decision["decision_id"]},
+        )
+        decision["audit_event_id"] = event["event_id"]
+    return decision
 
 
 def copy_template_project(root: Path, project_id: str, name: str, agents: list[str], schedule: str) -> Path:
@@ -712,6 +1061,736 @@ def create_project(args: argparse.Namespace) -> int:
     target = copy_template_project(root, project_id, args.name, agents, args.methodology_schedule)
     append_log(root, {"event": "project_create", "project": project_id})
     print(str(target))
+    return 0
+
+
+def run_record_path(root: Path, run_id: str) -> Path:
+    return root / "runs" / safe_component(run_id, "run id") / "run.json"
+
+
+def load_run_record(root: Path, run_id: str) -> dict[str, Any]:
+    path = run_record_path(root, run_id)
+    if not path.exists():
+        print(f"office-system: workflow run not found: {run_id}", file=sys.stderr)
+        raise SystemExit(2)
+    return read_json(path)
+
+
+def read_run_records(root: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for path in sorted((root / "runs").glob("*/run.json")):
+        try:
+            records.append(read_json(path))
+        except Exception:
+            continue
+    records.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
+    return records
+
+
+def find_run_by_idempotency(root: Path, key: str | None) -> dict[str, Any] | None:
+    if not key:
+        return None
+    for record in read_run_records(root):
+        if record.get("idempotency_key") == key:
+            return record
+    return None
+
+
+def loop_stage_records(root: Path) -> dict[str, Any]:
+    manifest = loop_manifest(root)
+    return {
+        stage: {
+            "status": "pending",
+            "required_artifacts": manifest["stages"][stage]["required_artifacts"],
+            "gates": [{"gate": gate, "status": "pending"} for gate in manifest["stages"][stage]["gates"]],
+            "artifacts": [],
+            "notes": [],
+        }
+        for stage in LOOP_STAGES
+    }
+
+
+def route_task(root: Path, task: str, requested_agent: str, workflow: str | None) -> dict[str, Any]:
+    router = root.parent / "scripts" / "agent-router"
+    if not router.exists():
+        print(f"office-system: agent router not found: {router}", file=sys.stderr)
+        raise SystemExit(2)
+    command = [str(router), "--route-json", "--agent", requested_agent or "auto"]
+    if workflow:
+        command.extend(["--workflow", workflow])
+    command.append(task)
+    proc = subprocess.run(
+        command,
+        text=True,
+        capture_output=True,
+        env={**os.environ, "HERMES_HOME": str(root.parent)},
+    )
+    if proc.returncode not in {0, 3}:
+        print(proc.stderr or proc.stdout or "office-system: route failed", file=sys.stderr)
+        raise SystemExit(proc.returncode)
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        print("office-system: router returned invalid JSON", file=sys.stderr)
+        raise SystemExit(1)
+
+
+def task_title(body: str) -> str:
+    compact = re.sub(r"\s+", " ", body).strip()
+    return compact[:80] or "Untitled task"
+
+
+def create_task_record(
+    root: Path,
+    *,
+    task_id: str,
+    title: str,
+    body: str,
+    status: str,
+    priority: str,
+    project_id: str,
+    agent_id: str,
+    workflow_run_id: str,
+    assigned_user: str,
+    requested_by: str,
+    route: dict[str, Any],
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    if status not in TASK_STATUSES:
+        print(f"office-system: invalid task status: {status}", file=sys.stderr)
+        raise SystemExit(2)
+    task = {
+        "version": "1.0.0",
+        "kind": "digital-office-task",
+        "task_id": task_id,
+        "title": title,
+        "body": body,
+        "status": status,
+        "priority": priority,
+        "project_id": project_id,
+        "agent_id": agent_id,
+        "assigned_agent": agent_id,
+        "assigned_user": assigned_user,
+        "requested_by": requested_by,
+        "workflow_run_id": workflow_run_id,
+        "route": route,
+        "idempotency_key": idempotency_key,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "history": [{"time": now_iso(), "status": status, "message": "task created"}],
+        "artifacts": [],
+    }
+    write_json(task_path(root, task_id), task)
+    return task
+
+
+def auth_decision(args: argparse.Namespace) -> int:
+    root = system_root()
+    decision = compute_authorization_decision(
+        root,
+        tenant_id=args.tenant,
+        deployment_id=args.deployment,
+        user_id=args.user,
+        user_role=args.role,
+        action=args.action,
+        resource_type=args.resource_type,
+        resource_id=args.resource_id,
+        project_id=args.project or "",
+        agent_id=args.agent or "",
+        workflow_run_id=args.workflow_run or "",
+        reason=args.reason or "",
+    )
+    print(json.dumps(decision, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if decision["allowed"] else 2
+
+
+def workflow_start(args: argparse.Namespace) -> int:
+    root = system_root()
+    body = args.task if args.task is not None else sys.stdin.read()
+    body = body.strip()
+    if not body:
+        print("office-system: workflow-start requires --task or stdin body", file=sys.stderr)
+        return 2
+    existing = find_run_by_idempotency(root, args.idempotency_key)
+    if existing:
+        print(json.dumps({"idempotent": True, "run": existing}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+
+    project = safe_component(args.project, "project id") if args.project else ""
+    if project:
+        ensure_project(root, project)
+    route = route_task(root, body, args.agent, args.workflow)
+    agent = registered_agent(root, str(route.get("agent", ""))) if route.get("agent") else ""
+    run_id = safe_component(args.run_id, "run id") if args.run_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    task_id = safe_component(args.task_id, "task id") if args.task_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    if run_record_path(root, run_id).exists():
+        print(f"office-system: workflow run already exists: {run_id}", file=sys.stderr)
+        return 2
+    if task_path(root, task_id).exists():
+        print(f"office-system: task already exists: {task_id}", file=sys.stderr)
+        return 2
+
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=args.tenant,
+        deployment_id=args.deployment,
+        user_id=args.user,
+        user_role=args.role,
+        action="workflow.start",
+        resource_type="workflow_run",
+        resource_id=run_id,
+        project_id=project,
+        agent_id=agent,
+        workflow_run_id=run_id,
+        reason=args.reason or "",
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+
+    needs_clarification = bool(route.get("fallback") or route.get("clarification_required"))
+    run_status = "blocked" if needs_clarification else "created"
+    task_status = "blocked" if needs_clarification else "queued"
+    run = {
+        "version": "1.0.0",
+        "kind": "digital-office-workflow-run",
+        "run_id": run_id,
+        "run_type": "workflow_run",
+        "status": run_status,
+        "current_stage": "perceive",
+        "project_id": project,
+        "agent_id": agent,
+        "workflow": route.get("workflow", ""),
+        "requested_by": safe_claim(args.user, "requested by"),
+        "requested_by_role": safe_component(args.role, "requested by role"),
+        "tenant_id": safe_claim(args.tenant, "tenant id"),
+        "deployment_id": safe_claim(args.deployment, "deployment id"),
+        "task": body,
+        "task_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+        "tasks": [task_id],
+        "approvals": [],
+        "route": route,
+        "authorization": auth,
+        "blockers": ["clarification_required"] if needs_clarification else [],
+        "idempotency_key": args.idempotency_key or "",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "stages": loop_stage_records(root),
+        "events": [{"time": now_iso(), "event": "workflow_started", "status": run_status}],
+    }
+    task = create_task_record(
+        root,
+        task_id=task_id,
+        title=args.title or task_title(body),
+        body=body,
+        status=task_status,
+        priority=args.priority,
+        project_id=project,
+        agent_id=agent,
+        workflow_run_id=run_id,
+        assigned_user=args.user,
+        requested_by=args.user,
+        route=route,
+        idempotency_key=args.idempotency_key or "",
+    )
+    write_json(run_record_path(root, run_id), run)
+    event = append_audit_event(
+        root,
+        "workflow_started",
+        actor_id=args.user,
+        actor_role=args.role,
+        tenant_id=args.tenant,
+        deployment_id=args.deployment,
+        project_id=project,
+        agent_id=agent,
+        resource_type="workflow_run",
+        resource_id=run_id,
+        workflow_run_id=run_id,
+        task_id=task_id,
+        outcome="blocked" if needs_clarification else "created",
+        reason="clarification required" if needs_clarification else args.reason or "",
+        extra={"workflow": run["workflow"], "route_confidence": route.get("confidence")},
+    )
+    emit_notification(
+        root,
+        user_id=args.user,
+        title="Workflow started" if not needs_clarification else "Workflow needs clarification",
+        body=task["title"],
+        topic="workflow",
+        resource_type="workflow_run",
+        resource_id=run_id,
+        severity="warning" if needs_clarification else "info",
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": run_id,
+                "task_id": task_id,
+                "status": run_status,
+                "task_status": task_status,
+                "route": route,
+                "authorization": auth,
+                "audit_event_id": event["event_id"],
+                "next_actions": ["workflow-status", "task-status", "approval-create"],
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def workflow_status(args: argparse.Namespace) -> int:
+    root = system_root()
+    print(json.dumps(load_run_record(root, args.run_id), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    project = safe_component(args.project, "project id") if args.project else ""
+    records = []
+    for run in read_run_records(root):
+        if args.status and run.get("status") != args.status:
+            continue
+        if project and run.get("project_id") != project:
+            continue
+        if args.user and run.get("requested_by") != args.user:
+            continue
+        records.append(run)
+        if len(records) >= args.limit:
+            break
+    print(json.dumps({"runs": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def linked_tasks(root: Path, run: dict[str, Any]) -> list[str]:
+    return [safe_component(task_id, "task id") for task_id in run.get("tasks", []) if task_id]
+
+
+def sync_run_status_from_tasks(root: Path, run_id: str) -> dict[str, Any] | None:
+    if not run_id:
+        return None
+    run = load_run_record(root, run_id)
+    task_ids = linked_tasks(root, run)
+    if not task_ids:
+        return run
+    tasks = [load_task(root, task_id) for task_id in task_ids]
+    statuses = {task.get("status") for task in tasks}
+    next_status = ""
+    event_name = ""
+    if statuses == {"completed"}:
+        next_status = "completed"
+        event_name = "workflow_completed"
+    elif "failed" in statuses:
+        next_status = "blocked"
+        event_name = "workflow_blocked_by_task_failure"
+        run.setdefault("blockers", [])
+        if "task_failed" not in run["blockers"]:
+            run["blockers"].append("task_failed")
+    elif statuses == {"cancelled"}:
+        next_status = "cancelled"
+        event_name = "workflow_cancelled_by_tasks"
+    elif "waiting_approval" in statuses:
+        next_status = "waiting_user_confirmation"
+        event_name = "workflow_waiting_for_task_approval"
+    if not next_status or run.get("status") == next_status:
+        return run
+    run["status"] = next_status
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": event_name, "task_statuses": sorted(str(item) for item in statuses)})
+    write_json(run_record_path(root, run_id), run)
+    return run
+
+
+def workflow_cancel(args: argparse.Namespace) -> int:
+    root = system_root()
+    if not args.confirmed:
+        print("office-system: workflow-cancel requires --confirmed", file=sys.stderr)
+        return 2
+    run = load_run_record(root, args.run_id)
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=run.get("tenant_id", "local"),
+        deployment_id=run.get("deployment_id", "local"),
+        user_id=args.requested_by,
+        user_role=args.role,
+        action="workflow.cancel",
+        resource_type="workflow_run",
+        resource_id=args.run_id,
+        project_id=run.get("project_id", ""),
+        agent_id=run.get("agent_id", ""),
+        workflow_run_id=args.run_id,
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    if run.get("status") in {"completed", "cancelled"}:
+        print("office-system: completed or cancelled workflow cannot be cancelled again", file=sys.stderr)
+        return 2
+    run["status"] = "cancelled"
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_cancelled", "reason": args.reason or ""})
+    for task_id in linked_tasks(root, run):
+        update_task_status(root, task_id, "cancelled", message=args.reason or "workflow cancelled", actor_id=args.requested_by or "", actor_role=args.role or "")
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(
+        root,
+        "workflow_cancelled",
+        actor_id=args.requested_by or "",
+        actor_role=args.role or "",
+        project_id=run.get("project_id", ""),
+        agent_id=run.get("agent_id", ""),
+        resource_type="workflow_run",
+        resource_id=args.run_id,
+        workflow_run_id=args.run_id,
+        outcome="cancelled",
+        reason=args.reason or "",
+    )
+    print(json.dumps({"run_id": args.run_id, "status": "cancelled"}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_resume(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=run.get("tenant_id", "local"),
+        deployment_id=run.get("deployment_id", "local"),
+        user_id=args.requested_by,
+        user_role=args.role,
+        action="workflow.resume",
+        resource_type="workflow_run",
+        resource_id=args.run_id,
+        project_id=run.get("project_id", ""),
+        agent_id=run.get("agent_id", ""),
+        workflow_run_id=args.run_id,
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    if run.get("status") == "cancelled":
+        print("office-system: cancelled workflow must be retried instead of resumed", file=sys.stderr)
+        return 2
+    if run.get("status") == "completed":
+        print("office-system: completed workflow cannot be resumed", file=sys.stderr)
+        return 2
+    run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+    run["updated_at"] = now_iso()
+    run.setdefault("blockers", [])
+    run["blockers"] = [item for item in run["blockers"] if item != "clarification_required"]
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_resumed", "reason": args.reason or ""})
+    for task_id in linked_tasks(root, run):
+        task = load_task(root, task_id)
+        if task.get("status") in {"blocked", "waiting_approval"}:
+            update_task_status(root, task_id, "queued", message=args.reason or "workflow resumed", actor_id=args.requested_by or "", actor_role=args.role or "")
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(root, "workflow_resumed", actor_id=args.requested_by or "", actor_role=args.role or "", project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome="resumed", reason=args.reason or "")
+    print(json.dumps({"run_id": args.run_id, "status": run["status"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_retry(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=run.get("tenant_id", "local"),
+        deployment_id=run.get("deployment_id", "local"),
+        user_id=args.requested_by,
+        user_role=args.role,
+        action="workflow.retry",
+        resource_type="workflow_run",
+        resource_id=args.run_id,
+        project_id=run.get("project_id", ""),
+        agent_id=run.get("agent_id", ""),
+        workflow_run_id=args.run_id,
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    stage = args.stage or run.get("current_stage") or "perceive"
+    if stage not in LOOP_STAGES:
+        print(f"office-system: invalid retry stage: {stage}", file=sys.stderr)
+        return 2
+    retry = {
+        "time": now_iso(),
+        "stage": stage,
+        "requested_by": safe_claim(args.requested_by, "requested by", required=False),
+        "reason": args.reason or "",
+    }
+    run.setdefault("retries", []).append(retry)
+    run["current_stage"] = stage
+    run["status"] = LOOP_STATUS_BY_STAGE.get(stage, "created")
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_retry", "stage": stage, "reason": args.reason or ""})
+    stage_state = run.setdefault("stages", {}).setdefault(stage, {"artifacts": [], "notes": [], "gates": []})
+    stage_state["status"] = "pending"
+    for task_id in linked_tasks(root, run):
+        task = load_task(root, task_id)
+        if task.get("status") in {"failed", "blocked", "cancelled"}:
+            update_task_status(root, task_id, "queued", message=args.reason or "workflow retry", actor_id=args.requested_by or "", actor_role=args.role or "")
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(root, "workflow_retry", actor_id=args.requested_by or "", actor_role=args.role or "", project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome="retry_scheduled", reason=args.reason or "", extra={"stage": stage})
+    print(json.dumps({"run_id": args.run_id, "stage": stage, "status": run["status"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def task_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    project = safe_component(args.project, "project id") if args.project else ""
+    records = []
+    for task in read_records(root / "tasks", "digital-office-task"):
+        if args.status and task.get("status") != args.status:
+            continue
+        if project and task.get("project_id") != project:
+            continue
+        if args.assigned_agent and task.get("assigned_agent") != args.assigned_agent:
+            continue
+        if args.assigned_user and task.get("assigned_user") != args.assigned_user:
+            continue
+        records.append(task)
+        if len(records) >= args.limit:
+            break
+    print(json.dumps({"tasks": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def task_status(args: argparse.Namespace) -> int:
+    root = system_root()
+    print(json.dumps(load_task(root, args.task_id), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def task_update(args: argparse.Namespace) -> int:
+    root = system_root()
+    task = load_task(root, args.task_id)
+    run = load_run_record(root, task["workflow_run_id"]) if task.get("workflow_run_id") else {}
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=run.get("tenant_id", "local"),
+        deployment_id=run.get("deployment_id", "local"),
+        user_id=args.updated_by,
+        user_role=args.role,
+        action="task.manage",
+        resource_type="task",
+        resource_id=args.task_id,
+        project_id=task.get("project_id", ""),
+        agent_id=task.get("assigned_agent", ""),
+        workflow_run_id=task.get("workflow_run_id", ""),
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    if args.status:
+        task = update_task_status(root, args.task_id, args.status, message=args.summary or "", actor_id=args.updated_by or "", actor_role=args.role or "")
+    if args.assigned_agent:
+        task["assigned_agent"] = registered_agent(root, args.assigned_agent)
+    if args.assigned_user:
+        task["assigned_user"] = safe_claim(args.assigned_user, "assigned user")
+    for artifact in args.artifact or []:
+        task.setdefault("artifacts", []).append(safe_claim(artifact, "artifact"))
+    task["updated_at"] = now_iso()
+    write_json(task_path(root, args.task_id), task)
+    if task.get("workflow_run_id"):
+        sync_run_status_from_tasks(root, task["workflow_run_id"])
+    append_audit_event(root, "task_updated", actor_id=args.updated_by or "", actor_role=args.role or "", project_id=task.get("project_id", ""), agent_id=task.get("assigned_agent", ""), resource_type="task", resource_id=args.task_id, workflow_run_id=task.get("workflow_run_id", ""), task_id=args.task_id, outcome=task.get("status", "updated"), reason=args.summary or "")
+    print(json.dumps(task, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def approval_create(args: argparse.Namespace) -> int:
+    root = system_root()
+    existing = find_by_idempotency(root, "approvals", args.idempotency_key)
+    if existing:
+        print(json.dumps({"idempotent": True, "approval": existing}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    approval_id = safe_component(args.approval_id, "approval id") if args.approval_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    if approval_path(root, approval_id).exists():
+        print(f"office-system: approval already exists: {approval_id}", file=sys.stderr)
+        return 2
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=args.tenant,
+        deployment_id=args.deployment,
+        user_id=args.requested_by,
+        user_role=args.requested_by_role,
+        action="approval.create",
+        resource_type=args.resource_type,
+        resource_id=args.resource_id,
+        project_id=project,
+        agent_id=agent,
+        workflow_run_id=args.workflow_run or "",
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-approval",
+        "approval_id": approval_id,
+        "status": "pending",
+        "title": args.title,
+        "body": args.body or "",
+        "action": safe_claim(args.action, "approval action"),
+        "resource_type": safe_component(args.resource_type, "resource type"),
+        "resource_id": safe_claim(args.resource_id, "resource id"),
+        "tenant_id": safe_claim(args.tenant, "tenant id"),
+        "deployment_id": safe_claim(args.deployment, "deployment id"),
+        "project_id": project,
+        "agent_id": agent,
+        "workflow_run_id": safe_claim(args.workflow_run, "workflow run id", required=False),
+        "task_id": safe_claim(args.task_id, "task id", required=False),
+        "requested_by": safe_claim(args.requested_by, "requested by"),
+        "requested_by_role": safe_component(args.requested_by_role, "requested by role"),
+        "approver_role": safe_component(args.approver_role, "approver role"),
+        "risk": args.risk or "",
+        "expires_at": safe_claim(args.expires_at, "expires at", required=False),
+        "idempotency_key": args.idempotency_key or "",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "decisions": [],
+    }
+    write_json(approval_path(root, approval_id), record)
+    if record["task_id"]:
+        update_task_status(root, record["task_id"], "waiting_approval", message=f"waiting for approval {approval_id}", actor_id=args.requested_by, actor_role=args.requested_by_role)
+    if record["workflow_run_id"]:
+        run = load_run_record(root, record["workflow_run_id"])
+        run.setdefault("approvals", []).append(approval_id)
+        run["status"] = "waiting_user_confirmation"
+        run["updated_at"] = now_iso()
+        run.setdefault("events", []).append({"time": run["updated_at"], "event": "approval_requested", "approval_id": approval_id})
+        write_json(run_record_path(root, record["workflow_run_id"]), run)
+    event = append_audit_event(root, "approval_created", actor_id=args.requested_by, actor_role=args.requested_by_role, tenant_id=args.tenant, deployment_id=args.deployment, project_id=project, agent_id=agent, resource_type="approval", resource_id=approval_id, workflow_run_id=record["workflow_run_id"], task_id=record["task_id"], approval_id=approval_id, outcome="pending", reason=args.title)
+    emit_notification(root, user_id="", title="Approval requested", body=args.title, topic="approval", resource_type="approval", resource_id=approval_id, severity="warning")
+    print(json.dumps({"approval": record, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def approval_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    project = safe_component(args.project, "project id") if args.project else ""
+    records = []
+    for approval in read_records(root / "approvals", "digital-office-approval"):
+        if args.status and approval.get("status") != args.status:
+            continue
+        if project and approval.get("project_id") != project:
+            continue
+        if args.approver_role and approval.get("approver_role") != args.approver_role:
+            continue
+        records.append(approval)
+        if len(records) >= args.limit:
+            break
+    print(json.dumps({"approvals": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def approval_decision(args: argparse.Namespace) -> int:
+    root = system_root()
+    if args.decision in {"approve", "reject"} and not args.confirmed:
+        print("office-system: approval decision requires --confirmed", file=sys.stderr)
+        return 2
+    approval = load_approval(root, args.approval_id)
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=approval.get("tenant_id", "local"),
+        deployment_id=approval.get("deployment_id", "local"),
+        user_id=args.decided_by,
+        user_role=args.role,
+        action="approval.decide",
+        resource_type="approval",
+        resource_id=args.approval_id,
+        project_id=approval.get("project_id", ""),
+        agent_id=approval.get("agent_id", ""),
+        workflow_run_id=approval.get("workflow_run_id", ""),
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    if approval.get("status") != "pending":
+        print("office-system: approval is not pending", file=sys.stderr)
+        return 2
+    if approval.get("approver_role") == "professional_reviewer" and args.role != "professional_reviewer":
+        print("office-system: this approval requires professional_reviewer", file=sys.stderr)
+        return 2
+    if args.role not in TENANT_ADMIN_ROLES and args.role != approval.get("approver_role"):
+        print("office-system: actor role does not match required approver role", file=sys.stderr)
+        return 2
+    status = APPROVAL_DECISION_TO_STATUS[args.decision]
+    approval["status"] = status
+    approval["updated_at"] = now_iso()
+    approval["decisions"].append({"time": approval["updated_at"], "decision": args.decision, "decided_by": args.decided_by, "role": args.role, "message": args.message or ""})
+    write_json(approval_path(root, args.approval_id), approval)
+    if approval.get("task_id"):
+        update_task_status(root, approval["task_id"], "queued" if status == "approved" else "blocked", message=args.message or f"approval {status}", actor_id=args.decided_by, actor_role=args.role)
+    if approval.get("workflow_run_id"):
+        run = load_run_record(root, approval["workflow_run_id"])
+        if status == "approved":
+            run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+        else:
+            run["status"] = "blocked"
+            run.setdefault("blockers", []).append(f"approval_{status}")
+        run["updated_at"] = now_iso()
+        run.setdefault("events", []).append({"time": run["updated_at"], "event": "approval_decision", "approval_id": args.approval_id, "status": status})
+        write_json(run_record_path(root, approval["workflow_run_id"]), run)
+    event = append_audit_event(root, "approval_decision", actor_id=args.decided_by, actor_role=args.role, tenant_id=approval.get("tenant_id", ""), deployment_id=approval.get("deployment_id", ""), project_id=approval.get("project_id", ""), agent_id=approval.get("agent_id", ""), resource_type="approval", resource_id=args.approval_id, workflow_run_id=approval.get("workflow_run_id", ""), task_id=approval.get("task_id", ""), approval_id=args.approval_id, outcome=status, reason=args.message or "")
+    emit_notification(root, user_id=approval.get("requested_by", ""), title=f"Approval {status}", body=approval.get("title", ""), topic="approval", resource_type="approval", resource_id=args.approval_id, severity="info" if status == "approved" else "warning")
+    print(json.dumps({"approval": approval, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def audit_events(args: argparse.Namespace) -> int:
+    root = system_root()
+    path = root / "logs" / "audit-events.jsonl"
+    records = []
+    if path.exists():
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if args.event and event.get("event") != args.event:
+                    continue
+                if args.resource_type and event.get("resource", {}).get("type") != args.resource_type:
+                    continue
+                if args.resource_id and event.get("resource", {}).get("id") != args.resource_id:
+                    continue
+                records.append(event)
+    records = records[-args.limit :]
+    print(json.dumps({"events": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def notification_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    records = []
+    for notification in read_records(root / "notifications", "digital-office-notification"):
+        if args.user and notification.get("user_id") not in {"", args.user}:
+            continue
+        if args.unread_only and notification.get("status") != "unread":
+            continue
+        records.append(notification)
+        if len(records) >= args.limit:
+            break
+    print(json.dumps({"notifications": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def notification_mark_read(args: argparse.Namespace) -> int:
+    root = system_root()
+    notification = read_json(notification_path(root, args.notification_id))
+    notification["status"] = "read"
+    notification["read_at"] = now_iso()
+    write_json(notification_path(root, args.notification_id), notification)
+    append_log(root, {"event": "notification_read", "notification_id": args.notification_id, "user_id": args.user or ""})
+    print(json.dumps(notification, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -2028,6 +3107,11 @@ def health(args: argparse.Namespace) -> int:
         "rules_registry": (root / "rules" / "rules.registry.json").exists(),
         "multimodal_pipeline": (root / "multimodal.pipeline.json").exists(),
         "rag_pipeline": (root / "rag.pipeline.json").exists(),
+        "workflow_runs_dir": (root / "runs").exists(),
+        "task_inbox_dir": (root / "tasks").exists(),
+        "approval_center_dir": (root / "approvals").exists(),
+        "notifications_dir": (root / "notifications").exists(),
+        "audit_logs_dir": (root / "logs").exists(),
         "tesseract": bool(shutil.which("tesseract")),
         "pdftotext": bool(shutil.which("pdftotext")),
         "rapidocr_onnxruntime": bool(importlib.util.find_spec("rapidocr_onnxruntime")),
@@ -2037,7 +3121,22 @@ def health(args: argparse.Namespace) -> int:
         "python_docx_builtin": True,
     }
     print(json.dumps(checks, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if all(checks[k] for k in ("agents_registry", "knowledge_registry", "identity_access_registry", "industry_solutions_registry", "external_knowledge_sources_registry", "ai_native_loop_manifest", "rules_registry", "multimodal_pipeline")) else 1
+    required = (
+        "agents_registry",
+        "knowledge_registry",
+        "identity_access_registry",
+        "industry_solutions_registry",
+        "external_knowledge_sources_registry",
+        "ai_native_loop_manifest",
+        "rules_registry",
+        "multimodal_pipeline",
+        "workflow_runs_dir",
+        "task_inbox_dir",
+        "approval_center_dir",
+        "notifications_dir",
+        "audit_logs_dir",
+    )
+    return 0 if all(checks[k] for k in required) else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2092,6 +3191,149 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workflow-run")
     p.add_argument("--session")
     p.set_defaults(func=identity_context)
+
+    p = sub.add_parser("auth-decision")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--action", required=True)
+    p.add_argument("--resource-type", required=True)
+    p.add_argument("--resource-id", required=True)
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--workflow-run")
+    p.add_argument("--reason")
+    p.set_defaults(func=auth_decision)
+
+    p = sub.add_parser("workflow-start")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--task")
+    p.add_argument("--title")
+    p.add_argument("--project")
+    p.add_argument("--agent", default="auto")
+    p.add_argument("--workflow")
+    p.add_argument("--priority", choices=["low", "normal", "high", "urgent"], default="normal")
+    p.add_argument("--run-id")
+    p.add_argument("--task-id")
+    p.add_argument("--idempotency-key")
+    p.add_argument("--reason")
+    p.set_defaults(func=workflow_start)
+
+    p = sub.add_parser("workflow-status")
+    p.add_argument("--run-id", required=True)
+    p.set_defaults(func=workflow_status)
+
+    p = sub.add_parser("workflow-list")
+    p.add_argument("--status")
+    p.add_argument("--project")
+    p.add_argument("--user")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=workflow_list)
+
+    p = sub.add_parser("workflow-cancel")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=workflow_cancel)
+
+    p = sub.add_parser("workflow-resume")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.set_defaults(func=workflow_resume)
+
+    p = sub.add_parser("workflow-retry")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.set_defaults(func=workflow_retry)
+
+    p = sub.add_parser("task-list")
+    p.add_argument("--status", choices=sorted(TASK_STATUSES))
+    p.add_argument("--project")
+    p.add_argument("--assigned-agent")
+    p.add_argument("--assigned-user")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=task_list)
+
+    p = sub.add_parser("task-status")
+    p.add_argument("--task-id", required=True)
+    p.set_defaults(func=task_status)
+
+    p = sub.add_parser("task-update")
+    p.add_argument("--task-id", required=True)
+    p.add_argument("--status", choices=sorted(TASK_STATUSES))
+    p.add_argument("--summary")
+    p.add_argument("--artifact", action="append")
+    p.add_argument("--assigned-agent")
+    p.add_argument("--assigned-user")
+    p.add_argument("--updated-by", required=True)
+    p.add_argument("--role", required=True)
+    p.set_defaults(func=task_update)
+
+    p = sub.add_parser("approval-create")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--body")
+    p.add_argument("--action", required=True)
+    p.add_argument("--resource-type", required=True)
+    p.add_argument("--resource-id", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--requested-by-role", required=True)
+    p.add_argument("--approver-role", default="project_manager")
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--workflow-run")
+    p.add_argument("--task-id")
+    p.add_argument("--risk")
+    p.add_argument("--expires-at")
+    p.add_argument("--approval-id")
+    p.add_argument("--idempotency-key")
+    p.set_defaults(func=approval_create)
+
+    p = sub.add_parser("approval-list")
+    p.add_argument("--status", choices=sorted(APPROVAL_STATUSES))
+    p.add_argument("--project")
+    p.add_argument("--approver-role")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=approval_list)
+
+    p = sub.add_parser("approval-decision")
+    p.add_argument("--approval-id", required=True)
+    p.add_argument("--decision", choices=["approve", "reject", "cancel"], required=True)
+    p.add_argument("--decided-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--message")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=approval_decision)
+
+    p = sub.add_parser("audit-events")
+    p.add_argument("--event")
+    p.add_argument("--resource-type")
+    p.add_argument("--resource-id")
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=audit_events)
+
+    p = sub.add_parser("notification-list")
+    p.add_argument("--user")
+    p.add_argument("--unread-only", action="store_true")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=notification_list)
+
+    p = sub.add_parser("notification-mark-read")
+    p.add_argument("--notification-id", required=True)
+    p.add_argument("--user")
+    p.set_defaults(func=notification_mark_read)
 
     p = sub.add_parser("loop-start")
     p.add_argument("--run-id")

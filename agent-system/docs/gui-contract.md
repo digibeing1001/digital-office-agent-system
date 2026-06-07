@@ -44,6 +44,50 @@ Production harness:
 - The GUI should show failed gates as rework actions, not as raw CLI errors.
 - External high-star skill sources are candidates only. They must be staged, reviewed, adapted, verified, and approved before enterprise use.
 
+Workflow control plane:
+
+The GUI should prefer the workflow control plane for normal users. It creates a workflow run, task inbox item, authorization decision, audit event, and notification in one transaction.
+
+```bash
+~/.hermes/agent-system/bin/office-system workflow-start --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --task "<task>"
+~/.hermes/agent-system/bin/office-system workflow-status --run-id <run_id>
+~/.hermes/agent-system/bin/office-system workflow-list --project <project_id>
+~/.hermes/agent-system/bin/office-system workflow-resume --run-id <run_id> --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-retry --run-id <run_id> --stage execute --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-cancel --run-id <run_id> --requested-by <user_id> --role <role> --confirmed
+```
+
+Task inbox:
+
+```bash
+~/.hermes/agent-system/bin/office-system task-list --project <project_id>
+~/.hermes/agent-system/bin/office-system task-status --task-id <task_id>
+~/.hermes/agent-system/bin/office-system task-update --task-id <task_id> --status completed --updated-by <user_id> --role <role>
+```
+
+Approval center:
+
+```bash
+~/.hermes/agent-system/bin/office-system approval-create --tenant <tenant_id> --deployment <deployment_id> --title "<title>" --action workflow.continue --resource-type workflow_run --resource-id <run_id> --requested-by <user_id> --requested-by-role <role> --approver-role project_manager --workflow-run <run_id> --task-id <task_id>
+~/.hermes/agent-system/bin/office-system approval-list --status pending
+~/.hermes/agent-system/bin/office-system approval-decision --approval-id <approval_id> --decision approve --decided-by <user_id> --role <role> --confirmed
+```
+
+Authorization, audit, and notifications:
+
+```bash
+~/.hermes/agent-system/bin/office-system auth-decision --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --action workflow.start --resource-type workflow_run --resource-id <run_id> --project <project_id> --agent <agent_id>
+~/.hermes/agent-system/bin/office-system audit-events --resource-type workflow_run --resource-id <run_id>
+~/.hermes/agent-system/bin/office-system notification-list --user <user_id> --unread-only
+~/.hermes/agent-system/bin/office-system notification-mark-read --notification-id <notification_id> --user <user_id>
+```
+
+- `workflow-start` is the GUI-safe entrypoint for production work. Raw `loop-start` remains available for lower-level AI-native loop instrumentation.
+- `workflow-start` stores the router decision, task, authorization decision, run stages, audit link, and notification link.
+- Low-confidence or fallback routes become blocked workflow runs assigned to the secretary for clarification instead of being silently dispatched.
+- Approval approve/reject actions and workflow cancel actions require explicit `--confirmed`.
+- Audit events are append-only JSONL records with a lightweight hash chain through `previous_event_hash` and `event_hash`.
+
 AI Native Product Loop:
 
 The production loop is Perceive, Plan, Execute, Reflect, Iterate. The GUI should render it as five visible stages rather than a hidden background process.

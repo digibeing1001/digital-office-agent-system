@@ -51,7 +51,13 @@ def main() -> int:
         require(role in harness.get("role_gates", {}), errors, f"harness role gate missing: {role}")
     for workflow in ("pm_to_design", "pm_to_design_to_code"):
         require(workflow in harness.get("workflow_gates", {}), errors, f"harness workflow gate missing: {workflow}")
-    for task_id in ("vibe-design-production", "vibe-coding-production", "portable-routing-production", "ai-native-loop-production"):
+    for task_id in (
+        "vibe-design-production",
+        "vibe-coding-production",
+        "portable-routing-production",
+        "ai-native-loop-production",
+        "workflow-control-plane-production",
+    ):
         require(any(read_json(path).get("task_id") == task_id for path in tasks), errors, f"harness task missing: {task_id}")
     for stage in ("perceive", "plan", "execute", "reflect", "iterate"):
         require(stage in loop_manifest.get("stages", {}), errors, f"AI native loop stage missing: {stage}")

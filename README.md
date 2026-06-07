@@ -8,6 +8,9 @@
 
 - 多 Agent 办公室：秘书、PM、研究员、规划师、设计师、工程师、写作者等数字员工通过统一注册表和路由器协作。
 - 智能路由：`scripts/agent-router` 读取 `agent-system/agents.registry.json`，先判断任务所需角色，再映射到当前部署的 Agent，避免把产品逻辑硬编码到某几个 Agent 名称上。
+- 工作流控制面：普通用户从 GUI 发起任务时，系统会同时创建 WorkflowRun、任务记录、权限决策、审计事件和通知，而不是只把一句话丢给 Agent。
+- 任务台与审批中心：任务可以排队、阻塞、等待审批、完成、失败、取消；高风险动作通过审批中心确认，审批通过或拒绝都会回写任务和工作流状态。
+- 权限、审计和通知：工作流启动、任务更新、审批决策等关键动作都会经过角色权限判断，并写入带 hash 链的审计日志，GUI 可以展示通知和未读提醒。
 - AI native 闭环：每个生产任务按照“感知、规划、执行、反思及迭代”推进，并留下可回放记录。
 - 显式迭代：系统可以提出改进建议，但不能未经用户确认就自我修改。迭代必须显示变更内容、原因、影响、风险、回滚和回归检查。
 - 双层知识库：公司全局知识库保存长期方法论和组织规则，项目知识库保存项目资料、过程文件和阶段决策。
@@ -30,6 +33,7 @@
   |
   +-- 项目、用户、角色、权限、授权知识库
   +-- AI native 闭环记录
+  +-- WorkflowRun、任务台、审批中心、审计日志、通知
   +-- Agent 请求、插件包、发布更新
   |
   v
@@ -66,6 +70,43 @@ Hermes Runtime
 ~/.hermes/agent-system/bin/office-system iteration-proposal-decision --proposal-id <proposal_id> --decision confirm
 ~/.hermes/agent-system/bin/office-system iteration-proposal-apply --proposal-id <proposal_id> --confirmed --regression-result "<result>"
 ```
+
+## 工作流、任务台和审批中心
+
+面向 GUI 的主入口是 `workflow-start`。它会先调用路由器判断该由哪个 Agent 或多 Agent 工作流承接，再写入可追踪的运行记录。低置信度任务不会被静默派发，而是进入秘书澄清流程。
+
+典型用户路径：
+
+1. 用户在 GUI 中选择项目并输入任务。
+2. 系统创建 WorkflowRun 和任务台记录，写入权限决策、路由结果、审计事件和通知。
+3. 如果任务需要人工确认，GUI 在审批中心展示审批项。
+4. 审批通过后，任务回到队列，工作流继续执行。
+5. 任务完成、失败、取消、恢复或重试都会继续写入审计和任务历史。
+
+相关命令：
+
+```bash
+~/.hermes/agent-system/bin/office-system workflow-start --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --task "<task>"
+~/.hermes/agent-system/bin/office-system workflow-status --run-id <run_id>
+~/.hermes/agent-system/bin/office-system workflow-list --project <project_id>
+~/.hermes/agent-system/bin/office-system workflow-resume --run-id <run_id> --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-retry --run-id <run_id> --stage execute --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-cancel --run-id <run_id> --requested-by <user_id> --role <role> --confirmed
+
+~/.hermes/agent-system/bin/office-system task-list --project <project_id>
+~/.hermes/agent-system/bin/office-system task-status --task-id <task_id>
+~/.hermes/agent-system/bin/office-system task-update --task-id <task_id> --status completed --updated-by <user_id> --role <role>
+
+~/.hermes/agent-system/bin/office-system approval-create --tenant <tenant_id> --deployment <deployment_id> --title "<title>" --action workflow.continue --resource-type workflow_run --resource-id <run_id> --requested-by <user_id> --requested-by-role <role> --approver-role project_manager --workflow-run <run_id> --task-id <task_id>
+~/.hermes/agent-system/bin/office-system approval-list --status pending
+~/.hermes/agent-system/bin/office-system approval-decision --approval-id <approval_id> --decision approve --decided-by <user_id> --role <role> --confirmed
+
+~/.hermes/agent-system/bin/office-system auth-decision --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --action workflow.start --resource-type workflow_run --resource-id <run_id> --project <project_id> --agent <agent_id>
+~/.hermes/agent-system/bin/office-system audit-events --resource-type workflow_run --resource-id <run_id>
+~/.hermes/agent-system/bin/office-system notification-list --user <user_id> --unread-only
+```
+
+这部分是未来数字办公室 GUI 的底座：用户看到的是“任务、审批、通知、进度和交付”，底层才是 Hermes、Agent 和命令行。
 
 ## 多 Agent 路由
 
@@ -215,6 +256,11 @@ bash agent-system/tests/smoke.sh
     |-- bin/
     |-- knowledge/
     |-- projects/
+    |-- runs/
+    |-- tasks/
+    |-- approvals/
+    |-- notifications/
+    |-- logs/
     `-- rules/
 ```
 

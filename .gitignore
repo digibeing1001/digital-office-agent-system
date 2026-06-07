@@ -4,10 +4,17 @@ __pycache__/
 *.pyc
 *.bak.*
 
-agent-system/logs/
+agent-system/logs/*
+!agent-system/logs/.gitignore
 agent-system/tmp/
 agent-system/runs/*
 !agent-system/runs/.gitignore
+agent-system/tasks/*
+!agent-system/tasks/.gitignore
+agent-system/approvals/*
+!agent-system/approvals/.gitignore
+agent-system/notifications/*
+!agent-system/notifications/.gitignore
 agent-system/iterations/proposals/*
 !agent-system/iterations/proposals/.gitignore
 agent-system/iterations/status/*
