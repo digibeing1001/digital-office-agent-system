@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "task_id": "ai-native-loop-production",
+  "description": "Verify the AI native product loop: perceive, plan, execute, reflect, iterate, with explicit user-confirmed iteration.",
+  "roles": [
+    "intake",
+    "product",
+    "design",
+    "implementation",
+    "reflection"
+  ],
+  "workflow": "ai_native_loop",
+  "gates": [
+    {
+      "id": "loop_manifest_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/ai-native-loop.manifest.json"
+    },
+    {
+      "id": "all_loop_stages_exist",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/ai-native-loop.manifest.json",
+      "json_path": [
+        "stages",
+        "iterate",
+        "gates"
+      ],
+      "contains": "no_auto_iteration_without_user_confirmation"
+    },
+    {
+      "id": "silent_iteration_forbidden",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/ai-native-loop.manifest.json",
+      "json_path": [
+        "stages",
+        "iterate",
+        "forbidden"
+      ],
+      "contains": "silent self-iteration"
+    },
+    {
+      "id": "secretary_loop_policy_present",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "SOUL.md",
+      "patterns": [
+        "Perceive, Plan, Execute, Reflect, Iterate",
+        "Iteration is never automatic",
+        "Confirm, Tune Through Conversation, Pause, Reject"
+      ]
+    },
+    {
+      "id": "gui_loop_contract_present",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/gui-contract.md",
+      "patterns": [
+        "AI Native Product Loop",
+        "loop-start",
+        "iteration-proposal-create",
+        "iteration-proposal-apply"
+      ]
+    },
+    {
+      "id": "loop_cli_and_user_confirmation_work",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; ./agent-system/bin/office-system loop-start --run-id loop-test --task 'Build a governed AI native product loop' >/dev/null; ./agent-system/bin/office-system loop-stage --run-id loop-test --stage perceive --status started --summary 'Context gathered' >/dev/null; ./agent-system/bin/office-system iteration-proposal-create --title 'Tighten workflow gate' --target harness --summary 'Add a regression gate after reflection' --body 'Add a harness check after reflection.' --expected-impact 'Fewer workflow drifts' --risk 'Could slow delivery' --rollback 'Remove the proposed gate' --run-id loop-test --regression-check 'harness-runner --task all --no-write' > \"$tmp/proposal.json\"; pid=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[\"proposal_id\"])' \"$tmp/proposal.json\"); set +e; ./agent-system/bin/office-system iteration-proposal-apply --proposal-id \"$pid\" > \"$tmp/apply.out\" 2> \"$tmp/apply.err\"; code=$?; set -e; test \"$code\" -ne 0; ./agent-system/bin/office-system iteration-proposal-decision --proposal-id \"$pid\" --decision confirm --message 'User confirmed' >/dev/null; ./agent-system/bin/office-system iteration-proposal-apply --proposal-id \"$pid\" --confirmed --regression-result 'harness passed' --artifact 'agent-system/harness/tasks/ai-native-loop-production.json' > \"$tmp/apply-ok.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"status\"] == \"applied_verified\"' \"$tmp/apply-ok.json\""
+      ]
+    }
+  ]
+}

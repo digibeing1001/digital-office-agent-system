@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "task_id": "portable-routing-production",
+  "description": "Verify role-based routing and portable workflow orchestration for migration beyond the current Agent names.",
+  "roles": ["intake", "product", "design", "implementation"],
+  "workflow": "role_based_router",
+  "gates": [
+    {
+      "id": "orchestration_roles_exist",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/agents.registry.json",
+      "json_path": ["orchestration_roles", "implementation", "preferred_agents"],
+      "contains": "coder"
+    },
+    {
+      "id": "workflow_uses_role_steps",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/agents.registry.json",
+      "json_path": ["workflows", "pm_to_design_to_code", "steps"],
+      "equals": ["@role:product", "@role:design", "@role:implementation"]
+    },
+    {
+      "id": "secretary_role_first_policy",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "SOUL.md",
+      "patterns": ["Portable role selection", "Do not assume these roles always map to the current Agent names"]
+    },
+    {
+      "id": "router_health_passes",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": ["scripts/agent-router", "--health"]
+    },
+    {
+      "id": "role_workflow_route_stable",
+      "type": "route",
+      "prompt": "research competitors, decide product requirements, design the interface, then implement the code",
+      "expect_agent": "coder",
+      "expect_workflow": "pm_to_design_to_code",
+      "expect_steps": ["pm", "vibe-designer", "coder"]
+    }
+  ]
+}

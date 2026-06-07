@@ -20,6 +20,7 @@ cp "$SOURCE_DIR/SOUL.md" "$TARGET/SOUL.md"
 chmod +x "$TARGET/scripts/agent-router"
 chmod +x "$TARGET/agent-system/bin/office-system"
 chmod +x "$TARGET/agent-system/bin/harness-check"
+chmod +x "$TARGET/agent-system/bin/harness-runner"
 chmod +x "$TARGET/agent-system/bin/install-local-models"
 chmod +x "$TARGET/agent-system/bin/update-system"
 chmod +x "$TARGET/agent-system/bin/product-update"
@@ -27,6 +28,7 @@ chmod +x "$TARGET/agent-system/bin/product-update"
 "$TARGET/scripts/agent-router" --health
 "$TARGET/agent-system/bin/office-system" health
 "$TARGET/agent-system/bin/harness-check"
+"$TARGET/agent-system/bin/harness-runner" --task all --no-write
 "$TARGET/agent-system/bin/product-update" status
 
 echo "Digital Office Agent System installed to $TARGET"

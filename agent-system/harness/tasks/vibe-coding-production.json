@@ -1,0 +1,69 @@
+{
+  "version": "1.0.0",
+  "task_id": "vibe-coding-production",
+  "description": "Verify that vibe coding has production-ready deterministic checks, skill guidance, and implementation gates.",
+  "roles": ["implementation"],
+  "workflow": "pm_to_design_to_code",
+  "gates": [
+    {
+      "id": "coding_skill_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "skills/vibe-coding-production-harness/SKILL.md"
+    },
+    {
+      "id": "coding_skill_has_required_gates",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "skills/vibe-coding-production-harness/SKILL.md",
+      "patterns": ["Required Gates", "deterministic tests", "Output Contract"]
+    },
+    {
+      "id": "implementation_gate_configured",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/harness/production-gates.json",
+      "json_path": ["role_gates", "implementation", "minimum_gates"],
+      "contains": "deterministic_tests_pass"
+    },
+    {
+      "id": "python_tools_compile",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": ["python3", "-m", "py_compile", "agent-system/bin/harness-check", "agent-system/bin/harness-runner", "agent-system/bin/office-system.py", "scripts/agent-router"]
+    },
+    {
+      "id": "router_health_passes",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": ["scripts/agent-router", "--health"]
+    },
+    {
+      "id": "json_files_valid",
+      "type": "json_valid",
+      "cwd": "hermes_home",
+      "patterns": ["agent-system/*.json", "agent-system/harness/*.json", "agent-system/harness/tasks/*.json", "agent-system/agent-requests/*.json", "agent-system/data-sharing/*.json", "agent-system/projects/_template/*.json", "agent-system/rules/*.json"]
+    },
+    {
+      "id": "secret_scan_has_no_hits",
+      "type": "regex_absent",
+      "cwd": "hermes_home",
+      "paths": [
+        "agent-system",
+        "scripts",
+        "skills/agent-team-staffing",
+        "skills/vibe-coding-production-harness",
+        "skills/vibe-design-production-harness"
+      ],
+      "pattern": "(sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9_]{16,}|gho_[A-Za-z0-9_]{16,}|xoxb-[A-Za-z0-9-]{16,}|hf_[A-Za-z0-9_]{16,}|BEGIN (RSA|OPENSSH|PRIVATE) KEY)"
+    },
+    {
+      "id": "implementation_route_stable",
+      "type": "route",
+      "prompt": "clarify product requirements, design the interface, then implement the frontend prototype code",
+      "expect_agent": "coder",
+      "expect_workflow": "pm_to_design_to_code",
+      "expect_steps": ["pm", "vibe-designer", "coder"]
+    }
+  ]
+}

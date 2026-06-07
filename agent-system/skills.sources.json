@@ -99,6 +99,92 @@
       "status": "research_only_stage_before_install",
       "type": "git-candidate",
       "use_case": "AI dev task lifecycle and status discipline"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "coder",
+        "vibe-designer",
+        "writer"
+      ],
+      "name": "anthropics-skills",
+      "observed_stars": 147505,
+      "remote": "https://github.com/anthropics/skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "official-skill-candidate",
+      "use_case": "official agent skill packaging patterns and reusable workflow contracts"
+    },
+    {
+      "candidate_for": [
+        "coder",
+        "vibe-designer"
+      ],
+      "name": "vercel-agent-skills",
+      "observed_stars": 27678,
+      "remote": "https://github.com/vercel-labs/agent-skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "official-skill-candidate",
+      "use_case": "frontend, deployment, and product engineering skill patterns"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "coder",
+        "vibe-designer"
+      ],
+      "name": "awesome-agent-skills",
+      "observed_stars": 24517,
+      "remote": "https://github.com/VoltAgent/awesome-agent-skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "curated-list-candidate",
+      "use_case": "cross-tool skill discovery for Codex, Claude Code, Gemini CLI, Cursor, and related agents"
+    },
+    {
+      "candidate_for": [
+        "secretary"
+      ],
+      "name": "LangGraph",
+      "observed_stars": 34088,
+      "remote": "https://github.com/langchain-ai/langgraph.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "durable execution, state checkpoints, human-in-the-loop workflow design"
+    },
+    {
+      "candidate_for": [
+        "secretary"
+      ],
+      "name": "AutoGen",
+      "observed_stars": 58749,
+      "remote": "https://github.com/microsoft/autogen.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "multi-agent role boundaries, conversation orchestration, and handoff patterns"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "researcher"
+      ],
+      "name": "Haystack",
+      "observed_stars": 25476,
+      "remote": "https://github.com/deepset-ai/haystack.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "production RAG pipelines, retrieval routing, and modular context engineering"
+    },
+    {
+      "candidate_for": [
+        "researcher",
+        "secretary"
+      ],
+      "name": "RAGAS",
+      "notes": "GitHub API was rate-limited during the final sampling pass; keep as evaluation reference, not as a star-ranked install source.",
+      "observed_stars": null,
+      "remote": "https://github.com/explodinggradients/ragas.git",
+      "status": "research_only_reference",
+      "type": "evaluation-reference",
+      "use_case": "RAG retrieval and faithfulness evaluation patterns"
     }
   ],
   "description": "Portable manifest for updating installed skills from their source repositories or registries.",

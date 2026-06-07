@@ -39,6 +39,16 @@ If any item is missing, return to secretary or product/design role for clarifica
 6. Record failed checks and the fix applied.
 7. Stop when all required gates pass or when a clear blocker is found.
 
+## AI Native Loop Placement
+
+Implementation work lives inside the Digital Office loop:
+
+- Perceive: read the current task, project context, product/design handoff, relevant knowledge entries, and prior relay notes.
+- Plan: name files, acceptance checks, risk, and rollback before editing.
+- Execute: produce the diff and run deterministic checks.
+- Reflect: report failed checks, unresolved risk, and whether the implementation matched the handoff.
+- Iterate: propose improvements only as a user-visible iteration proposal. Do not silently change rules, workflows, Agent behavior, or skill bundles.
+
 ## Required Gates
 
 - `build_or_compile_passes`

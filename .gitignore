@@ -1,10 +1,21 @@
 .venv/
+.codegraph/
 __pycache__/
 *.pyc
 *.bak.*
 
 agent-system/logs/
 agent-system/tmp/
+agent-system/runs/*
+!agent-system/runs/.gitignore
+agent-system/iterations/proposals/*
+!agent-system/iterations/proposals/.gitignore
+agent-system/iterations/status/*
+!agent-system/iterations/status/.gitignore
+agent-system/iterations/applied/*
+!agent-system/iterations/applied/.gitignore
+agent-system/harness/reports/*
+!agent-system/harness/reports/.gitignore
 agent-system/data-sharing/consent.json
 agent-system/data-sharing/exports/
 agent-system/data-sharing/outbox/

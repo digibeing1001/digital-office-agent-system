@@ -1,0 +1,297 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-ai-native-loop",
+  "name": "Perceive, Plan, Execute, Reflect, Iterate",
+  "description": "Production delivery loop for the portable Digital Office multi-Agent system. It keeps Agent work observable, stateful, reviewable, and explicitly user-confirmed before iteration changes are applied.",
+  "research_foundations": [
+    {
+      "name": "ReAct",
+      "source": "https://arxiv.org/abs/2210.03629",
+      "principle": "Interleave reasoning, tool action, and observation; do not rely on one-shot answers for uncertain work.",
+      "applies_to": [
+        "perceive",
+        "execute"
+      ]
+    },
+    {
+      "name": "Reflexion",
+      "source": "https://arxiv.org/abs/2303.11366",
+      "principle": "Turn failed or partial task outcomes into explicit reflective feedback for future trials.",
+      "applies_to": [
+        "reflect",
+        "iterate"
+      ]
+    },
+    {
+      "name": "Generative Agents",
+      "source": "https://arxiv.org/abs/2304.03442",
+      "principle": "Use memory, reflection, and planning as separate state layers instead of mixing all context into a single prompt.",
+      "applies_to": [
+        "perceive",
+        "plan",
+        "reflect"
+      ]
+    },
+    {
+      "name": "Voyager",
+      "source": "https://arxiv.org/abs/2305.16291",
+      "principle": "Build reusable skills and knowledge through an explicit, reviewed library rather than silent self-modification.",
+      "applies_to": [
+        "iterate"
+      ]
+    },
+    {
+      "name": "MetaGPT",
+      "source": "https://arxiv.org/abs/2308.00352",
+      "principle": "Role-based SOPs and structured handoffs reduce multi-Agent drift.",
+      "applies_to": [
+        "plan",
+        "execute"
+      ]
+    },
+    {
+      "name": "AutoGen",
+      "source": "https://arxiv.org/abs/2308.08155",
+      "principle": "Multi-Agent conversation should have explicit roles, boundaries, and human-controlled stopping conditions.",
+      "applies_to": [
+        "plan",
+        "execute"
+      ]
+    },
+    {
+      "name": "LangGraph durable execution",
+      "source": "https://docs.langchain.com/oss/python/langgraph/durable-execution",
+      "principle": "Long-running Agent workflows need persisted state, resumability, checkpoints, and human-in-the-loop control.",
+      "applies_to": [
+        "execute",
+        "iterate"
+      ]
+    },
+    {
+      "name": "SWE-bench",
+      "source": "https://arxiv.org/abs/2310.06770",
+      "principle": "Production claims need reproducible tasks and deterministic judges.",
+      "applies_to": [
+        "execute",
+        "reflect"
+      ]
+    },
+    {
+      "name": "RAGAS",
+      "source": "https://arxiv.org/abs/2309.15217",
+      "principle": "RAG quality should be judged by retrieval relevance, grounding, and answer faithfulness.",
+      "applies_to": [
+        "perceive",
+        "reflect"
+      ]
+    },
+    {
+      "name": "Self-RAG",
+      "source": "https://arxiv.org/abs/2310.11511",
+      "principle": "Retrieval should be critiqued before it is trusted as final context.",
+      "applies_to": [
+        "perceive",
+        "reflect"
+      ]
+    }
+  ],
+  "stages": {
+    "perceive": {
+      "goal": "Build the task context from explicit user intent, identity, permissions, project knowledge, company knowledge, licensed references, KeyMemory relay, router signals, and current system health.",
+      "required_inputs": [
+        "current_user_request",
+        "tenant_user_project_identity",
+        "agent_registry",
+        "global_rules",
+        "project_rules_when_project_selected",
+        "project_knowledge_inventory",
+        "company_knowledge_inventory",
+        "licensed_knowledge_mounts_when_used",
+        "keymemory_project_relay_when_project_selected"
+      ],
+      "required_artifacts": [
+        "perception_report",
+        "context_priority_notes",
+        "knowledge_source_refs",
+        "permission_claims",
+        "routing_candidates"
+      ],
+      "gates": [
+        "identity_and_project_scope_known_or_marked_unknown",
+        "knowledge_priority_is_respected",
+        "licensed_reference_access_logged_when_used",
+        "keymemory_is_relay_not_source_of_truth",
+        "ambiguity_is_escalated_to_secretary"
+      ]
+    },
+    "plan": {
+      "goal": "Convert the perceived context into a role-based workflow plan with acceptance criteria, handoff contracts, risk, and deterministic checks.",
+      "required_inputs": [
+        "perception_report",
+        "agent_registry_orchestration_roles",
+        "production_harness_policy",
+        "user_constraints"
+      ],
+      "required_artifacts": [
+        "workflow_plan",
+        "agent_role_mapping",
+        "acceptance_criteria",
+        "handoff_contract",
+        "test_or_review_plan",
+        "rollback_plan"
+      ],
+      "gates": [
+        "workflow_uses_roles_before_agent_names",
+        "acceptance_criteria_are_testable",
+        "handoff_contract_is_present_for_multi_agent_work",
+        "risk_and_rollback_are_named",
+        "user_confirmation_required_for_high_risk_plan"
+      ]
+    },
+    "execute": {
+      "goal": "Run the planned workflow through the router and registered Agents while capturing artifacts, observations, failures, retries, and gate results.",
+      "required_inputs": [
+        "workflow_plan",
+        "agent_router_result",
+        "knowledge_context",
+        "required_skills",
+        "tool_and_model_budget"
+      ],
+      "required_artifacts": [
+        "execution_log",
+        "agent_handoff_reports",
+        "changed_files_or_generated_outputs",
+        "command_outputs",
+        "gate_results"
+      ],
+      "gates": [
+        "router_health_passed",
+        "agent_steps_match_workflow",
+        "required_harness_skills_available",
+        "deterministic_checks_run_when_applicable",
+        "failed_gate_routes_to_rework"
+      ]
+    },
+    "reflect": {
+      "goal": "Review what happened against the plan, evidence, user goal, quality gates, and known risks. Reflection produces decisions and proposals, not silent changes.",
+      "required_inputs": [
+        "execution_log",
+        "gate_results",
+        "user_feedback",
+        "knowledge_access_logs",
+        "router_events",
+        "handoff_reports"
+      ],
+      "required_artifacts": [
+        "reflection_report",
+        "quality_findings",
+        "root_cause_notes",
+        "methodology_draft_when_reusable",
+        "iteration_proposals_when_needed"
+      ],
+      "gates": [
+        "reflection_references_evidence",
+        "known_failures_are_not_hidden",
+        "reusable_methods_require_user_review_before_company_promotion",
+        "iteration_proposals_are_explicit"
+      ]
+    },
+    "iterate": {
+      "goal": "Improve rules, workflows, Agent behavior, harness tasks, knowledge methods, or release packages only after the user can inspect the proposed change and explicitly confirm it.",
+      "required_inputs": [
+        "reflection_report",
+        "iteration_proposal",
+        "user_decision",
+        "regression_plan"
+      ],
+      "required_artifacts": [
+        "iteration_proposal_report",
+        "user_decision_record",
+        "applied_change_record",
+        "regression_result",
+        "rollback_record"
+      ],
+      "gates": [
+        "no_auto_iteration_without_user_confirmation",
+        "proposal_states_exactly_visible_to_gui",
+        "change_summary_risk_and_rollback_are_present",
+        "apply_requires_confirmed_decision",
+        "regression_checks_run_after_apply"
+      ],
+      "allowed_decisions": [
+        "confirm",
+        "tune",
+        "pause",
+        "reject"
+      ],
+      "forbidden": [
+        "silent self-iteration",
+        "unapproved Agent SOUL changes",
+        "unapproved workflow changes",
+        "unapproved skill installation or recomposition",
+        "unapproved company knowledge promotion",
+        "black-box release updates"
+      ]
+    }
+  },
+  "state_model": {
+    "run_statuses": [
+      "created",
+      "perceiving",
+      "planning",
+      "executing",
+      "reflecting",
+      "iteration_proposed",
+      "waiting_user_confirmation",
+      "iterating",
+      "completed",
+      "blocked",
+      "cancelled"
+    ],
+    "proposal_statuses": [
+      "drafted",
+      "pending_user_confirmation",
+      "confirmed_for_application",
+      "needs_tuning",
+      "paused_by_user",
+      "rejected",
+      "applied_pending_regression",
+      "applied_verified",
+      "rolled_back"
+    ],
+    "storage": {
+      "runs": "agent-system/runs/<run_id>/run.json",
+      "proposal_reports": "agent-system/iterations/proposals/<proposal_id>.md",
+      "proposal_status": "agent-system/iterations/status/<proposal_id>.json",
+      "applied_records": "agent-system/iterations/applied/<proposal_id>.json"
+    }
+  },
+  "gui_contract": {
+    "show_loop_stages": true,
+    "show_current_stage": true,
+    "show_required_artifacts": true,
+    "show_failed_gates": true,
+    "show_iteration_proposals": true,
+    "iteration_buttons": [
+      "Confirm",
+      "Tune Through Conversation",
+      "Pause",
+      "Reject"
+    ],
+    "hide_raw_hermes_cli": true,
+    "recommended_labels": {
+      "perceive": "感知",
+      "plan": "规划",
+      "execute": "执行",
+      "reflect": "反思",
+      "iterate": "迭代"
+    }
+  },
+  "hard_rules": [
+    "Every production task should be represented as a loop run before it is described as completed.",
+    "Iteration is never automatic. The system may propose improvements, but user confirmation is required before application.",
+    "The proposal must explain what will change, why, expected impact, risk, rollback, affected Agents/workflows/knowledge, and required regression checks.",
+    "The secretary owns ambiguous routes, user confirmation, iteration proposals, and failed-gate recovery.",
+    "A production claim requires deterministic harness gates plus a reflection report."
+  ]
+}

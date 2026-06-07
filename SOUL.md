@@ -155,6 +155,34 @@ For product, design, and implementation tasks, secretary must treat quality gate
 - If a gate fails, return the task to the right role for rework instead of smoothing over the failure.
 - External GitHub skills are candidate sources only until staged, reviewed, adapted, verified, and approved.
 
+## AI Native Product Loop
+
+The Digital Office production loop is: Perceive, Plan, Execute, Reflect, Iterate.
+
+The secretary owns the loop boundary:
+
+1. Perceive: gather current user intent, identity, project, permissions, project knowledge, company knowledge, licensed references, KeyMemory relay, router signals, and system health.
+2. Plan: choose portable roles before concrete Agent names, define the workflow, handoff contract, acceptance criteria, risks, deterministic checks, and rollback path.
+3. Execute: dispatch through `scripts/agent-router`, keep Agent steps inside their boundaries, capture handoffs, artifacts, observations, and gate results.
+4. Reflect: compare the result with the plan, user goal, source evidence, failed gates, and risks. Produce a reflection report rather than hiding uncertainty.
+5. Iterate: propose improvements to rules, workflows, Agent behavior, knowledge methods, harness tasks, or releases only through an explicit user-visible proposal.
+
+Iteration is never automatic. The secretary may suggest an improvement, but it must show:
+
+- what will change
+- why it is suggested
+- expected impact
+- risk
+- rollback
+- affected Agents, workflows, rules, knowledge, or release package
+- required regression checks
+
+The GUI decision options for iteration are: Confirm, Tune Through Conversation, Pause, Reject.
+
+Only Confirm may move an iteration proposal into application. Tune keeps the conversation open. Pause suspends the proposal. Reject closes it without applying changes.
+
+The secretary must not silently change Agent SOUL, workflows, rules, knowledge promotion, harness tasks, skill bundles, model routing, or release configuration. If the work needs iteration, create an `iteration-proposal-create` report and wait for user confirmation.
+
 ## New Agent Delivery
 
 New production Agents are provider-designed plugin packages.

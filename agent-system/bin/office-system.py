@@ -28,6 +28,20 @@ TEXT_EXTS = {".md", ".txt", ".json", ".csv"}
 DOCX_EXTS = {".docx"}
 PDF_EXTS = {".pdf"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}
+LOOP_STAGES = ["perceive", "plan", "execute", "reflect", "iterate"]
+LOOP_STATUS_BY_STAGE = {
+    "perceive": "perceiving",
+    "plan": "planning",
+    "execute": "executing",
+    "reflect": "reflecting",
+    "iterate": "iterating",
+}
+ITERATION_DECISION_TO_STATUS = {
+    "confirm": "confirmed_for_application",
+    "tune": "needs_tuning",
+    "pause": "paused_by_user",
+    "reject": "rejected",
+}
 STATUS_LABELS = {
     "received": "接收需求",
     "in_progress": "正在推动需求",
@@ -1717,6 +1731,290 @@ def knowledge_access_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def loop_manifest(root: Path) -> dict[str, Any]:
+    return read_json(root / "ai-native-loop.manifest.json")
+
+
+def loop_run_path(root: Path, run_id: str) -> Path:
+    return root / "runs" / safe_component(run_id, "run id") / "run.json"
+
+
+def loop_start(args: argparse.Namespace) -> int:
+    root = system_root()
+    manifest = loop_manifest(root)
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    if project:
+        ensure_project(root, project)
+    run_id = safe_component(args.run_id, "run id") if args.run_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    task = args.task if args.task is not None else sys.stdin.read()
+    run = {
+        "version": "1.0.0",
+        "kind": "digital-office-ai-native-loop-run",
+        "run_id": run_id,
+        "status": "created",
+        "current_stage": "perceive",
+        "project_id": project,
+        "agent_id": agent,
+        "workflow": safe_claim(args.workflow, "workflow", required=False),
+        "requested_by": safe_claim(args.requested_by, "requested by", required=False),
+        "task": task.strip(),
+        "task_sha256": hashlib.sha256(task.encode("utf-8")).hexdigest(),
+        "created_at": now_iso(),
+        "stages": {
+            stage: {
+                "status": "pending",
+                "required_artifacts": manifest["stages"][stage]["required_artifacts"],
+                "gates": [
+                    {
+                        "gate": gate,
+                        "status": "pending"
+                    }
+                    for gate in manifest["stages"][stage]["gates"]
+                ],
+                "artifacts": [],
+                "notes": []
+            }
+            for stage in LOOP_STAGES
+        },
+        "hard_rules": manifest.get("hard_rules", []),
+    }
+    if args.dry_run:
+        print(json.dumps(run, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    target = loop_run_path(root, run_id)
+    if target.exists():
+        print(f"office-system: loop run already exists: {run_id}", file=sys.stderr)
+        return 2
+    write_json(target, run)
+    append_log(root, {"event": "loop_start", "run_id": run_id, "project": project, "agent": agent})
+    print(json.dumps({"run_id": run_id, "path": str(target.relative_to(root)), "status": "created"}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def loop_stage(args: argparse.Namespace) -> int:
+    root = system_root()
+    run_id = safe_component(args.run_id, "run id")
+    stage = args.stage
+    target = loop_run_path(root, run_id)
+    if not target.exists():
+        print(f"office-system: loop run not found: {run_id}", file=sys.stderr)
+        return 2
+    run = read_json(target)
+    stage_state = run.setdefault("stages", {}).setdefault(stage, {"artifacts": [], "notes": [], "gates": []})
+    stage_state["status"] = args.status
+    if args.summary:
+        stage_state.setdefault("notes", []).append({"time": now_iso(), "summary": args.summary})
+    body = args.body if args.body is not None else ""
+    if body:
+        stage_state.setdefault("notes", []).append({"time": now_iso(), "body": body})
+    for artifact in args.artifact or []:
+        stage_state.setdefault("artifacts", []).append(safe_claim(artifact, "artifact"))
+    for gate in args.gate or []:
+        if ":" not in gate:
+            print("office-system: --gate must be gate_id:status", file=sys.stderr)
+            return 2
+        gate_id, gate_status = gate.split(":", 1)
+        stage_state.setdefault("gate_updates", []).append(
+            {
+                "time": now_iso(),
+                "gate": safe_claim(gate_id, "gate id"),
+                "status": safe_claim(gate_status, "gate status"),
+            }
+        )
+    if args.status == "started":
+        run["status"] = LOOP_STATUS_BY_STAGE[stage]
+        run["current_stage"] = stage
+    elif args.status in {"failed", "blocked"}:
+        run["status"] = "blocked"
+        run["current_stage"] = stage
+    elif args.status == "completed":
+        current_index = LOOP_STAGES.index(stage)
+        next_stage = LOOP_STAGES[current_index + 1] if current_index + 1 < len(LOOP_STAGES) else None
+        run["current_stage"] = next_stage or stage
+        if next_stage:
+            run["status"] = LOOP_STATUS_BY_STAGE[next_stage]
+        else:
+            run["status"] = "completed"
+    run["updated_at"] = now_iso()
+    write_json(target, run)
+    append_log(root, {"event": "loop_stage", "run_id": run_id, "stage": stage, "status": args.status})
+    print(json.dumps({"run_id": run_id, "stage": stage, "status": args.status, "run_status": run["status"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def loop_status(args: argparse.Namespace) -> int:
+    root = system_root()
+    target = loop_run_path(root, args.run_id)
+    if not target.exists():
+        print(f"office-system: loop run not found: {args.run_id}", file=sys.stderr)
+        return 2
+    print(json.dumps(read_json(target), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def iteration_proposal_id(title: str) -> str:
+    return f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}-{slugify(title)}"
+
+
+def iteration_status_path(root: Path, proposal_id: str) -> Path:
+    return root / "iterations" / "status" / f"{safe_component(proposal_id, 'proposal id')}.json"
+
+
+def iteration_proposal_create(args: argparse.Namespace) -> int:
+    root = system_root()
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    if project:
+        ensure_project(root, project)
+    if args.run_id:
+        run_path = loop_run_path(root, args.run_id)
+        if not run_path.exists():
+            print(f"office-system: loop run not found: {args.run_id}", file=sys.stderr)
+            return 2
+    body = args.body if args.body is not None else sys.stdin.read()
+    proposal_id = iteration_proposal_id(args.title)
+    report = root / "iterations" / "proposals" / f"{proposal_id}.md"
+    status_file = iteration_status_path(root, proposal_id)
+    proposal = {
+        "version": "1.0.0",
+        "kind": "digital-office-iteration-proposal",
+        "proposal_id": proposal_id,
+        "status": "pending_user_confirmation",
+        "title": args.title,
+        "target": args.target,
+        "run_id": safe_component(args.run_id, "run id") if args.run_id else "",
+        "project_id": project,
+        "agent_id": agent,
+        "summary": args.summary,
+        "body": body.strip(),
+        "expected_impact": args.expected_impact,
+        "risk": args.risk,
+        "rollback": args.rollback,
+        "source_refs": [safe_claim(item, "source ref") for item in (args.source_ref or [])],
+        "regression_checks": [safe_claim(item, "regression check") for item in (args.regression_check or [])],
+        "requires_user_confirmation": True,
+        "auto_apply_allowed": False,
+        "created_at": now_iso(),
+        "report": str(report.relative_to(root)),
+        "allowed_decisions": ["confirm", "tune", "pause", "reject"],
+    }
+    lines = [
+        f"# Iteration Proposal: {args.title}",
+        "",
+        "- State: pending_user_confirmation",
+        f"- Proposal ID: {proposal_id}",
+        f"- Target: {args.target}",
+        f"- Run ID: {proposal['run_id']}",
+        f"- Project: {project}",
+        f"- Agent: {agent}",
+        f"- Created at: {proposal['created_at']}",
+        "",
+        "## What Will Change",
+        "",
+        body.strip() or args.summary,
+        "",
+        "## Why This Is Suggested",
+        "",
+        args.summary,
+        "",
+        "## Expected Impact",
+        "",
+        args.expected_impact,
+        "",
+        "## Risk",
+        "",
+        args.risk,
+        "",
+        "## Rollback",
+        "",
+        args.rollback,
+        "",
+        "## Regression Checks",
+        "",
+    ]
+    if args.regression_check:
+        lines.extend(f"- {item}" for item in args.regression_check)
+    else:
+        lines.append("- No regression check provided yet. This proposal cannot be called production-ready until one is added.")
+    lines.extend(
+        [
+            "",
+            "## User Decision Required",
+            "",
+            "This proposal is not applied automatically. The GUI must show the change, risk, rollback, and regression checks, then wait for one of: Confirm, Tune Through Conversation, Pause, Reject.",
+        ]
+    )
+    write_text(report, "\n".join(lines) + "\n")
+    write_json(status_file, proposal)
+    append_log(root, {"event": "iteration_proposal_create", "proposal_id": proposal_id, "target": args.target, "run_id": proposal["run_id"]})
+    print(json.dumps({"proposal_id": proposal_id, "status": proposal["status"], "report": proposal["report"], "status_file": str(status_file.relative_to(root))}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def iteration_proposal_decision(args: argparse.Namespace) -> int:
+    root = system_root()
+    proposal_id = safe_component(args.proposal_id, "proposal id")
+    status_file = iteration_status_path(root, proposal_id)
+    if not status_file.exists():
+        print(f"office-system: iteration proposal not found: {proposal_id}", file=sys.stderr)
+        return 2
+    state = read_json(status_file)
+    state["status"] = ITERATION_DECISION_TO_STATUS[args.decision]
+    state["decision"] = args.decision
+    state["decision_updated_at"] = now_iso()
+    if args.message:
+        state.setdefault("decision_messages", []).append({"time": now_iso(), "message": args.message})
+    if args.decision == "confirm":
+        state["next_action"] = f"iteration-proposal-apply --proposal-id {proposal_id} --confirmed"
+    elif args.decision == "tune":
+        state["next_action"] = "secretary continues the iteration conversation and regenerates or updates the proposal"
+    elif args.decision == "pause":
+        state["next_action"] = "do nothing until the user resumes"
+    elif args.decision == "reject":
+        state["next_action"] = "do not apply this proposal"
+    write_json(status_file, state)
+    append_log(root, {"event": "iteration_proposal_decision", "proposal_id": proposal_id, "decision": args.decision})
+    print(json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def iteration_proposal_apply(args: argparse.Namespace) -> int:
+    root = system_root()
+    proposal_id = safe_component(args.proposal_id, "proposal id")
+    status_file = iteration_status_path(root, proposal_id)
+    if not status_file.exists():
+        print(f"office-system: iteration proposal not found: {proposal_id}", file=sys.stderr)
+        return 2
+    if not args.confirmed:
+        print("office-system: iteration application requires --confirmed after the user reviews the proposal", file=sys.stderr)
+        return 2
+    state = read_json(status_file)
+    if state.get("status") != "confirmed_for_application":
+        print("office-system: iteration proposal must be confirmed before application", file=sys.stderr)
+        return 2
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-applied-iteration-record",
+        "proposal_id": proposal_id,
+        "target": state.get("target"),
+        "applied_at": now_iso(),
+        "applied_by": safe_claim(args.applied_by, "applied by", required=False),
+        "artifacts": [safe_claim(item, "artifact") for item in (args.artifact or [])],
+        "regression_result": args.regression_result or "",
+        "rollback": state.get("rollback", ""),
+        "note": args.note or "",
+    }
+    state["status"] = "applied_verified" if args.regression_result else "applied_pending_regression"
+    state["applied_at"] = record["applied_at"]
+    state["applied_record"] = f"iterations/applied/{proposal_id}.json"
+    write_json(root / "iterations" / "applied" / f"{proposal_id}.json", record)
+    write_json(status_file, state)
+    append_log(root, {"event": "iteration_proposal_apply", "proposal_id": proposal_id, "status": state["status"]})
+    print(json.dumps({"proposal_id": proposal_id, "status": state["status"], "applied_record": state["applied_record"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def health(args: argparse.Namespace) -> int:
     root = system_root()
     checks = {
@@ -1726,6 +2024,7 @@ def health(args: argparse.Namespace) -> int:
         "identity_access_registry": (root / "identity.access.registry.json").exists(),
         "industry_solutions_registry": (root / "industry-solutions.registry.json").exists(),
         "external_knowledge_sources_registry": (root / "external-knowledge-sources.registry.json").exists(),
+        "ai_native_loop_manifest": (root / "ai-native-loop.manifest.json").exists(),
         "rules_registry": (root / "rules" / "rules.registry.json").exists(),
         "multimodal_pipeline": (root / "multimodal.pipeline.json").exists(),
         "rag_pipeline": (root / "rag.pipeline.json").exists(),
@@ -1738,7 +2037,7 @@ def health(args: argparse.Namespace) -> int:
         "python_docx_builtin": True,
     }
     print(json.dumps(checks, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0 if all(checks[k] for k in ("agents_registry", "knowledge_registry", "identity_access_registry", "industry_solutions_registry", "external_knowledge_sources_registry", "rules_registry", "multimodal_pipeline")) else 1
+    return 0 if all(checks[k] for k in ("agents_registry", "knowledge_registry", "identity_access_registry", "industry_solutions_registry", "external_knowledge_sources_registry", "ai_native_loop_manifest", "rules_registry", "multimodal_pipeline")) else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1793,6 +2092,60 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workflow-run")
     p.add_argument("--session")
     p.set_defaults(func=identity_context)
+
+    p = sub.add_parser("loop-start")
+    p.add_argument("--run-id")
+    p.add_argument("--task")
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--workflow", default="")
+    p.add_argument("--requested-by", default="")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=loop_start)
+
+    p = sub.add_parser("loop-stage")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--stage", choices=LOOP_STAGES, required=True)
+    p.add_argument("--status", choices=["started", "completed", "failed", "blocked"], required=True)
+    p.add_argument("--summary")
+    p.add_argument("--body")
+    p.add_argument("--artifact", action="append")
+    p.add_argument("--gate", action="append")
+    p.set_defaults(func=loop_stage)
+
+    p = sub.add_parser("loop-status")
+    p.add_argument("--run-id", required=True)
+    p.set_defaults(func=loop_status)
+
+    p = sub.add_parser("iteration-proposal-create")
+    p.add_argument("--title", required=True)
+    p.add_argument("--target", choices=["agent", "workflow", "rule", "knowledge", "harness", "release", "model", "product"], required=True)
+    p.add_argument("--summary", required=True)
+    p.add_argument("--body")
+    p.add_argument("--expected-impact", required=True)
+    p.add_argument("--risk", required=True)
+    p.add_argument("--rollback", required=True)
+    p.add_argument("--run-id")
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--source-ref", action="append")
+    p.add_argument("--regression-check", action="append")
+    p.set_defaults(func=iteration_proposal_create)
+
+    p = sub.add_parser("iteration-proposal-decision")
+    p.add_argument("--proposal-id", required=True)
+    p.add_argument("--decision", choices=["confirm", "tune", "pause", "reject"], required=True)
+    p.add_argument("--message")
+    p.set_defaults(func=iteration_proposal_decision)
+
+    p = sub.add_parser("iteration-proposal-apply")
+    p.add_argument("--proposal-id", required=True)
+    p.add_argument("--confirmed", action="store_true")
+    p.add_argument("--applied-by", default="")
+    p.add_argument("--artifact", action="append")
+    p.add_argument("--regression-result")
+    p.add_argument("--note")
+    p.set_defaults(func=iteration_proposal_apply)
 
     p = sub.add_parser("methodology-draft")
     p.add_argument("--project", required=True)

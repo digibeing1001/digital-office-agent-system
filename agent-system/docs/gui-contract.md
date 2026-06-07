@@ -35,6 +35,7 @@ Production harness:
 
 ```bash
 ~/.hermes/agent-system/bin/harness-check
+~/.hermes/agent-system/bin/harness-runner --task all --no-write
 ```
 
 - Product, design, and implementation workflows must show gate status before user-facing delivery.
@@ -42,6 +43,29 @@ Production harness:
 - `pm_to_design_to_code` must pass product, design, and implementation gates.
 - The GUI should show failed gates as rework actions, not as raw CLI errors.
 - External high-star skill sources are candidates only. They must be staged, reviewed, adapted, verified, and approved before enterprise use.
+
+AI Native Product Loop:
+
+The production loop is Perceive, Plan, Execute, Reflect, Iterate. The GUI should render it as five visible stages rather than a hidden background process.
+
+```bash
+~/.hermes/agent-system/bin/office-system loop-start --task "<task>" --project <project_id> --agent <agent_id>
+~/.hermes/agent-system/bin/office-system loop-stage --run-id <run_id> --stage perceive --status started
+~/.hermes/agent-system/bin/office-system loop-status --run-id <run_id>
+~/.hermes/agent-system/bin/office-system iteration-proposal-create --title "<title>" --target workflow --summary "<why>" --expected-impact "<impact>" --risk "<risk>" --rollback "<rollback>"
+~/.hermes/agent-system/bin/office-system iteration-proposal-decision --proposal-id <proposal_id> --decision confirm
+~/.hermes/agent-system/bin/office-system iteration-proposal-apply --proposal-id <proposal_id> --confirmed --regression-result "<result>"
+```
+
+Loop stage labels:
+
+1. Perceive: context, knowledge, permissions, memory relay, route candidates.
+2. Plan: role workflow, handoff contract, acceptance criteria, risk, rollback, tests.
+3. Execute: Agent dispatch, observations, artifacts, handoffs, gate results.
+4. Reflect: findings, root causes, failed gates, reusable methodology drafts.
+5. Iterate: explicit improvement proposals only.
+
+Iteration must never be black-box. The GUI must show the proposed change, why it is suggested, expected impact, risk, rollback, affected objects, and regression checks. The only iteration actions are Confirm, Tune Through Conversation, Pause, and Reject. `iteration-proposal-apply` is unavailable unless the proposal was confirmed by the user.
 
 Project lifecycle:
 

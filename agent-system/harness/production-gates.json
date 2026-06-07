@@ -5,7 +5,7 @@
   "inspired_by": [
     {
       "name": "OpenHands",
-      "source": "https://github.com/OpenHands/OpenHands",
+      "source": "https://github.com/All-Hands-AI/OpenHands",
       "lesson": "Use an explicit runtime harness with action execution, observation, and feedback loops instead of one-shot coding prompts."
     },
     {
@@ -22,6 +22,16 @@
       "name": "SWE-bench",
       "source": "https://github.com/princeton-nlp/SWE-bench",
       "lesson": "Judge coding agents with reproducible tasks and deterministic tests, not with self-review alone."
+    },
+    {
+      "name": "LangGraph durable execution",
+      "source": "https://docs.langchain.com/oss/python/langgraph/durable-execution",
+      "lesson": "Persist workflow state, checkpoints, and human-in-the-loop decisions so long-running Agent work can resume safely."
+    },
+    {
+      "name": "RAGAS",
+      "source": "https://arxiv.org/abs/2309.15217",
+      "lesson": "Treat retrieval quality as measurable through grounding, relevance, and faithfulness signals."
     }
   ],
   "default_quality_policy": {

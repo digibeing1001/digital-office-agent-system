@@ -44,7 +44,7 @@ cp -a "$REPO_ROOT" "$WORK_DIR/repo"
 cd "$WORK_DIR/repo"
 
 bash -n agent-system/tests/smoke.sh
-python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check scripts/agent-router
+python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
 for file in $(git ls-files "*.json"); do
   python3 -m json.tool "$file" >/dev/null
 done
@@ -54,7 +54,9 @@ from pathlib import Path
 
 critical_files = [
     "SOUL.md",
+    "README.md",
     "README.zh-CN.md",
+    "agent-system/ai-native-loop.manifest.json",
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
     "agent-system/harness/production-gates.json",
@@ -76,11 +78,19 @@ grep -q "## Reflective Advisory Mode" SOUL.md || fail "default secretary SOUL mi
 grep -q "## Agent Routing And Workflow Orchestration" SOUL.md || fail "default secretary SOUL missing routing orchestration rules"
 json_assert agent-system/secretary.capabilities.json 'data["persona_policy"]["default_stance"].startswith("Act as a capable digital chief of staff")'
 json_assert agent-system/secretary.capabilities.json '"reflective_pushback" in [item["id"] for item in data["core_capabilities"]]'
+json_assert agent-system/secretary.capabilities.json '"ai_native_loop_governance" in [item["id"] for item in data["core_capabilities"]]'
+json_assert agent-system/secretary.capabilities.json 'data["ai_native_loop_policy"]["iteration_confirmation_required"] is True'
 json_assert agent-system/secretary.capabilities.json 'data["routing_orchestration_policy"]["role_first_rule"].startswith("Select the needed orchestration role first")'
 json_assert agent-system/secretary.capabilities.json 'data["production_harness_policy"]["role_skill_map"]["implementation"] == "vibe-coding-production-harness"'
 json_assert agent-system/agents.registry.json '"vibe-coding-production-harness" in data["agents"]["coder"]["skills"]'
 json_assert agent-system/agents.registry.json '"vibe-design-production-harness" in data["agents"]["vibe-designer"]["skills"]'
 json_assert agent-system/harness/production-gates.json 'data["role_gates"]["implementation"]["minimum_gates"][0] == "build_or_compile_passes"'
+json_assert agent-system/harness/tasks/vibe-coding-production.json 'data["task_id"] == "vibe-coding-production"'
+json_assert agent-system/harness/tasks/vibe-design-production.json 'data["task_id"] == "vibe-design-production"'
+json_assert agent-system/harness/tasks/portable-routing-production.json 'data["task_id"] == "portable-routing-production"'
+json_assert agent-system/harness/tasks/ai-native-loop-production.json 'data["task_id"] == "ai-native-loop-production"'
+json_assert agent-system/ai-native-loop.manifest.json 'data["stages"]["iterate"]["gates"][0] == "no_auto_iteration_without_user_confirmation"'
+json_assert agent-system/ai-native-loop.manifest.json '"silent self-iteration" in data["stages"]["iterate"]["forbidden"]'
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
 test -f skills/vibe-design-production-harness/SKILL.md || fail "missing vibe design harness skill"
 
@@ -92,6 +102,7 @@ OFFICE="$HOME_DIR/agent-system/bin/office-system"
 "$ROUTER" --health >/dev/null
 "$OFFICE" health >/dev/null
 "$HOME_DIR/agent-system/bin/harness-check" >/dev/null
+"$HOME_DIR/agent-system/bin/harness-runner" --task all --no-write >/dev/null
 "$HOME_DIR/agent-system/bin/product-update" status >/dev/null
 
 [ -f "$HOME_DIR/SOUL.md" ] || fail "default SOUL.md missing"
@@ -99,6 +110,22 @@ OFFICE="$HOME_DIR/agent-system/bin/office-system"
 grep -q "## Boundary And Pushback" "$HOME_DIR/SOUL.md" || fail "installed secretary SOUL missing pushback boundary"
 grep -q "## Reflective Advisory Mode" "$HOME_DIR/SOUL.md" || fail "installed secretary SOUL missing reflective advisory mode"
 grep -q "## Agent Routing And Workflow Orchestration" "$HOME_DIR/SOUL.md" || fail "installed secretary SOUL missing routing orchestration rules"
+grep -q "## AI Native Product Loop" "$HOME_DIR/SOUL.md" || fail "installed secretary SOUL missing AI native loop rules"
+
+"$OFFICE" loop-start --run-id smoke-loop --task "Build a governed AI native product loop" >"$WORK_DIR/loop-start.json"
+json_assert "$WORK_DIR/loop-start.json" 'data["run_id"] == "smoke-loop" and data["status"] == "created"'
+"$OFFICE" loop-stage --run-id smoke-loop --stage perceive --status started --summary "Context gathered" >"$WORK_DIR/loop-stage.json"
+json_assert "$WORK_DIR/loop-stage.json" 'data["run_id"] == "smoke-loop" and data["stage"] == "perceive" and data["run_status"] == "perceiving"'
+"$OFFICE" iteration-proposal-create --title "Tighten smoke loop gate" --target harness --summary "Add a regression gate after reflection" --body "Add a harness check after reflection." --expected-impact "Fewer workflow drifts" --risk "Could slow delivery" --rollback "Remove the proposed gate" --run-id smoke-loop --regression-check "harness-runner --task all --no-write" >"$WORK_DIR/iteration-proposal.json"
+proposal_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["proposal_id"])' "$WORK_DIR/iteration-proposal.json")"
+must_fail "$OFFICE" iteration-proposal-apply --proposal-id "$proposal_id"
+"$OFFICE" iteration-proposal-decision --proposal-id "$proposal_id" --decision tune --message "Need clearer risk" >"$WORK_DIR/iteration-tune.json"
+json_assert "$WORK_DIR/iteration-tune.json" 'data["status"] == "needs_tuning"'
+must_fail "$OFFICE" iteration-proposal-apply --proposal-id "$proposal_id" --confirmed
+"$OFFICE" iteration-proposal-decision --proposal-id "$proposal_id" --decision confirm --message "User confirmed" >"$WORK_DIR/iteration-confirm.json"
+json_assert "$WORK_DIR/iteration-confirm.json" 'data["status"] == "confirmed_for_application"'
+"$OFFICE" iteration-proposal-apply --proposal-id "$proposal_id" --confirmed --regression-result "harness passed" --artifact "agent-system/harness/tasks/ai-native-loop-production.json" >"$WORK_DIR/iteration-apply.json"
+json_assert "$WORK_DIR/iteration-apply.json" 'data["status"] == "applied_verified"'
 
 HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "hello there" >"$WORK_DIR/route-fallback.json"
 json_assert "$WORK_DIR/route-fallback.json" 'data["agent"] == "secretary" and data["profile"] == "__default__" and data.get("fallback") is True and data.get("clarification_required") is True'

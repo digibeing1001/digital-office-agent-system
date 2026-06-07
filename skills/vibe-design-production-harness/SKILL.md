@@ -33,6 +33,16 @@ If the product intent is unclear, route through the `product` role before design
 - `visual_quality_checked`: composition is not generic, one-note, cluttered, or decorative without purpose.
 - `implementation_handoff_ready`: design decisions are specific enough for the implementation Agent.
 
+## AI Native Loop Placement
+
+Design work lives inside the Digital Office loop:
+
+- Perceive: read product intent, user type, project context, rules, knowledge objects, and prior relay notes.
+- Plan: define interaction states, responsive behavior, accessibility checks, and implementation handoff before drawing conclusions.
+- Execute: produce the design spec or prototype artifact.
+- Reflect: review the design against workflow clarity, visual quality, accessibility, and implementation readiness.
+- Iterate: propose improvements only as a user-visible iteration proposal. Do not silently rewrite product rules, workflows, Agent behavior, or skill bundles.
+
 ## Skeuomorphic Digital Office Notes
 
 - Use physical-office metaphors only when they improve comprehension or emotional presence.
