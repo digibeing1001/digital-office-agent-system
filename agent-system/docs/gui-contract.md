@@ -22,6 +22,25 @@ All commands are relative to the Hermes home directory.
 ~/.hermes/scripts/agent-router --route-json "<user request>"
 ```
 
+GUI state and global settings:
+
+The GUI should use `gui-state` as the home-screen snapshot instead of stitching together files directly.
+
+```bash
+~/.hermes/agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
+~/.hermes/agent-system/bin/office-system onboarding-options
+~/.hermes/agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator --address-style neutral --language auto --initiative-level confirm_before_action --pushback-style risk_based --approval-strictness balanced --memory-mode project_only --work-mode balanced --confirmed
+~/.hermes/agent-system/bin/office-system settings-options
+~/.hermes/agent-system/bin/office-system settings-status
+~/.hermes/agent-system/bin/office-system settings-update --work-mode quality --confirmed
+```
+
+- `gui-state` returns health, configured settings, capabilities, Agents, projects, workflows, tasks, approvals, notifications, knowledge, and recent audit records.
+- `onboarding-*` is for first-run setup; `settings-*` is for the same preferences after the product is already in use.
+- Settings are partial-update friendly: omitted fields keep the previous value, then fall back to the preset default.
+- Generated files under `agent-system/settings/` are runtime state and must not be committed.
+- Persona preferences never override safety, authorization, approval, knowledge authority, production harness, release, or data-sharing policies.
+
 Router contract:
 
 - The GUI must not hard-code current Agent names as product logic.

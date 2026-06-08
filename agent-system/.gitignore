@@ -9,6 +9,8 @@ approvals/*
 !approvals/.gitignore
 notifications/*
 !notifications/.gitignore
+settings/*
+!settings/.gitignore
 tmp/*
 tmp/**
 data-sharing/exports/*

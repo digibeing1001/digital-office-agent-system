@@ -1,81 +1,31 @@
-# Agent Router Registry Configuration
+# Agent Router Configuration Reference
 
-This reference replaces the old hardcoded `AGENTS` dictionary workflow.
+The Digital Office router maps user intent to agent IDs, profiles, providers, and workflow roles.
 
-## Canonical Source
+## Required Registry Fields
 
-The canonical router configuration is:
+- `display_name`: user-facing name shown in GUI and logs.
+- `portable_role`: short capability label for cross-deployment mapping.
+- `profile`: profile directory under `profiles/`, or `__default__` for the default secretary entrypoint.
+- `model` and `provider`: non-secret runtime selection.
+- `memory_policy`: memory backend policy.
+- `routing.default_workflow`: default workflow when no multi-agent workflow route applies.
+- `routing.keywords`: weighted routing terms.
+- `orchestration_roles`: roles the agent may fulfill in workflows.
 
-```bash
-~/.hermes/agent-system/agents.registry.json
-```
+## Routing Rules
 
-The executable router is:
+- Prefer role-based workflows for multi-step work.
+- Keep fallback behavior explicit and visible to the GUI.
+- Route tests must verify common prompts and ambiguity handling.
+- Direct delegation must not bypass registry routing, audit events, approvals, or project roster checks.
 
-```bash
-~/.hermes/scripts/agent-router
-```
+## Verification
 
-Do not add new agents by editing a Python dictionary inside `agent-router`. The router must remain a portable executor that reads the registry. This keeps the same agent system migratable across Digital Law Firm, Digital Accounting Firm, Digital Media Studio, and other Digital Office products.
-
-## Registry Shape
-
-Each agent entry should define:
-
-- `id`: stable agent id used by GUI and backend commands
-- `profile`: Hermes profile directory name
-- `model`: primary model name
-- `provider`: provider id
-- `aliases`: names users or workflows may use
-- `keywords`: routing keywords with weights
-- `workflows`: allowed workflow steps
-- `route_tests`: prompts that must route to the expected agent
-
-## Add A New Agent
-
-1. Create or copy a sanitized profile template under `~/.hermes/profiles/<profile>/`.
-2. Add the agent entry to `~/.hermes/agent-system/agents.registry.json`.
-3. Add route tests for the common user phrasing.
-4. Run:
+Run:
 
 ```bash
-~/.hermes/scripts/agent-router --health
-~/.hermes/scripts/agent-router --route-only "<test prompt>"
-~/.hermes/scripts/agent-router --route-json "<test prompt>"
+scripts/agent-router --health
+scripts/agent-router --route-json "product requirement design ui prototype code implement frontend"
+agent-system/bin/harness-check
 ```
-
-The tab output of `--route-only` is kept for compatibility:
-
-```text
-<agent_id>	<profile>	<model>	<provider>
-```
-
-## Call Discipline
-
-All kenny-* agent calls must go through `agent-router` or the Digital Office context command. Do not use direct `delegate_task` for these agents, because it can bypass the selected profile, model, provider, workflow, and route logging.
-
-Recommended:
-
-```bash
-~/.hermes/scripts/agent-router --agent pm "<prompt>"
-~/.hermes/scripts/agent-router --workflow research_then_plan "<prompt>"
-~/.hermes/agent-system/bin/office-system context --project <project_id> --agent <agent_id>
-```
-
-Forbidden for kenny-* routing:
-
-```text
-delegate_task(profile="kenny-*", ...)
-```
-
-## Health Gate
-
-Before packaging or pushing a release, run:
-
-```bash
-~/.hermes/scripts/agent-router --health
-~/.hermes/agent-system/bin/office-system health
-~/.hermes/agent-system/bin/product-update status
-```
-
-The release should fail if route tests fail, if the registry cannot be parsed, or if the product update status cannot confirm that production updates are provider-validated rather than direct upstream pulls.

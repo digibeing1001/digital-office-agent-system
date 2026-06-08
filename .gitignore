@@ -15,6 +15,8 @@ agent-system/approvals/*
 !agent-system/approvals/.gitignore
 agent-system/notifications/*
 !agent-system/notifications/.gitignore
+agent-system/settings/*
+!agent-system/settings/.gitignore
 agent-system/iterations/proposals/*
 !agent-system/iterations/proposals/.gitignore
 agent-system/iterations/status/*

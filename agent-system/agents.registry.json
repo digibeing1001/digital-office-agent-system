@@ -19,7 +19,7 @@
           "technical verification or regression coverage is required"
         ]
       },
-      "display_name": "Kenny Vibe Coder",
+      "display_name": "Digital Office Coder",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -32,7 +32,7 @@
         "implementation"
       ],
       "portable_role": "implementation-specialist",
-      "profile": "kenny-vibe-coder",
+      "profile": "office-coder",
       "provider": "kimi-coding",
       "routing": {
         "default_workflow": "single",
@@ -147,7 +147,7 @@
           "the work needs scope, milestones, dependencies, or risk ordering"
         ]
       },
-      "display_name": "Kenny Planner",
+      "display_name": "Digital Office Planner",
       "fallbacks": [
         {
           "model": "deepseek/deepseek-v4-pro",
@@ -160,7 +160,7 @@
         "planning"
       ],
       "portable_role": "planning-and-architecture-specialist",
-      "profile": "kenny-planer",
+      "profile": "office-planner",
       "provider": "openai-codex",
       "routing": {
         "default_workflow": "research_then_plan",
@@ -249,7 +249,7 @@
           "a workflow needs a product owner before design or implementation"
         ]
       },
-      "display_name": "Kenny PM",
+      "display_name": "Digital Office Product Manager",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -266,7 +266,7 @@
         "product"
       ],
       "portable_role": "product-strategy-and-office-manager",
-      "profile": "kenny-pm",
+      "profile": "office-product-manager",
       "provider": "openai-codex",
       "routing": {
         "default_workflow": "single",
@@ -481,7 +481,7 @@
           "the task depends on uncertain assumptions that should be verified first"
         ]
       },
-      "display_name": "Kenny Researcher",
+      "display_name": "Digital Office Researcher",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -494,7 +494,7 @@
         "evidence"
       ],
       "portable_role": "research-and-evidence-specialist",
-      "profile": "kenny-researcher",
+      "profile": "office-researcher",
       "provider": "kimi-coding",
       "routing": {
         "default_workflow": "single",
@@ -814,7 +814,7 @@
           "the task concerns GUI consistency, usability, accessibility, or visual quality"
         ]
       },
-      "display_name": "Kenny Vibe Designer",
+      "display_name": "Digital Office Designer",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -827,7 +827,7 @@
         "design"
       ],
       "portable_role": "interaction-and-visual-design-specialist",
-      "profile": "kenny-vibe-designer",
+      "profile": "office-designer",
       "provider": "kimi-coding",
       "routing": {
         "default_workflow": "single",
@@ -958,7 +958,7 @@
           "the task is about tone, structure, readability, or audience fit"
         ]
       },
-      "display_name": "Kenny Writer",
+      "display_name": "Digital Office Writer",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -971,7 +971,7 @@
         "writing"
       ],
       "portable_role": "writing-and-editorial-specialist",
-      "profile": "kenny-writer",
+      "profile": "office-writer",
       "provider": "minimax-cn",
       "routing": {
         "default_workflow": "single",

@@ -59,6 +59,7 @@ clean_runtime_state() {
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/logs"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/notifications"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/runs"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/settings"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/tasks"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/agent-requests/outbox"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/agent-requests/status"
@@ -130,6 +131,7 @@ critical_files = [
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
     "agent-system/harness/production-gates.json",
+    "agent-system/onboarding.presets.json",
     "agent-system/secretary.capabilities.json",
     "agent-system/bin/office-system.py",
     "agent-system/docs/gui-contract.md",
@@ -146,7 +148,10 @@ PY
 grep -q "## Boundary And Pushback" SOUL.md || fail "default secretary SOUL missing pushback boundary"
 grep -q "## Reflective Advisory Mode" SOUL.md || fail "default secretary SOUL missing reflective advisory mode"
 grep -q "## Agent Routing And Workflow Orchestration" SOUL.md || fail "default secretary SOUL missing routing orchestration rules"
-json_assert agent-system/secretary.capabilities.json 'data["persona_policy"]["default_stance"].startswith("Act as a capable digital chief of staff")'
+json_assert agent-system/onboarding.presets.json '"assistant_style" in data["fields"] and "neutral_operator" in data["fields"]["assistant_style"]["choices"]'
+json_assert agent-system/secretary.capabilities.json 'data["persona_policy"]["default_stance"].startswith("Use the neutral operator baseline")'
+json_assert agent-system/secretary.capabilities.json '"gui_settings_governance" in [item["id"] for item in data["core_capabilities"]]'
+json_assert agent-system/secretary.capabilities.json 'data["gui_state_policy"]["home_snapshot_command"].startswith("office-system gui-state")'
 json_assert agent-system/secretary.capabilities.json '"reflective_pushback" in [item["id"] for item in data["core_capabilities"]]'
 json_assert agent-system/secretary.capabilities.json '"ai_native_loop_governance" in [item["id"] for item in data["core_capabilities"]]'
 json_assert agent-system/secretary.capabilities.json 'data["ai_native_loop_policy"]["iteration_confirmation_required"] is True'
@@ -159,6 +164,7 @@ json_assert agent-system/harness/tasks/vibe-coding-production.json 'data["task_i
 json_assert agent-system/harness/tasks/vibe-design-production.json 'data["task_id"] == "vibe-design-production"'
 json_assert agent-system/harness/tasks/portable-routing-production.json 'data["task_id"] == "portable-routing-production"'
 json_assert agent-system/harness/tasks/ai-native-loop-production.json 'data["task_id"] == "ai-native-loop-production"'
+json_assert agent-system/harness/tasks/gui-readiness-production.json 'data["task_id"] == "gui-readiness-production"'
 json_assert agent-system/ai-native-loop.manifest.json 'data["stages"]["iterate"]["gates"][0] == "no_auto_iteration_without_user_confirmation"'
 json_assert agent-system/ai-native-loop.manifest.json '"silent self-iteration" in data["stages"]["iterate"]["forbidden"]'
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
@@ -178,6 +184,19 @@ OFFICE="$HOME_DIR/agent-system/bin/office-system"
 "$HOME_DIR/agent-system/bin/harness-check" >/dev/null
 "$HOME_DIR/agent-system/bin/harness-runner" --task all --no-write >/dev/null
 "$HOME_DIR/agent-system/bin/product-update" status >/dev/null
+
+must_fail "$OFFICE" settings-status
+"$OFFICE" onboarding-options >"$WORK_DIR/onboarding-options.json"
+json_assert "$WORK_DIR/onboarding-options.json" 'data["configured"] is False and "work_mode" in data["presets"]["fields"]'
+must_fail "$OFFICE" onboarding-apply --assistant-style warm_coordinator
+"$OFFICE" onboarding-apply --assistant-style warm_coordinator --address-style friendly --language auto --initiative-level proactive_suggestions --pushback-style risk_based --approval-strictness strict --memory-mode personalized --work-mode balanced --company-name "Example Co" --secretary-name "Office Assistant" --confirmed >"$WORK_DIR/onboarding-apply.json"
+json_assert "$WORK_DIR/onboarding-apply.json" 'data["source"] == "gui_first_run_onboarding" and data["choices"]["assistant_style"] == "warm_coordinator" and data["choices"]["approval_strictness"] == "strict"'
+"$OFFICE" settings-update --work-mode quality --confirmed >"$WORK_DIR/settings-update.json"
+json_assert "$WORK_DIR/settings-update.json" 'data["source"] == "gui_settings_update" and data["choices"]["work_mode"] == "quality" and data["choices"]["approval_strictness"] == "strict"'
+"$OFFICE" settings-status >"$WORK_DIR/settings-status.json"
+json_assert "$WORK_DIR/settings-status.json" 'data["configured"] is True and data["preferences"]["secretary_name"] == "Office Assistant"'
+"$OFFICE" gui-state --user user-a --limit 5 >"$WORK_DIR/gui-state-initial.json"
+json_assert "$WORK_DIR/gui-state-initial.json" 'data["settings"]["configured"] is True and "global_settings" in [item["id"] for item in data["capabilities"]]'
 
 [ -f "$HOME_DIR/SOUL.md" ] || fail "default SOUL.md missing"
 [ ! -e "$HOME_DIR/profiles/secretary" ] || fail "secretary profile must not be duplicated"
@@ -343,6 +362,8 @@ json_assert "$WORK_DIR/workflow-completed.json" 'data["status"] == "completed"'
 json_assert "$WORK_DIR/audit-approval.json" 'len(data["events"]) >= 1 and data["events"][-1]["event_hash"]'
 "$OFFICE" notification-list --user user-a >"$WORK_DIR/notification-list.json"
 json_assert "$WORK_DIR/notification-list.json" 'len(data["notifications"]) >= 1'
+"$OFFICE" gui-state --user user-a --project p1 --limit 10 >"$WORK_DIR/gui-state-workflow.json"
+json_assert "$WORK_DIR/gui-state-workflow.json" 'data["settings"]["configured"] is True and data["workflows"]["count"] >= 1 and data["tasks"]["count"] >= 1 and data["approvals"]["count"] >= 1 and data["notifications"]["count"] >= 1'
 
 "$OFFICE" workflow-start --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --task "hello there" >"$WORK_DIR/workflow-clarify.json"
 clarify_run="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$WORK_DIR/workflow-clarify.json")"

@@ -153,4 +153,26 @@ git diff --check
 - SWE-agent, SWE-bench, aider, OpenHands: coding-agent harness and deterministic evaluation
 - RAGAS, Self-RAG, CRAG: retrieval quality and critique
 
+## GUI 化准备更新
+
+这一版的重点是让未来 GUI 可以完整使用底层系统，而不是只把 CLI 包一层外壳：
+
+- 首次打开 GUI 时，用户可以通过选项配置秘书/Agent 的全局工作方式：语言、称呼、主动性、反驳强度、审批严格度、记忆模式和工作质量偏好。
+- 后续使用过程中，用户也可以在设置页继续修改这些选项；`settings-update` 支持局部更新，未提交字段会沿用旧值。
+- `gui-state` 是 GUI 首页总览接口，一次返回健康状态、设置、Agent、项目、工作流、任务、审批、通知、知识源和审计记录。
+- 工作流控制面已经把 WorkflowRun、Task、Authorization、Audit Event、Notification 串成闭环。
+- 需要用户确认的动作必须经过 GUI 显式确认，例如取消工作流、审批决定、应用迭代方案、启用 Agent 插件。
+- 默认秘书改成中性基线，不再绑定个人名称或个人偏好；用户偏好保存在本地 `agent-system/settings/`，不会进入公开仓库。
+- 内置专家 Profile 已去个人化，改为 Digital Office Coder、Planner、Product Manager、Researcher、Designer、Writer 等通用角色。
+
+GUI 常用入口：
+
+```bash
+~/.hermes/agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
+~/.hermes/agent-system/bin/office-system onboarding-options
+~/.hermes/agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator --address-style neutral --language auto --initiative-level confirm_before_action --pushback-style risk_based --approval-strictness balanced --memory-mode project_only --work-mode balanced --confirmed
+~/.hermes/agent-system/bin/office-system settings-status
+~/.hermes/agent-system/bin/office-system settings-update --work-mode quality --confirmed
+```
+
 外部 skill 和高星项目只能作为候选来源。企业生产中必须经过 staged review、许可和安全检查、适配、harness 验证、管理员确认后才可启用。

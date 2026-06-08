@@ -282,3 +282,25 @@ bash agent-system/tests/smoke.sh
 - aider: https://github.com/aider-ai/aider
 - 12-factor-agents: https://github.com/humanlayer/12-factor-agents
 - awesome-claude-skills: https://github.com/ComposioHQ/awesome-claude-skills
+
+## GUI 化准备更新
+
+这次版本把底层能力整理成 GUI 可以直接调用的闭环：
+
+- 首次打开可以通过选项定制秘书/Agent 的全局工作方式，包括语言、称呼、主动性、反驳强度、审批严格度、记忆模式和工作质量偏好。
+- 使用过程中也可以在设置页继续修改这些选项。系统会保留未改动的旧选项，不会因为只改一个字段就重置全部偏好。
+- `gui-state` 提供首页总览，一次返回健康状态、设置状态、Agent、项目、工作流、任务、审批、通知、知识源和审计记录。
+- 工作流、任务、审批、通知和审计已经形成基础闭环：用户发起任务后，系统会生成 WorkflowRun、Task、Authorization、Audit Event 和 Notification。
+- 需要用户确认的动作必须显式确认，例如取消工作流、审批决定、应用迭代方案、启用新 Agent 插件。
+- 默认秘书人设改为中性基线，不再绑定个人名称或个人偏好。用户偏好保存在本地 `agent-system/settings/`，不会进入公开仓库。
+- 内置专家 Profile 已去个人化，改成 Digital Office Coder、Planner、Product Manager、Researcher、Designer、Writer 等通用角色。
+
+GUI 常用入口：
+
+```bash
+~/.hermes/agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
+~/.hermes/agent-system/bin/office-system onboarding-options
+~/.hermes/agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator --address-style neutral --language auto --initiative-level confirm_before_action --pushback-style risk_based --approval-strictness balanced --memory-mode project_only --work-mode balanced --confirmed
+~/.hermes/agent-system/bin/office-system settings-status
+~/.hermes/agent-system/bin/office-system settings-update --work-mode quality --confirmed
+```
