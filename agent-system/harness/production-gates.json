@@ -103,6 +103,24 @@
         "git_diff_is_reviewable",
         "no_unapproved_scope_expansion"
       ]
+    },
+    "writing": {
+      "entry_contract": [
+        "audience, purpose, tone, and source material are stated",
+        "desired artifact type and length are stated",
+        "approval-sensitive claims or facts are identified"
+      ],
+      "exit_artifacts": [
+        "storyline or outline",
+        "draft copy",
+        "speaker notes or narration guidance when relevant",
+        "handoff to design or delivery"
+      ],
+      "minimum_gates": [
+        "message_hierarchy_is_clear",
+        "claims_trace_to_source_or_are_marked_as_assumptions",
+        "tone_matches_audience_and_context"
+      ]
     }
   },
   "workflow_gates": {
@@ -122,6 +140,12 @@
     "research_then_pm": [
       "evidence_handoff_is_cited",
       "product_decision_names_uncertainty"
+    ],
+    "ppt_production": [
+      "intake_acceptance_criteria_confirmed",
+      "storyline_and_speaker_notes_written_before_design",
+      "design_gate_passed_before_deck_delivery",
+      "secretary_delivery_notes_include_artifact_path_or_url"
     ]
   },
   "quality_metrics": {

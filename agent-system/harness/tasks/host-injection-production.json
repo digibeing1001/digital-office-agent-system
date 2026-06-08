@@ -1,0 +1,63 @@
+{
+  "version": "1.0.0",
+  "task_id": "host-injection-production",
+  "description": "Verify Digital Office host rule injection for clean Hermes/OpenClaw installs and guarded behavior for non-clean hosts.",
+  "roles": [
+    "intake",
+    "operations",
+    "release"
+  ],
+  "workflow": "host_rule_injection",
+  "gates": [
+    {
+      "id": "policy_manifest_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/host-injection.policy.json"
+    },
+    {
+      "id": "policy_marks_suite_rules_authoritative",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/host-injection.policy.json",
+      "json_path": [
+        "suite_rules_authoritative_after_install"
+      ],
+      "equals": true
+    },
+    {
+      "id": "openclaw_default_entrypoint_registered",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/host-injection.policy.json",
+      "json_path": [
+        "supported_hosts",
+        "openclaw",
+        "entrypoint_files"
+      ],
+      "contains": "AGENTS.md"
+    },
+    {
+      "id": "default_entrypoint_injects_secretary",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "SOUL.md",
+      "patterns": [
+        "digital-office-managed-entrypoint",
+        "default Agent entrypoint",
+        "secretary Agent",
+        "suite rules are authoritative"
+      ]
+    },
+    {
+      "id": "installer_host_modes_and_dirty_guard",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; ./install.sh --host hermes --target \"$tmp/hermes-clean\" --no-check >/dev/null; test -f \"$tmp/hermes-clean/SOUL.md\"; grep -q 'digital-office-managed-entrypoint' \"$tmp/hermes-clean/SOUL.md\"; ./install.sh --host openclaw --target \"$tmp/openclaw-clean\" --no-check >/dev/null; test -f \"$tmp/openclaw-clean/AGENTS.md\"; grep -q 'secretary Agent' \"$tmp/openclaw-clean/AGENTS.md\"; mkdir -p \"$tmp/openclaw-dirty\"; printf '# Existing local rules\\n' > \"$tmp/openclaw-dirty/AGENTS.md\"; set +e; ./install.sh --host openclaw --target \"$tmp/openclaw-dirty\" --no-check > \"$tmp/dirty.out\" 2> \"$tmp/dirty.err\"; code=$?; set -e; test \"$code\" -ne 0; grep -q 'Choose --preserve-existing' \"$tmp/dirty.err\"; ./install.sh --host openclaw --target \"$tmp/openclaw-dirty\" --preserve-existing --no-check >/dev/null; grep -q 'Existing local rules' \"$tmp/openclaw-dirty/AGENTS.md\"; test -f \"$tmp/openclaw-dirty/digital-office/AGENTS.md\"; ./install.sh --host openclaw --target \"$tmp/openclaw-dirty\" --overwrite-existing --no-check >/dev/null; grep -q 'digital-office-managed-entrypoint' \"$tmp/openclaw-dirty/AGENTS.md\"; ls \"$tmp/openclaw-dirty\"/AGENTS.md.before-digital-office.* >/dev/null"
+      ]
+    }
+  ]
+}

@@ -2,16 +2,17 @@
 
 ## Goal
 
-This layer turns Hermes into a portable Digital Office runtime. It should work
-as an experiment inside `~/.hermes` today and later migrate into products such
-as Digital Law Firm, Digital Accounting Firm, or Digital Media Studio.
+This layer turns a compatible Agent host into a portable Digital Office runtime.
+It should work as an experiment inside `~/.hermes` today, inject into clean
+Hermes or OpenClaw installations, and later migrate into products such as
+Digital Law Firm, Digital Accounting Firm, or Digital Media Studio.
 
 ## Runtime Layers
 
 1. Digital Office GUI
 2. Product backend API
 3. tenant identity, roles, seats, and entitlement control
-4. Hermes runtime
+4. Agent host runtime such as Hermes or OpenClaw
 5. `agent-system` registries and policies
 6. agent profiles and skills
 7. company/project knowledge bases
@@ -20,7 +21,28 @@ as Digital Law Firm, Digital Accounting Firm, or Digital Media Studio.
 10. local model capabilities for OCR and RAG
 
 The GUI should expose projects, digital employees, knowledge, rules, approvals,
-and product updates. It should not expose Hermes internals by default.
+and product updates. It should not expose host runtime internals by default.
+
+## Host Rule Injection
+
+`agent-system/host-injection.policy.json` is the canonical policy for installing
+Digital Office into clean and non-clean Agent hosts.
+
+Clean hosts receive the Digital Office managed entrypoint automatically. The
+host default Agent is injected as the `secretary` Agent and must load
+`agent-system/` rules, registries, workflows, gates, and release policy before
+host-local defaults.
+
+Non-clean hosts are never silently overwritten. If the installer finds unmanaged
+`SOUL.md`, unmanaged `AGENTS.md`, user preferences, projects, knowledge, tasks,
+or run state, it must require one of two explicit choices:
+
+1. Preserve existing host rules and install Digital Office side-by-side.
+2. Back up the existing host entrypoint and overwrite it with the Digital Office
+   secretary entrypoint.
+
+Hermes uses `SOUL.md` as the injected default Agent entrypoint. OpenClaw and
+generic compatible hosts use `AGENTS.md`.
 
 ## Team And Identity
 
@@ -57,10 +79,11 @@ agents, profiles, models, providers, route keywords, workflows, and route tests.
 agent or workflow, logs route events without storing raw prompts, and launches
 Hermes with the selected profile/model/provider.
 
-The `secretary` agent id refers to the existing Hermes default secretary loaded
-from `~/.hermes/SOUL.md`. It must not be duplicated as a second customer-facing
-secretary profile. In the registry, `profile: "__default__"` means the router
-omits `-p` and lets Hermes use the default secretary entrypoint.
+The `secretary` agent id refers to the current host default Agent entrypoint
+after Digital Office injection. It must not be duplicated as a second
+customer-facing secretary profile. In the registry, `profile: "__default__"`
+means the router omits a specialist profile and lets the host use the default
+secretary entrypoint.
 
 This split is required for migration. A law firm package, accounting package,
 and media studio package can ship different registries while reusing the same

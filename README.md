@@ -1,383 +1,205 @@
 # 数字办公室 Agent System
 
-这是一套基于 Hermes 的数字办公室底层系统。它不是一个只靠命令行使用的 Agent 配置包，而是面向未来 GUI 产品的多 Agent 运行层：用户在界面里创建项目、上传知识、分派任务、查看 Agent 协作、确认迭代和接收交付；Hermes 在底层负责 Agent 执行、路由、技能调用、知识读取和本地模型能力。
+数字办公室 Agent System 是一套可分发的多 Agent 办公运行层。它可以部署到 Hermes、OpenClaw 或其他兼容 Agent 宿主中，把宿主默认 Agent 注入为“数字办公室秘书”，再由秘书统一完成需求收口、角色路由、工作流编排、知识边界、质量门禁和交付说明。
 
-这套系统的目标是把“一个人使用 AI 工具”升级为“一个人或一个团队管理一间数字办公室”。它可以迁移到数字律所、数字会计师事务所、数字新媒体工作室、一人公司开发者工作台、一人设计师工作台等不同业务场景。
+这不是个人本地规则集合，也不是单纯的命令行配置包。产品目标是让用户或团队在 GUI 中创建项目、上传知识、分派任务、查看 Agent 协作、确认迭代并接收交付；底层宿主负责执行，数字办公室套件负责把执行组织成可验证、可回滚、可持续更新的产品工作流。
 
-## 产品特点
+## 产品定位
 
-- 多 Agent 办公室：秘书、PM、研究员、规划师、设计师、工程师、写作者等数字员工通过统一注册表和路由器协作。
-- 智能路由：`scripts/agent-router` 读取 `agent-system/agents.registry.json`，先判断任务所需角色，再映射到当前部署的 Agent，避免把产品逻辑硬编码到某几个 Agent 名称上。
-- 工作流控制面：普通用户从 GUI 发起任务时，系统会同时创建 WorkflowRun、任务记录、权限决策、审计事件和通知，而不是只把一句话丢给 Agent。
-- 任务台与审批中心：任务可以排队、阻塞、等待审批、完成、失败、取消；高风险动作通过审批中心确认，审批通过或拒绝都会回写任务和工作流状态。
-- 权限、审计和通知：工作流启动、任务更新、审批决策等关键动作都会经过角色权限判断，并写入带 hash 链的审计日志，GUI 可以展示通知和未读提醒。
-- AI native 闭环：每个生产任务按照“感知、规划、执行、反思及迭代”推进，并留下可回放记录。
-- 显式迭代：系统可以提出改进建议，但不能未经用户确认就自我修改。迭代必须显示变更内容、原因、影响、风险、回滚和回归检查。
-- 双层知识库：公司全局知识库保存长期方法论和组织规则，项目知识库保存项目资料、过程文件和阶段决策。
-- KeyMemory 接力记忆：KeyMemory 用来承接项目和子项目之间的交接、偏好、摘要和检索指针，不作为项目事实的最高来源。
-- 多模态知识预留：支持 PDF、Word、文本和图片上传；本地 OCR/RAG 模型在部署时下载，不把模型权重提交到仓库。
-- 行业知识库和权限：支持将供应商销售的行业知识库作为授权参考层挂载到项目、公司或特定 Agent，不允许用户下载源文件。
-- 生产 harness：通过 `harness-check` 和 `harness-runner` 检查路由、知识、技能、闭环、GUI 契约、迭代确认和回归任务。
-- 企业发布预留：普通用户只看到数字办公室 GUI；Hermes、本地模型、Agent 插件和 skill 更新由我们验证后通过产品发布渠道推送。
+- 面向用户：提供一个可操作的数字办公室，而不是要求用户理解底层 Agent 工具。
+- 面向部署管理员：提供安装、注入、备份、验证和回滚路径，保护原宿主中的个人规则和数据。
+- 面向开发者：提供注册表、规则、技能来源、质量门禁和发布清单，确保每次更新都能进入可分发版本。
 
-## 架构概览
+当前仓库是 internal 开发通道。生产客户应接收经过验证的数字办公室发布包，而不是直接拉取上游宿主、随意安装 skill 或手动覆盖本地规则。
 
-```text
-用户 / 企业团队
-  |
-  v
-数字办公室 GUI
-  |
-  v
-产品后端 API
-  |
-  +-- 项目、用户、角色、权限、授权知识库
-  +-- AI native 闭环记录
-  +-- WorkflowRun、任务台、审批中心、审计日志、通知
-  +-- Agent 请求、插件包、发布更新
-  |
-  v
-Hermes Runtime
-  |
-  +-- scripts/agent-router
-  +-- agent-system/agents.registry.json
-  +-- profiles/
-  +-- skills/
-  +-- knowledge/company
-  +-- projects/<project_id>/knowledge
-  +-- KeyMemory relay
-  +-- local OCR / RAG model installers
-```
+## 核心能力
 
-## AI Native 产品闭环
+- 多 Agent 办公室：秘书、PM、研究员、规划师、设计师、工程师、Writer 等数字员工通过统一注册表协作。
+- 默认 Agent 秘书注入：安装后宿主默认 Agent 承担秘书职责，不再沿用宿主原始默认规则作为最高优先级。
+- 可迁移路由：`scripts/agent-router` 先选择 portable role，再映射到当前部署中的具体 Agent，避免把产品逻辑锁死在某个宿主或 Agent 名称上。
+- 工作流控制面：任务启动时同步创建 WorkflowRun、任务记录、权限决策、审计事件和通知。
+- 质量门禁：`harness-check` 与 `harness-runner` 验证路由、工作流、知识权限、GUI 合约、PWA、AI native loop、设计/编码生产门禁、PPT 生产和宿主注入策略。
+- 知识与记忆边界：项目知识、公司知识、授权行业参考层和 KeyMemory 接力记忆分层管理，避免把个人偏好或未确认草稿当作事实源。
+- 产品化更新：普通用户看到的是数字办公室产品更新，不需要直接管理 Hermes、OpenClaw、skill 或底层模型。
 
-生产任务必须走这条闭环：
+## 支持宿主
 
-1. 感知：读取用户意图、项目、身份权限、项目知识库、公司知识库、授权行业知识、KeyMemory 接力记忆、路由候选和系统健康状态。
-2. 规划：选择角色和工作流，定义交接契约、验收标准、风险、测试和回滚方案。
-3. 执行：通过 `agent-router` 调度 Agent，收集产物、观察结果、交接报告和 gate 结果。
-4. 反思：对照目标、证据、质量门禁和用户反馈，产出反思报告、失败原因和可复用方法论草稿。
-5. 迭代：只生成用户可见的迭代提案。用户确认前，不允许静默修改规则、工作流、Agent 灵魂文档、知识库、skill 或发布配置。
+| 宿主 | 默认目标目录 | 注入入口 | 默认 Agent 角色 |
+| --- | --- | --- | --- |
+| Hermes | `~/.hermes` | `SOUL.md` | `secretary` |
+| OpenClaw | `~/.openclaw` | `AGENTS.md` | `secretary` |
+| generic | `~/.digital-office-agent` | `AGENTS.md` | `secretary` |
 
-相关命令：
+宿主注入策略的机器可读来源是 `agent-system/host-injection.policy.json`。中文说明见 [agent-system/docs/host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md)。
 
-```bash
-~/.hermes/agent-system/bin/office-system loop-start --task "<task>" --project <project_id>
-~/.hermes/agent-system/bin/office-system loop-stage --run-id <run_id> --stage perceive --status started
-~/.hermes/agent-system/bin/office-system loop-status --run-id <run_id>
-
-~/.hermes/agent-system/bin/office-system iteration-proposal-create --title "<title>" --target workflow --summary "<why>" --expected-impact "<impact>" --risk "<risk>" --rollback "<rollback>"
-~/.hermes/agent-system/bin/office-system iteration-proposal-decision --proposal-id <proposal_id> --decision confirm
-~/.hermes/agent-system/bin/office-system iteration-proposal-apply --proposal-id <proposal_id> --confirmed --regression-result "<result>"
-```
-
-## 工作流、任务台和审批中心
-
-面向 GUI 的主入口是 `workflow-start`。它会先调用路由器判断该由哪个 Agent 或多 Agent 工作流承接，再写入可追踪的运行记录。低置信度任务不会被静默派发，而是进入秘书澄清流程。
-
-典型用户路径：
-
-1. 用户在 GUI 中选择项目并输入任务。
-2. 系统创建 WorkflowRun 和任务台记录，写入权限决策、路由结果、审计事件和通知。
-3. 如果任务需要人工确认，GUI 在审批中心展示审批项。
-4. 审批通过后，任务回到队列，工作流继续执行。
-5. 任务完成、失败、取消、恢复或重试都会继续写入审计和任务历史。
-
-相关命令：
-
-```bash
-~/.hermes/agent-system/bin/office-system workflow-start --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --task "<task>"
-~/.hermes/agent-system/bin/office-system workflow-status --run-id <run_id>
-~/.hermes/agent-system/bin/office-system workflow-list --project <project_id>
-~/.hermes/agent-system/bin/office-system workflow-resume --run-id <run_id> --requested-by <user_id> --role <role>
-~/.hermes/agent-system/bin/office-system workflow-retry --run-id <run_id> --stage execute --requested-by <user_id> --role <role>
-~/.hermes/agent-system/bin/office-system workflow-cancel --run-id <run_id> --requested-by <user_id> --role <role> --confirmed
-
-~/.hermes/agent-system/bin/office-system task-list --project <project_id>
-~/.hermes/agent-system/bin/office-system task-status --task-id <task_id>
-~/.hermes/agent-system/bin/office-system task-update --task-id <task_id> --status completed --updated-by <user_id> --role <role>
-
-~/.hermes/agent-system/bin/office-system approval-create --tenant <tenant_id> --deployment <deployment_id> --title "<title>" --action workflow.continue --resource-type workflow_run --resource-id <run_id> --requested-by <user_id> --requested-by-role <role> --approver-role project_manager --workflow-run <run_id> --task-id <task_id>
-~/.hermes/agent-system/bin/office-system approval-list --status pending
-~/.hermes/agent-system/bin/office-system approval-decision --approval-id <approval_id> --decision approve --decided-by <user_id> --role <role> --confirmed
-
-~/.hermes/agent-system/bin/office-system auth-decision --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --action workflow.start --resource-type workflow_run --resource-id <run_id> --project <project_id> --agent <agent_id>
-~/.hermes/agent-system/bin/office-system audit-events --resource-type workflow_run --resource-id <run_id>
-~/.hermes/agent-system/bin/office-system notification-list --user <user_id> --unread-only
-```
-
-这部分是未来数字办公室 GUI 的底座：用户看到的是“任务、审批、通知、进度和交付”，底层才是 Hermes、Agent 和命令行。
-
-## 多 Agent 路由
-
-核心 Agent 在 `agent-system/agents.registry.json` 中注册。
-
-当前默认角色包括：
-
-- `secretary`：数字办公室秘书，负责入口、澄清、路由、工作流组织、Agent 需求收集、迭代确认和 GUI 体验守护。
-- `pm`：产品判断、PRD、路线图、MVP、优先级和验收标准。
-- `researcher`：市场、竞品、事实、行业和假设研究。
-- `planer`：架构、计划、里程碑、依赖和实施顺序。
-- `vibe-designer`：GUI、UX、视觉方向、拟态化数字办公室界面和设计交付。
-- `coder`：代码实现、调试、测试、重构和部署验证。
-- `writer`：文章、公众号、文案、编辑和表达风格。
-
-路由原则：
-
-- 先选择任务需要的可迁移角色，如 `evidence`、`product`、`design`、`implementation`。
-- 再通过注册表把角色映射到当前部署的 Agent。
-- 不把数字律所、会计师事务所、新媒体工作室等行业版本锁死在当前 Agent 名称上。
-- 低置信度或跨权限、知识库、记忆、发布、迭代的任务由秘书接管并要求澄清。
-
-检查路由：
-
-```bash
-~/.hermes/scripts/agent-router --health
-~/.hermes/scripts/agent-router --route-json "<user request>"
-```
-
-## 知识库与记忆
-
-事实权威优先级：
-
-1. 项目知识库
-2. 公司全局知识库
-3. 授权行业参考层
-4. KeyMemory 接力记忆
-
-交接优先级：
-
-1. 当前任务状态
-2. KeyMemory 项目接力
-3. 项目最新决策
-4. 公司全局方法论
-
-KeyMemory 的定位：
-
-- 适合保存项目接力摘要、子项目交接、偏好、长期操作记忆、已确认方法论摘要和检索指针。
-- 不适合保存原始 PDF、Word、图片、未确认草稿、明文密钥或与项目源文件冲突的事实。
-
-知识库命令：
-
-```bash
-~/.hermes/agent-system/bin/office-system project-create --project <project_id> --name "<name>"
-~/.hermes/agent-system/bin/office-system knowledge-add --scope project --project <project_id> --file <path> --approve
-~/.hermes/agent-system/bin/office-system knowledge-add-text --scope company --title "<title>" --body "<text>" --approve
-~/.hermes/agent-system/bin/office-system rag-index --scope project --project <project_id>
-~/.hermes/agent-system/bin/office-system rag-search --scope project --project <project_id> --query "<query>"
-~/.hermes/agent-system/bin/office-system context --project <project_id> --agent <agent_id>
-```
-
-## 生产 Harness
-
-harness 的目标是让系统真正可交付，而不是只完成原型。
-
-它检查：
-
-- Agent 注册表和路由健康
-- 多 Agent 工作流是否按角色编排
-- 设计和实现 skill 是否具备生产 gate
-- AI native 闭环 manifest 是否存在
-- 迭代是否强制用户确认
-- 知识库、RAG、项目接力和授权知识访问是否满足契约
-- 安装包能否在干净目录中跑通 smoke test
-
-运行：
-
-```bash
-~/.hermes/agent-system/bin/harness-check
-~/.hermes/agent-system/bin/harness-runner --task all --no-write
-bash agent-system/tests/smoke.sh
-```
-
-## Agent 插件与企业发布
-
-生产环境不允许客户侧秘书 Agent 自主拼装新 Agent，也不允许在 GUI 中随意增加、删除、安装或重组 skill。
-
-新 Agent 的流程是：
-
-1. 秘书通过对话帮助用户理清 Agent 需求。
-2. 用户确认后，需求发送到我们的后端。
-3. 我们设计、测试并打包 Agent 插件。
-4. 企业主机下载插件包。
-5. 秘书生成集成报告，说明新 Agent 如何进入现有体系和工作流。
-6. GUI 显示 Confirm、Tune Through Conversation、Pause。
-7. 只有 Confirm 后，系统才注册和部署新 Agent。
-
-企业更新也应走产品发布渠道。普通用户看到的是“检查产品更新”，而不是直接更新 Hermes 或 skill。
-
-## 本地模型
-
-仓库不包含 OCR/RAG 模型权重。部署时按需下载：
-
-```bash
-~/.hermes/agent-system/bin/install-local-models --pack base-ocr-python
-~/.hermes/agent-system/bin/install-local-models --pack base-rag-zh
-```
-
-默认策略：
-
-- 文本、DOCX、PDF 文本提取优先本地。
-- 图片 OCR 优先本地小模型或本地 OCR 工具。
-- 视觉理解或低置信 OCR 才考虑经用户或管理员批准调用 VLM。
-
-## 安装
+## 安装与注入
 
 从仓库根目录执行：
 
 ```bash
-./install.sh ~/.hermes
+./install.sh --host hermes --target ~/.hermes
+./install.sh --host openclaw --target ~/.openclaw
 ```
 
-安装脚本会同步 `agent-system/`、`scripts/`、`profiles/`、`skills/` 和默认 `SOUL.md`，并运行健康检查与 harness 检查。
+干净宿主会自动注入数字办公室默认 Agent 入口，并同步 `agent-system/`、`scripts/`、`profiles/`、`skills/`、README 和产品文档。
+
+如果目标宿主已有个人规则、用户偏好、项目、知识、任务或运行记录，安装器不会静默覆盖。管理员必须明确选择：
+
+```bash
+# 保留原宿主规则和个人数据，把数字办公室旁路安装到 digital-office/
+./install.sh --host openclaw --target ~/.openclaw --preserve-existing
+
+# 备份原入口文件，然后用数字办公室秘书入口覆盖默认 Agent 入口
+./install.sh --host openclaw --target ~/.openclaw --overwrite-existing
+```
+
+安装器默认运行：
+
+```bash
+scripts/agent-router --health
+agent-system/bin/office-system health
+agent-system/bin/harness-check
+agent-system/bin/harness-runner --task all --no-write
+agent-system/bin/product-update status
+```
+
+## 默认秘书 Agent
+
+默认宿主 Agent 被注入为数字办公室秘书 Agent。秘书负责：
+
+1. 澄清用户意图、项目、受众、权限和验收标准。
+2. 通过 `agents.registry.json` 选择 portable role 和具体 Agent。
+3. 管理多 Agent 交接，确保后续角色使用前序产物，而不是重头开始。
+4. 使用 `production-gates.json` 和相关 harness 任务检查质量。
+5. 给出最终交付说明，包括文件路径、URL、打开方式、风险和未解决假设。
+
+默认秘书人设改为中性基线。用户偏好通过 GUI onboarding 和设置文件表达，不能覆盖安全、权限、知识来源、生产门禁或发布控制。
+
+## 典型工作流
+
+### PPT 生产
+
+PPT、slides、deck、presentation、汇报、幻灯片等需求会进入 `ppt_production`：
+
+```text
+intake -> writing -> design -> intake
+```
+
+- 秘书 `intake`：澄清目标、受众、页数、素材、交付格式和验收标准。
+- Writer `writing`：负责故事线、页面文案、标题层级、讲稿和事实表述。
+- Designer `design`：负责视觉方向、版式、媒体决策和可渲染 deck artifact。
+- 秘书 `intake`：执行最终门禁，交付文件路径、URL 或打开方式，并说明未解决假设。
+
+Writer 不承担最终 HTML/PPT deck 渲染，除非未来显式注册了 deck 渲染技能并通过同等门禁。
+
+### Vibe Design / Vibe Coding
+
+设计和编码类任务分别使用 `vibe-design-production-harness` 与 `vibe-coding-production-harness`。工作流必须保留产品判断、设计方向、实现验证和回归检查，不允许把生产门禁压缩成“看起来完成了”。
+
+### AI Native Product Loop
+
+生产任务遵循：
+
+```text
+Perceive -> Plan -> Execute -> Reflect -> Iterate
+```
+
+迭代必须生成用户可见提案。用户确认前，不允许静默修改规则、工作流、Agent 行为、知识库、skill bundle、模型路由、GUI 合约或发布配置。
+
+## GUI 化准备更新
+
+GUI 的入口命令由 `agent-system/bin/office-system` 提供。当前产品层已经具备以下后端契约：
+
+```bash
+agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
+agent-system/bin/office-system onboarding-options
+agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator --address-style neutral --language auto --initiative-level confirm_before_action --pushback-style risk_based --approval-strictness balanced --memory-mode project_only --work-mode balanced --confirmed
+agent-system/bin/office-system settings-status
+agent-system/bin/office-system settings-update --work-mode quality --confirmed
+```
+
+`gui-state` 返回健康状态、设置、能力、Agent、项目、工作流、任务、审批、通知、知识和审计摘要。`settings-update` 用于 GUI 的局部设置更新。普通用户不应直接编辑宿主规则文件。
+
+## Web UI And PWA
+
+仓库包含一个可安装的 Web/PWA shell，用于未来 GUI 迭代。管理员可以配置和启动本地 Web UI：
+
+```bash
+agent-system/bin/office-system web-config --public-url https://office.example.com
+agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url https://office.example.com
+```
+
+浏览器访问本地服务后可选择 Install as PWA。对外暴露时应使用 HTTPS，否则 PWA 安装能力和浏览器权限会受限。
+
+## 验证与开发
+
+本仓库以可分发产品版本为开发目标。每次更新都应确认：
+
+1. 安装包能在用户主机上完成安装、规则注入和健康检查。
+2. 关键工作流能闭环交付，不停留在文档或手动操作。
+3. `harness-check` 和相关 `harness-runner` 任务通过。
+4. 中文 README 面向用户、部署管理员和开发者，不写成个人运行记录。
+5. WSL Hermes 开发目录与 GitHub 仓库保持同步。
+
+常用检查：
+
+```bash
+python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
+agent-system/bin/harness-check
+agent-system/bin/harness-runner --task all --no-write
+bash agent-system/tests/smoke.sh
+```
+
+查看路由：
+
+```bash
+scripts/agent-router --health
+scripts/agent-router --route-json "帮我做一份PPT汇报"
+scripts/agent-router --route-json "research competitors, decide product requirements, design the interface, then implement the code"
+```
 
 ## 仓库结构
 
 ```text
 .
+|-- install.sh
+|-- SOUL.md
 |-- README.md
 |-- README.zh-CN.md
-|-- SOUL.md
-|-- install.sh
 |-- scripts/
 |   `-- agent-router
 |-- profiles/
 |-- skills/
 `-- agent-system/
-    |-- ai-native-loop.manifest.json
     |-- agents.registry.json
     |-- secretary.capabilities.json
-    |-- knowledge.registry.json
-    |-- memory.relay.registry.json
-    |-- rag.pipeline.json
-    |-- multimodal.pipeline.json
+    |-- host-injection.policy.json
+    |-- product.release.manifest.json
     |-- harness/
     |-- docs/
     |-- bin/
+    |-- rules/
     |-- knowledge/
     |-- projects/
-    |-- runs/
     |-- tasks/
-    |-- approvals/
-    |-- notifications/
-    |-- logs/
-    `-- rules/
+    `-- runs/
 ```
 
-## 设计参考
+## 关键文档
 
-这套系统吸收了多 Agent、RAG 和生产 Agent 工程中的一些原则，但不会把外部 skill 或框架直接装进企业生产环境。
+- [agent-system/docs/architecture.md](agent-system/docs/architecture.md)：总体架构、宿主注入、规则优先级、知识和发布模型。
+- [agent-system/docs/host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md)：Hermes、OpenClaw 和 generic 宿主注入策略。
+- [agent-system/docs/ppt-production-workflow.md](agent-system/docs/ppt-production-workflow.md)：PPT 生产工作流和角色边界。
+- [agent-system/docs/production-harness.md](agent-system/docs/production-harness.md)：生产门禁设计。
+- [agent-system/docs/gui-contract.md](agent-system/docs/gui-contract.md)：未来 GUI 与本地运行层的命令合约。
 
-- ReAct: https://arxiv.org/abs/2210.03629
-- Reflexion: https://arxiv.org/abs/2303.11366
-- Generative Agents: https://arxiv.org/abs/2304.03442
-- Voyager: https://arxiv.org/abs/2305.16291
-- MetaGPT: https://arxiv.org/abs/2308.00352
-- AutoGen: https://arxiv.org/abs/2308.08155
-- SWE-bench: https://arxiv.org/abs/2310.06770
-- RAGAS: https://arxiv.org/abs/2309.15217
-- LangGraph durable execution: https://docs.langchain.com/oss/python/langgraph/durable-execution
-- OpenHands: https://github.com/All-Hands-AI/OpenHands
-- SWE-agent: https://github.com/SWE-agent/SWE-agent
-- aider: https://github.com/aider-ai/aider
-- 12-factor-agents: https://github.com/humanlayer/12-factor-agents
-- awesome-claude-skills: https://github.com/ComposioHQ/awesome-claude-skills
+## 产品开发更新日志
 
-## GUI 化准备更新
+### 2026-06-09
 
-这次版本把底层能力整理成 GUI 可以直接调用的闭环：
-
-- 首次打开可以通过选项定制秘书/Agent 的全局工作方式，包括语言、称呼、主动性、反驳强度、审批严格度、记忆模式和工作质量偏好。
-- 使用过程中也可以在设置页继续修改这些选项。系统会保留未改动的旧选项，不会因为只改一个字段就重置全部偏好。
-- `gui-state` 提供首页总览，一次返回健康状态、设置状态、Agent、项目、工作流、任务、审批、通知、知识源和审计记录。
-- 工作流、任务、审批、通知和审计已经形成基础闭环：用户发起任务后，系统会生成 WorkflowRun、Task、Authorization、Audit Event 和 Notification。
-- 需要用户确认的动作必须显式确认，例如取消工作流、审批决定、应用迭代方案、启用新 Agent 插件。
-- 默认秘书人设改为中性基线，不再绑定个人名称或个人偏好。用户偏好保存在本地 `agent-system/settings/`，不会进入公开仓库。
-- 内置专家 Profile 已去个人化，改成 Digital Office Coder、Planner、Product Manager、Researcher、Designer、Writer 等通用角色。
-
-GUI 常用入口：
-
-```bash
-~/.hermes/agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
-~/.hermes/agent-system/bin/office-system onboarding-options
-~/.hermes/agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator --address-style neutral --language auto --initiative-level confirm_before_action --pushback-style risk_based --approval-strictness balanced --memory-mode project_only --work-mode balanced --confirmed
-~/.hermes/agent-system/bin/office-system settings-status
-~/.hermes/agent-system/bin/office-system settings-update --work-mode quality --confirmed
-```
-
-## GUI Backplane Update: Direct Agents, Canvas, Knowledge, Workbenches
-
-This release adds the backend contract needed before building the visual Digital Office GUI.
-
-What users will be able to do from the GUI:
-
-- Directly call a specific employee Agent with `@Agent`, while still creating a governed workflow run, task, authorization decision, audit event, and notification.
-- Start, pause, resume, and stop workflows from visible controls. Stop is a destructive action and requires explicit confirmation.
-- View and edit future workflow steps on a canvas. Canvas edits use draft revisions, validation, and confirmed activation, so a running workflow does not silently change under the user.
-- Add constrained canvas components: Agent task, text instruction, file reference, folder reference, knowledge scope, approval gate, human input, output artifact, merge summary, condition, and parallel group.
-- Keep personal folders private by default. A user can share a file or folder with another user, a role, an Agent, a project, or a workflow scope.
-- Resolve workflow knowledge in snapshot mode by default, so a run can be reproduced later even if source folders change.
-- Open role-specific workbenches: owner/global, project lead, member, approver, and viewer.
-
-Key GUI-facing commands:
-
-```bash
-~/.hermes/agent-system/bin/office-system agent-invoke --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --agent <agent_id> --task "<task>"
-
-~/.hermes/agent-system/bin/office-system workflow-draft-create --run-id <run_id> --created-by <user_id> --role <role>
-~/.hermes/agent-system/bin/office-system workflow-draft-patch --run-id <run_id> --revision-id <revision_id> --updated-by <user_id> --role <role> --patch-json '<json>'
-~/.hermes/agent-system/bin/office-system workflow-draft-validate --run-id <run_id> --revision-id <revision_id>
-~/.hermes/agent-system/bin/office-system workflow-draft-activate --run-id <run_id> --revision-id <revision_id> --activated-by <user_id> --role <role> --confirmed
-~/.hermes/agent-system/bin/office-system workflow-control --run-id <run_id> --action pause --requested-by <user_id> --role <role>
-~/.hermes/agent-system/bin/office-system workflow-node-context --run-id <run_id> --node-id <node_id>
-
-~/.hermes/agent-system/bin/office-system knowledge-folder-create --space-type personal --owner <user_id> --folder-id <folder_id> --title "<title>" --created-by <user_id> --role <role>
-~/.hermes/agent-system/bin/office-system knowledge-item-add --space-type personal --owner <user_id> --folder-id <folder_id> --item-id <item_id> --title "<title>" --source-ref <ref> --created-by <user_id> --role <role>
-~/.hermes/agent-system/bin/office-system knowledge-share --space-type personal --owner <owner_id> --resource-type folder --resource-id <folder_id> --target-type user --target-id <user_id> --shared-by <owner_id> --role <role>
-~/.hermes/agent-system/bin/office-system knowledge-scope-resolve --space-type project --project <project_id> --folder-id <folder_id> --user <user_id> --role <role>
-
-~/.hermes/agent-system/bin/office-system workbench-state --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role project_manager --project <project_id>
-```
-
-New production harness tasks:
-
-```bash
-~/.hermes/agent-system/bin/harness-runner --task direct-agent-invocation-production --no-write
-~/.hermes/agent-system/bin/harness-runner --task workflow-canvas-revision-production --no-write
-~/.hermes/agent-system/bin/harness-runner --task knowledge-space-acl-production --no-write
-~/.hermes/agent-system/bin/harness-runner --task role-workbench-production --no-write
-```
-
-The GUI should use these commands instead of reading or editing runtime files directly.
-
-## Web UI And PWA
-
-The first customer-facing GUI can be deployed as a Web UI and installed as a PWA from the browser. The customer host runs the backend service once; users open it through a LAN or internet URL.
-
-What this adds for users:
-
-- Open Digital Office from a normal browser without installing a heavy desktop client.
-- Install as PWA on supported browsers for an app-like icon and standalone window.
-- See backend health, workflow counters, task counters, approval counters, and recent workflow state through the same GUI snapshot contract that the later full frontend will use.
-- Keep mutating actions governed. The Web shell does not expose a generic remote shell or arbitrary CLI executor.
-
-Run locally:
-
-```bash
-~/.hermes/agent-system/bin/office-system web-config --public-url http://127.0.0.1:8787
-~/.hermes/agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url http://127.0.0.1:8787 --quiet
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8787/
-```
-
-Production deployment:
-
-- Put Caddy or Nginx in front of `web-serve` and use HTTPS for browser PWA installation.
-- Use `agent-system/deploy/Caddyfile.example`, `agent-system/deploy/nginx.conf.example`, and `agent-system/deploy/systemd/digital-office-web.service.example` as templates.
-- For internet-facing deployments, bind `web-serve` to `127.0.0.1` and expose only the reverse proxy.
-- For trusted LAN/VPN-only deployments, `--host 0.0.0.0` is acceptable when the network boundary is controlled.
-- Validate before delivery with `~/.hermes/agent-system/bin/harness-runner --task web-pwa-production --no-write` or `bash ~/.hermes/agent-system/tests/web-pwa-smoke.sh`.
+- 新增 `ppt_production` 工作流，顺序为 `intake -> writing -> design -> intake`。
+- 新增 PPT 外部技能来源登记：`humanize-ppt`、`huashu-design`、`guizang-ppt-skill`、`frontend-slides`；`pitch-clarity-coach` 保持 research-only，不作为生产秘书技能启用。
+- 新增宿主注入策略，支持 Hermes、OpenClaw 和 generic 宿主。
+- 安装器新增 `--host`、`--overwrite-existing`、`--preserve-existing`、`--no-check` 选项。
+- 默认宿主 Agent 明确注入为数字办公室秘书 Agent。
+- 主 README 与中文 README 调整为面向用户、部署管理员和开发者的产品说明与开发更新日志。

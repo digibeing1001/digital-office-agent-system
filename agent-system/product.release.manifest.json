@@ -18,6 +18,16 @@
       "install_path": "agent-system",
       "customer_visible": false
     },
+    "host_injection_policy": {
+      "included": true,
+      "manifest": "agent-system/host-injection.policy.json",
+      "supported_hosts": [
+        "hermes",
+        "openclaw",
+        "generic"
+      ],
+      "customer_visible": "admin_only"
+    },
     "profiles": {
       "included": true,
       "install_path": "profiles",
@@ -77,6 +87,9 @@
     "hermes_name_hidden_by_default": true,
     "customer_entrypoint": "gui_only",
     "raw_hermes_cli_hidden_by_default": true,
+    "default_host_agent_injected_as_secretary": true,
+    "clean_host_rules_overwritten_by_suite": true,
+    "non_clean_host_requires_preserve_or_overwrite_choice": true,
     "rollback_required": true,
     "admin_approval_required": true,
     "support_mode_can_show_runtime_details": true

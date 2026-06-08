@@ -1,36 +1,196 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TARGET="${1:-$HOME/.hermes}"
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAMP="$(date +%Y%m%d%H%M%S)"
+HOST="hermes"
+TARGET=""
+MODE="auto"
+RUN_CHECKS=1
 
-mkdir -p "$TARGET/scripts" "$TARGET/profiles" "$TARGET/skills"
+usage() {
+  cat <<'EOF'
+Usage: ./install.sh [--host hermes|openclaw|generic] [--target PATH] [--overwrite-existing|--preserve-existing] [--no-check] [PATH]
 
-if [ -f "$TARGET/SOUL.md" ]; then
-  cp "$TARGET/SOUL.md" "$TARGET/SOUL.before-digital-office.$STAMP.md"
+Clean installs automatically inject the Digital Office entrypoint and make the
+suite rules authoritative for the target host. If an existing host has local
+rules or personal runtime data, choose one:
+
+  --overwrite-existing   Back up local rule files, then replace them with the Digital Office entrypoint.
+  --preserve-existing    Keep local rule files active and install Digital Office as a side-by-side bundle.
+
+Default targets:
+  hermes    ~/.hermes
+  openclaw  ~/.openclaw
+  generic   ~/.digital-office-agent
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --host)
+      HOST="${2:-}"
+      shift 2
+      ;;
+    --target)
+      TARGET="${2:-}"
+      shift 2
+      ;;
+    --overwrite-existing)
+      MODE="overwrite"
+      shift
+      ;;
+    --preserve-existing)
+      MODE="preserve"
+      shift
+      ;;
+    --no-check)
+      RUN_CHECKS=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      echo "install.sh: unknown option $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [ -n "$TARGET" ]; then
+        echo "install.sh: target specified more than once" >&2
+        usage >&2
+        exit 2
+      fi
+      TARGET="$1"
+      shift
+      ;;
+  esac
+done
+
+case "$HOST" in
+  hermes)
+    TARGET="${TARGET:-$HOME/.hermes}"
+    ENTRYPOINTS=("SOUL.md")
+    ;;
+  openclaw)
+    TARGET="${TARGET:-${OPENCLAW_HOME:-$HOME/.openclaw}}"
+    ENTRYPOINTS=("AGENTS.md")
+    ;;
+  generic)
+    TARGET="${TARGET:-$HOME/.digital-office-agent}"
+    ENTRYPOINTS=("AGENTS.md")
+    ;;
+  *)
+    echo "install.sh: unsupported host '$HOST' (expected hermes, openclaw, or generic)" >&2
+    exit 2
+    ;;
+esac
+
+MANAGED_MARKER="digital-office-managed-entrypoint"
+
+path_has_user_data() {
+  local path="$1"
+  if [ ! -d "$path" ]; then
+    return 1
+  fi
+  find "$path" -mindepth 1 \( -name ".gitignore" -o -name "_template" \) -prune -o -print -quit | grep -q .
+}
+
+dirty_reasons=()
+if [ -d "$TARGET" ]; then
+  for entrypoint in "${ENTRYPOINTS[@]}" SOUL.md AGENTS.md; do
+    if [ -f "$TARGET/$entrypoint" ] && ! grep -q "$MANAGED_MARKER" "$TARGET/$entrypoint"; then
+      dirty_reasons+=("existing unmanaged rule file: $entrypoint")
+    fi
+  done
+  if [ -f "$TARGET/agent-system/settings/user-preferences.md" ]; then
+    dirty_reasons+=("existing user preferences")
+  fi
+  for data_path in \
+    "$TARGET/agent-system/projects" \
+    "$TARGET/agent-system/knowledge/company" \
+    "$TARGET/agent-system/knowledge/spaces" \
+    "$TARGET/agent-system/rules/projects" \
+    "$TARGET/agent-system/tasks" \
+    "$TARGET/agent-system/runs"; do
+    if path_has_user_data "$data_path"; then
+      dirty_reasons+=("existing runtime data: ${data_path#$TARGET/}")
+    fi
+  done
 fi
 
-rsync -a "$SOURCE_DIR/agent-system/" "$TARGET/agent-system/"
-rsync -a "$SOURCE_DIR/scripts/" "$TARGET/scripts/"
-rsync -a "$SOURCE_DIR/profiles/" "$TARGET/profiles/"
-rsync -a "$SOURCE_DIR/skills/" "$TARGET/skills/"
-cp "$SOURCE_DIR/SOUL.md" "$TARGET/SOUL.md"
-cp "$SOURCE_DIR/README.md" "$TARGET/README.md"
-cp "$SOURCE_DIR/README.zh-CN.md" "$TARGET/README.zh-CN.md"
+if [ "$MODE" = "auto" ] && [ "${#dirty_reasons[@]}" -gt 0 ]; then
+  {
+    echo "Digital Office found an existing non-clean $HOST runtime at $TARGET."
+    echo "Choose --preserve-existing to keep both rule sets, or --overwrite-existing to back up and replace local host rules."
+    echo "Detected:"
+    for reason in "${dirty_reasons[@]}"; do
+      echo "  - $reason"
+    done
+  } >&2
+  exit 2
+fi
 
-chmod +x "$TARGET/scripts/agent-router"
-chmod +x "$TARGET/agent-system/bin/office-system"
-chmod +x "$TARGET/agent-system/bin/harness-check"
-chmod +x "$TARGET/agent-system/bin/harness-runner"
-chmod +x "$TARGET/agent-system/bin/install-local-models"
-chmod +x "$TARGET/agent-system/bin/update-system"
-chmod +x "$TARGET/agent-system/bin/product-update"
+if [ "$MODE" = "auto" ]; then
+  MODE="overwrite"
+fi
 
-"$TARGET/scripts/agent-router" --health
-"$TARGET/agent-system/bin/office-system" health
-"$TARGET/agent-system/bin/harness-check"
-"$TARGET/agent-system/bin/harness-runner" --task all --no-write
-"$TARGET/agent-system/bin/product-update" status
+if [ "$MODE" = "preserve" ]; then
+  INSTALL_ROOT="$TARGET/digital-office"
+else
+  INSTALL_ROOT="$TARGET"
+fi
 
-echo "Digital Office Agent System installed to $TARGET"
+mkdir -p "$INSTALL_ROOT/scripts" "$INSTALL_ROOT/profiles" "$INSTALL_ROOT/skills"
+
+rsync -a "$SOURCE_DIR/agent-system/" "$INSTALL_ROOT/agent-system/"
+rsync -a "$SOURCE_DIR/scripts/" "$INSTALL_ROOT/scripts/"
+rsync -a "$SOURCE_DIR/profiles/" "$INSTALL_ROOT/profiles/"
+rsync -a "$SOURCE_DIR/skills/" "$INSTALL_ROOT/skills/"
+cp "$SOURCE_DIR/README.md" "$INSTALL_ROOT/README.md"
+cp "$SOURCE_DIR/README.zh-CN.md" "$INSTALL_ROOT/README.zh-CN.md"
+cp "$SOURCE_DIR/install.sh" "$INSTALL_ROOT/install.sh"
+
+if [ "$MODE" = "preserve" ]; then
+  for entrypoint in "${ENTRYPOINTS[@]}"; do
+    cp "$SOURCE_DIR/SOUL.md" "$INSTALL_ROOT/$entrypoint"
+  done
+  cp "$SOURCE_DIR/SOUL.md" "$INSTALL_ROOT/SOUL.md"
+else
+  for entrypoint in "${ENTRYPOINTS[@]}"; do
+    if [ -f "$TARGET/$entrypoint" ]; then
+      cp "$TARGET/$entrypoint" "$TARGET/$entrypoint.before-digital-office.$STAMP"
+    fi
+    cp "$SOURCE_DIR/SOUL.md" "$TARGET/$entrypoint"
+  done
+
+  if [ "$HOST" = "openclaw" ] || [ "$HOST" = "generic" ]; then
+    cp "$SOURCE_DIR/SOUL.md" "$TARGET/SOUL.md"
+  fi
+fi
+
+chmod +x "$INSTALL_ROOT/scripts/agent-router"
+chmod +x "$INSTALL_ROOT/agent-system/bin/office-system"
+chmod +x "$INSTALL_ROOT/agent-system/bin/harness-check"
+chmod +x "$INSTALL_ROOT/agent-system/bin/harness-runner"
+chmod +x "$INSTALL_ROOT/agent-system/bin/install-local-models"
+chmod +x "$INSTALL_ROOT/agent-system/bin/update-system"
+chmod +x "$INSTALL_ROOT/agent-system/bin/product-update"
+chmod +x "$INSTALL_ROOT/install.sh"
+
+if [ "$RUN_CHECKS" -eq 1 ]; then
+  "$INSTALL_ROOT/scripts/agent-router" --health
+  "$INSTALL_ROOT/agent-system/bin/office-system" health
+  "$INSTALL_ROOT/agent-system/bin/harness-check"
+  "$INSTALL_ROOT/agent-system/bin/harness-runner" --task all --no-write
+  "$INSTALL_ROOT/agent-system/bin/product-update" status
+fi
+
+if [ "$MODE" = "preserve" ]; then
+  echo "Digital Office Agent System installed side-by-side to $INSTALL_ROOT for $HOST"
+  echo "Existing $HOST entrypoint files under $TARGET were preserved."
+else
+  echo "Digital Office Agent System installed to $TARGET for $HOST"
+fi

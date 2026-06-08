@@ -1,6 +1,17 @@
-# 数字办公室 Agent System 中文开发者说明
+# 数字办公室 Agent System 中文说明
 
-主 README 见 [README.md](README.md)。本文件面向继续开发这套系统的开发者，重点说明各模块如何协作，以及新增能力应该接入哪里。
+主 README 见 [README.md](README.md)。本文件面向用户、部署管理员和开发者，说明数字办公室套件的产品能力、安装方式、验证方式和开发更新记录。内容应保持产品化，不记录个人运行时偏好。
+
+## 产品开发更新日志
+
+### 2026-06-09
+
+- 新增 PPT 生产工作流：`intake -> writing -> design -> intake`。秘书负责需求收口和最终交付，Writer 负责故事线、页面文案和讲稿，Designer 负责视觉方向和可渲染 deck artifact。
+- 新增 Hermes、OpenClaw 和 generic 宿主注入策略。干净宿主默认注入数字办公室规则；已有个人规则或数据的宿主必须选择并行保留或显式覆盖。
+- 默认宿主 Agent 被注入为数字办公室秘书 Agent，负责路由、工作流编排、交接、质量门禁和交付说明。
+- 每次产品更新都应同步到 WSL Hermes 开发目录并上传 GitHub，以可分发版本质量为目标进行 review。
+
+宿主规则注入细节见 [host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md)。
 
 ## 这套系统是什么
 

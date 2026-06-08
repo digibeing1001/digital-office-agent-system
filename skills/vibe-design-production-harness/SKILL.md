@@ -50,6 +50,28 @@ Design work lives inside the Digital Office loop:
 - Treat surfaces, folders, desks, documents, and rooms as interaction language, not decoration.
 - Every visual metaphor must map to a user action, project state, Agent state, or knowledge object.
 
+## External Visual Direction Tool: huashu-design
+
+When the design task needs a parallel comparison of visual directions or a structured expert review, the design Agent MAY delegate to the `huashu-design` skill. This is an optional accelerator, not a replacement for the harness's own gate checks.
+
+Use huashu-design when:
+
+- the user asks for design direction, style comparison, or "which visual feels right" decisions
+- the task is a presentation or pitch deck that needs parallel visual concepts
+- the user requests a structured expert review on a design artifact
+
+Do not use huashu-design when:
+
+- the task is only a single visual decision the Agent can justify directly
+- the design must conform to a pre-existing design system or brand contract
+- the user asks for a deterministic, gate-driven design check rather than style exploration
+
+The harness gates above (`primary_states_specified`, `responsive_behavior_specified`, `text_overflow_checked`, `accessibility_checked`, `visual_quality_checked`, `implementation_handoff_ready`) remain authoritative. huashu-design outputs are advisory inputs that the Agent must still validate against these gates before handoff.
+
+## Presentation Deck Ownership
+
+For `ppt_production`, the Writer owns storyline, slide copy, and speaker notes. The Designer owns visual direction, page composition, media decisions, and the renderable deck artifact. Do not move final deck rendering to Writer unless the Writer has an explicitly registered deck-rendering skill and the workflow has been updated through the normal validation path.
+
 ## Output Contract
 
 Return:

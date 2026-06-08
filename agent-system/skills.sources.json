@@ -185,6 +185,17 @@
       "status": "research_only_reference",
       "type": "evaluation-reference",
       "use_case": "RAG retrieval and faithfulness evaluation patterns"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "vibe-designer"
+      ],
+      "name": "pitch-clarity-coach",
+      "remote": "https://github.com/federico-jarach/pitch-clarity-coach.git",
+      "status": "research_only_until_standard_skill_packaging",
+      "type": "git-candidate",
+      "use_case": "pre-delivery clarity review for pitch and presentation narratives; not active until it provides a standard SKILL.md package"
     }
   ],
   "description": "Portable manifest for updating installed skills from their source repositories or registries.",
@@ -259,6 +270,50 @@
       "type": "skills.sh",
       "used_by": [
         "secretary"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "humanize-ppt",
+      "path": "../skills/humanize-ppt",
+      "remote": "https://github.com/LearnPrompt/humanize-ppt.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "huashu-design",
+      "path": "../skills/huashu-design",
+      "remote": "https://github.com/alchaincyf/huashu-design.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "guizang-ppt-skill",
+      "path": "../skills/guizang-ppt-skill",
+      "remote": "https://github.com/op7418/guizang-ppt-skill.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "frontend-slides",
+      "path": "../skills/frontend-slides",
+      "remote": "https://github.com/zarazhangrui/frontend-slides.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
       ]
     }
   ],

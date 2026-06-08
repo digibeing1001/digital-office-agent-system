@@ -132,6 +132,7 @@ critical_files = [
     "agent-system/ai-native-loop.manifest.json",
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
+    "agent-system/host-injection.policy.json",
     "agent-system/harness/production-gates.json",
     "agent-system/onboarding.presets.json",
     "agent-system/secretary.capabilities.json",
@@ -178,6 +179,9 @@ json_assert agent-system/harness/tasks/direct-agent-invocation-production.json '
 json_assert agent-system/harness/tasks/workflow-canvas-revision-production.json 'data["task_id"] == "workflow-canvas-revision-production"'
 json_assert agent-system/harness/tasks/knowledge-space-acl-production.json 'data["task_id"] == "knowledge-space-acl-production"'
 json_assert agent-system/harness/tasks/role-workbench-production.json 'data["task_id"] == "role-workbench-production"'
+json_assert agent-system/harness/tasks/host-injection-production.json 'data["task_id"] == "host-injection-production"'
+json_assert agent-system/harness/tasks/ppt-production.json 'data["task_id"] == "ppt-production"'
+json_assert agent-system/host-injection.policy.json 'data["default_agent_role"] == "secretary" and data["supported_hosts"]["openclaw"]["default_agent_injection"] == "AGENTS.md"'
 json_assert agent-system/ai-native-loop.manifest.json 'data["stages"]["iterate"]["gates"][0] == "no_auto_iteration_without_user_confirmation"'
 json_assert agent-system/ai-native-loop.manifest.json '"silent self-iteration" in data["stages"]["iterate"]["forbidden"]'
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"

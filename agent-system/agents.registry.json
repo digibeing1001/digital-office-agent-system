@@ -784,6 +784,82 @@
           {
             "term": "暂不处理",
             "weight": 8
+          },
+          {
+            "term": "ppt",
+            "weight": 8
+          },
+          {
+            "term": "PPT",
+            "weight": 8
+          },
+          {
+            "term": "slides",
+            "weight": 6
+          },
+          {
+            "term": "deck",
+            "weight": 6
+          },
+          {
+            "term": "presentation",
+            "weight": 7
+          },
+          {
+            "term": "汇报",
+            "weight": 8
+          },
+          {
+            "term": "幻灯片",
+            "weight": 8
+          },
+          {
+            "term": "演示",
+            "weight": 6
+          },
+          {
+            "term": "演讲",
+            "weight": 5
+          },
+          {
+            "term": "做份",
+            "weight": 4
+          },
+          {
+            "term": "keynote",
+            "weight": 5
+          },
+          {
+            "term": "powerpoint",
+            "weight": 8
+          },
+          {
+            "term": "slide deck",
+            "weight": 8
+          },
+          {
+            "term": "report deck",
+            "weight": 8
+          },
+          {
+            "term": "??",
+            "weight": 6
+          },
+          {
+            "term": "???",
+            "weight": 8
+          },
+          {
+            "term": "??",
+            "weight": 6
+          },
+          {
+            "term": "??",
+            "weight": 5
+          },
+          {
+            "term": "??",
+            "weight": 3
           }
         ],
         "priority": 100
@@ -792,7 +868,11 @@
         "agent-team-staffing",
         "find-skills",
         "knowledge-ops",
-        "agent-architecture-audit"
+        "agent-architecture-audit",
+        "humanize-ppt",
+        "huashu-design",
+        "guizang-ppt-skill",
+        "frontend-slides"
       ]
     },
     "vibe-designer": {
@@ -936,7 +1016,11 @@
         "vibe-design-review",
         "frontend-design",
         "accessibility",
-        "vibe-design-production-harness"
+        "vibe-design-production-harness",
+        "humanize-ppt",
+        "huashu-design",
+        "guizang-ppt-skill",
+        "frontend-slides"
       ]
     },
     "writer": {
@@ -1210,6 +1294,50 @@
     {
       "expect": "secretary",
       "prompt": "通过对话改进已有 Agent 的灵魂文档"
+    },
+    {
+      "expect": "secretary",
+      "expect_steps": [
+        "secretary",
+        "writer",
+        "vibe-designer",
+        "secretary"
+      ],
+      "expect_workflow": "ppt_production",
+      "prompt": "?????PPT??"
+    },
+    {
+      "expect": "secretary",
+      "expect_steps": [
+        "secretary",
+        "writer",
+        "vibe-designer",
+        "secretary"
+      ],
+      "expect_workflow": "ppt_production",
+      "prompt": "???6????????"
+    },
+    {
+      "expect": "secretary",
+      "expect_steps": [
+        "secretary",
+        "writer",
+        "vibe-designer",
+        "secretary"
+      ],
+      "expect_workflow": "ppt_production",
+      "prompt": "I need a presentation deck for the board meeting"
+    },
+    {
+      "expect": "secretary",
+      "expect_steps": [
+        "secretary",
+        "writer",
+        "vibe-designer",
+        "secretary"
+      ],
+      "expect_workflow": "ppt_production",
+      "prompt": "Make a slide deck for tomorrow's product review"
     }
   ],
   "routing_policy": {
@@ -1510,6 +1638,69 @@
       "priority": 90,
       "reason": "The task asks for end-to-end product clarification, design, and implementation.",
       "workflow": "pm_to_design_to_code"
+    },
+    {
+      "match_all": [
+        [
+          {
+            "term": "ppt",
+            "weight": 8
+          },
+          {
+            "term": "powerpoint",
+            "weight": 8
+          },
+          {
+            "term": "slides",
+            "weight": 7
+          },
+          {
+            "term": "slide deck",
+            "weight": 8
+          },
+          {
+            "term": "deck",
+            "weight": 4
+          },
+          {
+            "term": "presentation",
+            "weight": 5
+          },
+          {
+            "term": "keynote",
+            "weight": 6
+          },
+          {
+            "term": "report deck",
+            "weight": 8
+          },
+          {
+            "term": "??",
+            "weight": 6
+          },
+          {
+            "term": "???",
+            "weight": 8
+          },
+          {
+            "term": "??",
+            "weight": 6
+          },
+          {
+            "term": "??",
+            "weight": 5
+          },
+          {
+            "term": "??",
+            "weight": 3
+          }
+        ]
+      ],
+      "minimum_score": 8,
+      "primary_role": "intake",
+      "priority": 80,
+      "reason": "Presentation requests need secretary intake, narrative writing, deck design, and secretary delivery validation.",
+      "workflow": "ppt_production"
     }
   ],
   "workflows": {
@@ -1528,6 +1719,16 @@
         "@role:product",
         "@role:design",
         "@role:implementation"
+      ]
+    },
+    "ppt_production": {
+      "handoff_contract": "Secretary clarifies the presentation intent, audience, format, and acceptance criteria. Writer produces storyline, slide copy, message hierarchy, and speaker notes. Designer produces visual direction, page composition, media decisions, and the renderable deck artifact. Secretary runs final gates and delivers artifact path, URL, or open instructions with unresolved assumptions.",
+      "label": "PPT production from intent to validated deck",
+      "steps": [
+        "@role:intake",
+        "@role:writing",
+        "@role:design",
+        "@role:intake"
       ]
     },
     "research_then_plan": {

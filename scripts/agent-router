@@ -555,8 +555,8 @@ def health_check(home: Path, registry_path_value: Path, registry: dict[str, Any]
                 errors.append(f"{name}: missing {field}")
         profile = str(cfg.get("profile", ""))
         if profile in {"__default__", "default", ""}:
-            if not (home / "SOUL.md").exists():
-                errors.append(f"{name}: default secretary SOUL not found: {home / 'SOUL.md'}")
+            if not any((home / entrypoint).exists() for entrypoint in ("SOUL.md", "AGENTS.md")):
+                errors.append(f"{name}: default secretary entrypoint not found: {home / 'SOUL.md'} or {home / 'AGENTS.md'}")
         else:
             profile_path = home / "profiles" / profile
             if not profile_path.exists():
