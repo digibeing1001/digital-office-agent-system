@@ -109,6 +109,7 @@ clean_runtime_state
 cd "$WORK_DIR/repo"
 
 bash -n agent-system/tests/smoke.sh
+bash -n agent-system/tests/web-pwa-smoke.sh
 python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   json_files="$(git ls-files "*.json")"
@@ -136,6 +137,10 @@ critical_files = [
     "agent-system/secretary.capabilities.json",
     "agent-system/bin/office-system.py",
     "agent-system/docs/gui-contract.md",
+    "agent-system/web/app/index.html",
+    "agent-system/web/app/manifest.webmanifest",
+    "agent-system/web/app/service-worker.js",
+    "agent-system/tests/web-pwa-smoke.sh",
 ]
 markers = ["\u00c3", "\u00e6", "\u00e7", "\ufffd"]
 bad = []
@@ -152,7 +157,9 @@ grep -q "## Agent Routing And Workflow Orchestration" SOUL.md || fail "default s
 json_assert agent-system/onboarding.presets.json '"assistant_style" in data["fields"] and "neutral_operator" in data["fields"]["assistant_style"]["choices"]'
 json_assert agent-system/secretary.capabilities.json 'data["persona_policy"]["default_stance"].startswith("Use the neutral operator baseline")'
 json_assert agent-system/secretary.capabilities.json '"gui_settings_governance" in [item["id"] for item in data["core_capabilities"]]'
+json_assert agent-system/secretary.capabilities.json '"web_ui_pwa_governance" in [item["id"] for item in data["core_capabilities"]]'
 json_assert agent-system/secretary.capabilities.json 'data["gui_state_policy"]["home_snapshot_command"].startswith("office-system gui-state")'
+json_assert agent-system/secretary.capabilities.json '"web_ui_pwa" in data["gui_state_policy"]["required_surfaces"]'
 json_assert agent-system/secretary.capabilities.json '"reflective_pushback" in [item["id"] for item in data["core_capabilities"]]'
 json_assert agent-system/secretary.capabilities.json '"ai_native_loop_governance" in [item["id"] for item in data["core_capabilities"]]'
 json_assert agent-system/secretary.capabilities.json 'data["ai_native_loop_policy"]["iteration_confirmation_required"] is True'
@@ -166,6 +173,7 @@ json_assert agent-system/harness/tasks/vibe-design-production.json 'data["task_i
 json_assert agent-system/harness/tasks/portable-routing-production.json 'data["task_id"] == "portable-routing-production"'
 json_assert agent-system/harness/tasks/ai-native-loop-production.json 'data["task_id"] == "ai-native-loop-production"'
 json_assert agent-system/harness/tasks/gui-readiness-production.json 'data["task_id"] == "gui-readiness-production"'
+json_assert agent-system/harness/tasks/web-pwa-production.json 'data["task_id"] == "web-pwa-production"'
 json_assert agent-system/harness/tasks/direct-agent-invocation-production.json 'data["task_id"] == "direct-agent-invocation-production"'
 json_assert agent-system/harness/tasks/workflow-canvas-revision-production.json 'data["task_id"] == "workflow-canvas-revision-production"'
 json_assert agent-system/harness/tasks/knowledge-space-acl-production.json 'data["task_id"] == "knowledge-space-acl-production"'
@@ -201,7 +209,8 @@ json_assert "$WORK_DIR/settings-update.json" 'data["source"] == "gui_settings_up
 "$OFFICE" settings-status >"$WORK_DIR/settings-status.json"
 json_assert "$WORK_DIR/settings-status.json" 'data["configured"] is True and data["preferences"]["secretary_name"] == "Office Assistant"'
 "$OFFICE" gui-state --user user-a --limit 5 >"$WORK_DIR/gui-state-initial.json"
-json_assert "$WORK_DIR/gui-state-initial.json" 'data["settings"]["configured"] is True and "global_settings" in [item["id"] for item in data["capabilities"]] and "direct_agent_invocation" in [item["id"] for item in data["capabilities"]] and "knowledge_spaces" in [item["id"] for item in data["capabilities"]]'
+json_assert "$WORK_DIR/gui-state-initial.json" 'data["settings"]["configured"] is True and "global_settings" in [item["id"] for item in data["capabilities"]] and "web_ui_pwa" in [item["id"] for item in data["capabilities"]] and "direct_agent_invocation" in [item["id"] for item in data["capabilities"]] and "knowledge_spaces" in [item["id"] for item in data["capabilities"]]'
+bash "$HOME_DIR/agent-system/tests/web-pwa-smoke.sh" >"$WORK_DIR/web-pwa-smoke.log"
 
 [ -f "$HOME_DIR/SOUL.md" ] || fail "default SOUL.md missing"
 [ ! -e "$HOME_DIR/profiles/secretary" ] || fail "secretary profile must not be duplicated"

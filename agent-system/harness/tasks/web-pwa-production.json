@@ -1,0 +1,59 @@
+{
+  "version": "1.0.0",
+  "task_id": "web-pwa-production",
+  "description": "Verify the Web UI/PWA shell, static assets, read-only API routes, service worker, manifest, and deployment contract.",
+  "roles": [
+    "operations",
+    "product",
+    "implementation"
+  ],
+  "workflow": "web_pwa_readiness",
+  "gates": [
+    {
+      "id": "gui_contract_mentions_web_pwa",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/gui-contract.md",
+      "patterns": [
+        "Web UI and PWA shell",
+        "web-config",
+        "web-serve",
+        "/api/gui-state",
+        "manifest.webmanifest",
+        "service-worker.js"
+      ]
+    },
+    {
+      "id": "readme_mentions_web_pwa",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "README.md",
+      "patterns": [
+        "Web UI And PWA",
+        "web-config",
+        "web-serve",
+        "Install as PWA"
+      ]
+    },
+    {
+      "id": "web_pwa_files_exist",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/web/app/index.html",
+      "patterns": [
+        "Office control room",
+        "/api/gui-state",
+        "manifest.webmanifest"
+      ]
+    },
+    {
+      "id": "web_pwa_cli_and_http_close_loop",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "bash",
+        "agent-system/tests/web-pwa-smoke.sh"
+      ]
+    }
+  ]
+}

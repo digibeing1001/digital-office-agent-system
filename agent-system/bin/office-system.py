@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import http.server
 import hashlib
 import math
 import datetime as dt
@@ -16,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 import zipfile
@@ -4554,6 +4556,10 @@ def health_checks(root: Path) -> dict[str, Any]:
         "notifications_dir": (root / "notifications").exists(),
         "audit_logs_dir": (root / "logs").exists(),
         "knowledge_spaces_dir": (root / "knowledge" / "spaces").exists(),
+        "web_app_dir": (root / "web" / "app").exists(),
+        "web_index": (root / "web" / "app" / "index.html").exists(),
+        "pwa_manifest": (root / "web" / "app" / "manifest.webmanifest").exists(),
+        "service_worker": (root / "web" / "app" / "service-worker.js").exists(),
         "tesseract": bool(shutil.which("tesseract")),
         "pdftotext": bool(shutil.which("pdftotext")),
         "rapidocr_onnxruntime": bool(importlib.util.find_spec("rapidocr_onnxruntime")),
@@ -4582,6 +4588,10 @@ def required_health_keys() -> tuple[str, ...]:
         "notifications_dir",
         "audit_logs_dir",
         "knowledge_spaces_dir",
+        "web_app_dir",
+        "web_index",
+        "pwa_manifest",
+        "service_worker",
     )
 
 
@@ -4643,6 +4653,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
     return [
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
         {"id": "first_run_onboarding", "status": "ready", "commands": ["onboarding-options", "onboarding-apply"]},
+        {"id": "web_ui_pwa", "status": "ready", "commands": ["web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
         {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
@@ -4661,12 +4672,11 @@ def gui_capabilities() -> list[dict[str, Any]]:
     ]
 
 
-def gui_state(args: argparse.Namespace) -> int:
-    root = system_root()
-    limit = max(1, min(args.limit, 100))
-    project = safe_component(args.project, "project id") if args.project else ""
-    user = safe_claim(args.user, "user", required=False)
-    role = safe_component(args.role, "role") if args.role else ""
+def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", role: str = "", limit: int = 20) -> dict[str, Any]:
+    limit = max(1, min(limit, 100))
+    project = safe_component(project, "project id") if project else ""
+    user = safe_claim(user, "user", required=False)
+    role = safe_component(role, "role") if role else ""
     preferences = current_onboarding_preferences(root)
     runs = [
         run
@@ -4756,7 +4766,168 @@ def gui_state(args: argparse.Namespace) -> int:
             "Route all mutating actions through the matching command and require explicit GUI confirmation where commands expose --confirmed.",
         ],
     }
+    return payload
+
+
+def gui_state(args: argparse.Namespace) -> int:
+    root = system_root()
+    payload = build_gui_state_payload(root, project=args.project or "", user=args.user or "", role=args.role or "", limit=args.limit)
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def web_static_root(root: Path) -> Path:
+    return root / "web" / "app"
+
+
+def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: str = "", project: str = "", tenant: str = "", deployment: str = "") -> dict[str, Any]:
+    checks = health_checks(root)
+    return {
+        "kind": "digital-office-web-app-config",
+        "version": "1.0.0",
+        "generated_at": now_iso(),
+        "app": {
+            "name": "Digital Office",
+            "short_name": "Office",
+            "mode": "web_ui_pwa",
+            "public_url": safe_claim(public_url, "public url", required=False),
+            "static_root": str(web_static_root(root)),
+            "manifest": "/manifest.webmanifest",
+            "service_worker": "/service-worker.js",
+            "start_url": "/",
+        },
+        "default_scope": {
+            "tenant_id": safe_claim(tenant, "tenant id", required=False),
+            "deployment_id": safe_claim(deployment, "deployment id", required=False),
+            "user_id": safe_claim(user, "user id", required=False),
+            "role": safe_component(role, "role") if role else "",
+            "project_id": safe_component(project, "project id") if project else "",
+        },
+        "api": {
+            "read_routes": [
+                {"method": "GET", "path": "/api/health", "description": "Return office-system health checks and PWA readiness."},
+                {"method": "GET", "path": "/api/gui-state", "description": "Return the home-screen GUI state snapshot."},
+                {"method": "GET", "path": "/api/web-app", "description": "Return this Web/PWA configuration contract."},
+            ],
+            "mutation_policy": "Mutating GUI actions must call explicit governed commands or future dedicated API routes. Do not expose a generic remote shell/CLI execution endpoint.",
+        },
+        "pwa": {
+            "installable_shell": checks.get("pwa_manifest") and checks.get("service_worker") and checks.get("web_index"),
+            "offline_shell": True,
+            "cache_name": "digital-office-shell-v1",
+        },
+        "deployment": {
+            "recommended": "Serve behind HTTPS reverse proxy such as Caddy or Nginx. Bind web-serve to 127.0.0.1 for reverse proxy deployments, or to 0.0.0.0 only on trusted LAN/VPN networks.",
+            "examples": ["agent-system/deploy/Caddyfile.example", "agent-system/deploy/nginx.conf.example", "agent-system/deploy/systemd/digital-office-web.service.example"],
+        },
+        "health": {"status": "ok" if all(checks[key] for key in required_health_keys()) else "degraded", "checks": checks},
+    }
+
+
+def web_config(args: argparse.Namespace) -> int:
+    root = system_root()
+    payload = web_app_config(root, public_url=args.public_url or "", user=args.user or "", role=args.role or "", project=args.project or "", tenant=args.tenant or "", deployment=args.deployment or "")
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if payload["health"]["status"] == "ok" else 1
+
+
+def web_json_response(handler: http.server.BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
+    body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json; charset=utf-8")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def web_serve(args: argparse.Namespace) -> int:
+    root = system_root()
+    static_root = Path(args.static_dir).expanduser() if args.static_dir else web_static_root(root)
+    static_root = static_root.resolve()
+    if not static_root.exists():
+        print(f"office-system: web static directory not found: {static_root}", file=sys.stderr)
+        return 2
+    public_url = args.public_url or ""
+    default_scope = {
+        "tenant": args.tenant or "",
+        "deployment": args.deployment or "",
+        "user": args.user or "",
+        "role": args.role or "",
+        "project": args.project or "",
+    }
+    allow_origin = args.allow_origin or ""
+
+    class DigitalOfficeHandler(http.server.SimpleHTTPRequestHandler):
+        server_version = "DigitalOfficeWeb/1.0"
+        extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map, ".webmanifest": "application/manifest+json", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml"}
+
+        def log_message(self, format: str, *values: Any) -> None:
+            if not args.quiet:
+                super().log_message(format, *values)
+
+        def end_headers(self) -> None:
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "same-origin")
+            self.send_header("X-Frame-Options", "DENY")
+            if allow_origin:
+                self.send_header("Access-Control-Allow-Origin", allow_origin)
+            super().end_headers()
+
+        def translate_path(self, path: str) -> str:
+            parsed = urllib.parse.urlparse(path)
+            request_path = urllib.parse.unquote(parsed.path)
+            if request_path in {"", "/"}:
+                request_path = "/index.html"
+            candidate = (static_root / request_path.lstrip("/")).resolve()
+            try:
+                if not candidate.is_relative_to(static_root):
+                    return str(static_root / "index.html")
+            except AttributeError:
+                if os.path.commonpath([str(candidate), str(static_root)]) != str(static_root):
+                    return str(static_root / "index.html")
+            if candidate.is_dir():
+                candidate = candidate / "index.html"
+            if not candidate.exists() and "." not in candidate.name:
+                candidate = static_root / "index.html"
+            return str(candidate)
+
+        def do_GET(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            query = urllib.parse.parse_qs(parsed.query)
+
+            def one(name: str, default: str = "") -> str:
+                values = query.get(name)
+                return values[0] if values else default
+
+            if parsed.path in {"/healthz", "/api/health"}:
+                checks = health_checks(root)
+                web_json_response(self, 200 if all(checks[key] for key in required_health_keys()) else 503, {"status": "ok" if all(checks[key] for key in required_health_keys()) else "degraded", "checks": checks, "generated_at": now_iso()})
+                return
+            if parsed.path == "/api/gui-state":
+                try:
+                    payload = build_gui_state_payload(root, project=one("project", default_scope["project"]), user=one("user", default_scope["user"]), role=one("role", default_scope["role"]), limit=int(one("limit", "20")))
+                except (SystemExit, ValueError) as exc:
+                    web_json_response(self, 400, {"status": "error", "error": str(exc)})
+                    return
+                web_json_response(self, 200, payload)
+                return
+            if parsed.path == "/api/web-app":
+                payload = web_app_config(root, public_url=public_url, user=one("user", default_scope["user"]), role=one("role", default_scope["role"]), project=one("project", default_scope["project"]), tenant=one("tenant", default_scope["tenant"]), deployment=one("deployment", default_scope["deployment"]))
+                web_json_response(self, 200 if payload["health"]["status"] == "ok" else 503, payload)
+                return
+            if parsed.path.startswith("/api/"):
+                web_json_response(self, 404, {"status": "not_found", "path": parsed.path})
+                return
+            super().do_GET()
+
+    server = http.server.ThreadingHTTPServer((args.host, args.port), DigitalOfficeHandler)
+    print(json.dumps({"status": "serving", "host": args.host, "port": args.port, "static_root": str(static_root), "url": f"http://{args.host}:{args.port}/", "api": ["/api/health", "/api/gui-state", "/api/web-app"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\noffice-system: web server stopped", file=sys.stderr)
+    finally:
+        server.server_close()
     return 0
 
 
@@ -4889,6 +5060,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role")
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=gui_state)
+
+    p = sub.add_parser("web-config")
+    p.add_argument("--public-url")
+    p.add_argument("--tenant")
+    p.add_argument("--deployment")
+    p.add_argument("--user")
+    p.add_argument("--role")
+    p.add_argument("--project")
+    p.set_defaults(func=web_config)
+
+    p = sub.add_parser("web-serve")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8787)
+    p.add_argument("--static-dir")
+    p.add_argument("--public-url")
+    p.add_argument("--tenant")
+    p.add_argument("--deployment")
+    p.add_argument("--user")
+    p.add_argument("--role")
+    p.add_argument("--project")
+    p.add_argument("--allow-origin")
+    p.add_argument("--quiet", action="store_true")
+    p.set_defaults(func=web_serve)
 
     p = sub.add_parser("workbench-state")
     p.add_argument("--tenant", required=True)

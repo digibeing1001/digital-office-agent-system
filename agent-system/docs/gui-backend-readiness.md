@@ -31,6 +31,7 @@ Reference URLs are tracked in the implementation plan and README rather than cop
 - Knowledge spaces: personal, project, team, company, workflow artifact, and shared-with-me views.
 - Knowledge ACL: folder hierarchy, item/folder grants, inheritance, explicit deny, user/role/Agent/project/workflow targets, and access logs.
 - Role workbench state: owner, project lead, member, approver, viewer.
+- Web UI/PWA shell: `web-config`, `web-serve`, static installable shell, manifest, service worker, and read-only browser API routes for health, GUI state, and Web app config.
 
 ## Canvas Safety Rules
 
@@ -52,12 +53,15 @@ Reference URLs are tracked in the implementation plan and README rather than cop
 - Stopping a workflow should require a destructive confirmation.
 - Knowledge scope resolution should default to snapshot mode for reproducible runs.
 - Personal folders are private by default and should not appear in ordinary admin dashboards unless explicitly shared or accessed through support/legal procedure outside normal product UI.
+- The first GUI release should be Web UI plus PWA. Keep the initial screen simple, then let advanced workflow canvas editing appear only after the user enters a project/workflow context.
+- The browser surface must not expose generic remote command execution. All mutations must route through governed commands or future dedicated API routes with the same audit and confirmation semantics.
 
 ## Verification Gates
 
 The following harness tasks must pass before GUI work builds on this backend:
 
 - `direct-agent-invocation-production`
+- `web-pwa-production`
 - `workflow-canvas-revision-production`
 - `knowledge-space-acl-production`
 - `role-workbench-production`

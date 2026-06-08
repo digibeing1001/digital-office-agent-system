@@ -1,0 +1,18 @@
+[Unit]
+Description=Digital Office Web UI and PWA shell
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/digital-office/hermes
+ExecStart=/opt/digital-office/hermes/agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url https://office.example.com --tenant default --deployment production --quiet
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/digital-office/hermes/agent-system
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,19 @@
+{
+  "name": "Digital Office",
+  "short_name": "Office",
+  "description": "Digital Office Web UI and PWA shell for the local Agent system.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#f6f4ef",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

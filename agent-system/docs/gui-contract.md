@@ -41,6 +41,31 @@ The GUI should use `gui-state` as the home-screen snapshot instead of stitching 
 - Generated files under `agent-system/settings/` are runtime state and must not be committed.
 - Persona preferences never override safety, authorization, approval, knowledge authority, production harness, release, or data-sharing policies.
 
+Web UI and PWA shell:
+
+The first GUI release should run as a browser Web UI with PWA install support. The Web shell is intentionally read-oriented: it serves the installable app frame, returns health, and exposes the same GUI home snapshot that the future frontend will consume. Mutating workflow, approval, knowledge, settings, and Agent actions must still call explicit governed commands or future dedicated API routes with the same authorization, audit, and confirmation rules.
+
+```bash
+~/.hermes/agent-system/bin/office-system web-config --public-url https://office.example.com
+~/.hermes/agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url https://office.example.com --quiet
+```
+
+Read-only browser routes:
+
+- `GET /api/health`
+- `GET /api/gui-state`
+- `GET /api/web-app`
+- `GET /manifest.webmanifest`
+- `GET /service-worker.js`
+
+Deployment guidance:
+
+- Use `agent-system/deploy/Caddyfile.example`, `agent-system/deploy/nginx.conf.example`, or `agent-system/deploy/systemd/digital-office-web.service.example` as customer-site templates.
+- Bind `web-serve` to `127.0.0.1` behind Caddy/Nginx for internet-facing deployments.
+- Bind to `0.0.0.0` only on trusted LAN/VPN networks.
+- PWA installation requires HTTPS in normal browsers, except localhost during local development.
+- Do not expose a generic remote shell, CLI executor, or arbitrary command endpoint to the Web UI.
+
 Router contract:
 
 - The GUI must not hard-code current Agent names as product logic.

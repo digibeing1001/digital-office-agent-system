@@ -198,3 +198,34 @@ New production harness tasks:
 ~/.hermes/agent-system/bin/harness-runner --task knowledge-space-acl-production --no-write
 ~/.hermes/agent-system/bin/harness-runner --task role-workbench-production --no-write
 ```
+
+## Web UI And PWA Developer Contract
+
+The first commercial GUI target is Web UI plus PWA, not a wrapped browser client. The backend now exposes the stable shell and read-only browser API needed by the later frontend.
+
+```bash
+~/.hermes/agent-system/bin/office-system web-config --public-url https://office.example.com
+~/.hermes/agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url https://office.example.com --quiet
+```
+
+Frontend developers should use these routes:
+
+- `GET /api/health`
+- `GET /api/gui-state`
+- `GET /api/web-app`
+- `/manifest.webmanifest`
+- `/service-worker.js`
+
+Deployment templates:
+
+- `agent-system/deploy/Caddyfile.example`
+- `agent-system/deploy/nginx.conf.example`
+- `agent-system/deploy/systemd/digital-office-web.service.example`
+
+Rules:
+
+- Use HTTPS when exposing the app outside localhost, otherwise PWA install will not be reliable.
+- Bind `web-serve` to `127.0.0.1` behind reverse proxy for internet-facing deployments.
+- Use `--host 0.0.0.0` only on trusted LAN/VPN networks.
+- Do not add a generic remote shell or arbitrary CLI executor to the Web UI. Mutations must use governed backend commands or dedicated API routes with audit and confirmation.
+- Keep `web-pwa-production` and `agent-system/tests/web-pwa-smoke.sh` passing before building the visual GUI on top of this layer.

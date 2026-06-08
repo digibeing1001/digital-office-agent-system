@@ -349,3 +349,35 @@ New production harness tasks:
 ```
 
 The GUI should use these commands instead of reading or editing runtime files directly.
+
+## Web UI And PWA
+
+The first customer-facing GUI can be deployed as a Web UI and installed as a PWA from the browser. The customer host runs the backend service once; users open it through a LAN or internet URL.
+
+What this adds for users:
+
+- Open Digital Office from a normal browser without installing a heavy desktop client.
+- Install as PWA on supported browsers for an app-like icon and standalone window.
+- See backend health, workflow counters, task counters, approval counters, and recent workflow state through the same GUI snapshot contract that the later full frontend will use.
+- Keep mutating actions governed. The Web shell does not expose a generic remote shell or arbitrary CLI executor.
+
+Run locally:
+
+```bash
+~/.hermes/agent-system/bin/office-system web-config --public-url http://127.0.0.1:8787
+~/.hermes/agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url http://127.0.0.1:8787 --quiet
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8787/
+```
+
+Production deployment:
+
+- Put Caddy or Nginx in front of `web-serve` and use HTTPS for browser PWA installation.
+- Use `agent-system/deploy/Caddyfile.example`, `agent-system/deploy/nginx.conf.example`, and `agent-system/deploy/systemd/digital-office-web.service.example` as templates.
+- For internet-facing deployments, bind `web-serve` to `127.0.0.1` and expose only the reverse proxy.
+- For trusted LAN/VPN-only deployments, `--host 0.0.0.0` is acceptable when the network boundary is controlled.
+- Validate before delivery with `~/.hermes/agent-system/bin/harness-runner --task web-pwa-production --no-write` or `bash ~/.hermes/agent-system/tests/web-pwa-smoke.sh`.

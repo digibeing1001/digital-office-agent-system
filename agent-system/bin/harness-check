@@ -58,6 +58,7 @@ def main() -> int:
         "ai-native-loop-production",
         "workflow-control-plane-production",
         "gui-readiness-production",
+        "web-pwa-production",
         "direct-agent-invocation-production",
         "workflow-canvas-revision-production",
         "knowledge-space-acl-production",

@@ -1,0 +1,30 @@
+# Digital Office Web/PWA reverse proxy example.
+# Terminate HTTPS at Nginx and proxy to office-system web-serve.
+
+server {
+    listen 80;
+    server_name office.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name office.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/office.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/office.example.com/privkey.pem;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header X-Frame-Options DENY always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
