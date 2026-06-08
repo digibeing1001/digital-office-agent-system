@@ -1,205 +1,284 @@
 # 数字办公室 Agent System
 
-数字办公室 Agent System 是一套可分发的多 Agent 办公运行层。它可以部署到 Hermes、OpenClaw 或其他兼容 Agent 宿主中，把宿主默认 Agent 注入为“数字办公室秘书”，再由秘书统一完成需求收口、角色路由、工作流编排、知识边界、质量门禁和交付说明。
+> 把 AI Agent 变成你的数字员工团队 — 秘书、产品经理、研究员、规划师、设计师、工程师、写手，各司其职，协同交付。
 
-这不是个人本地规则集合，也不是单纯的命令行配置包。产品目标是让用户或团队在 GUI 中创建项目、上传知识、分派任务、查看 Agent 协作、确认迭代并接收交付；底层宿主负责执行，数字办公室套件负责把执行组织成可验证、可回滚、可持续更新的产品工作流。
+数字办公室是一套**可分发的多 Agent 办公运行层**。部署到 [Hermes](https://hermes-agent.nousresearch.com)、OpenClaw 或其他兼容 Agent 宿主后，它将宿主默认 Agent 注入为"数字办公室秘书"，由秘书统一完成需求收口、角色路由、工作流编排、知识边界、质量门禁和交付说明。
 
-## 产品定位
+用户不需要理解底层 Agent 工具 — 你只需要描述需求，秘书会安排合适的数字员工接手。
 
-- 面向用户：提供一个可操作的数字办公室，而不是要求用户理解底层 Agent 工具。
-- 面向部署管理员：提供安装、注入、备份、验证和回滚路径，保护原宿主中的个人规则和数据。
-- 面向开发者：提供注册表、规则、技能来源、质量门禁和发布清单，确保每次更新都能进入可分发版本。
+---
 
-当前仓库是 internal 开发通道。生产客户应接收经过验证的数字办公室发布包，而不是直接拉取上游宿主、随意安装 skill 或手动覆盖本地规则。
+## 它能做什么
 
-## 核心能力
+### 多 Agent 协作
 
-- 多 Agent 办公室：秘书、PM、研究员、规划师、设计师、工程师、Writer 等数字员工通过统一注册表协作。
-- 默认 Agent 秘书注入：安装后宿主默认 Agent 承担秘书职责，不再沿用宿主原始默认规则作为最高优先级。
-- 可迁移路由：`scripts/agent-router` 先选择 portable role，再映射到当前部署中的具体 Agent，避免把产品逻辑锁死在某个宿主或 Agent 名称上。
-- 工作流控制面：任务启动时同步创建 WorkflowRun、任务记录、权限决策、审计事件和通知。
-- 质量门禁：`harness-check` 与 `harness-runner` 验证路由、工作流、知识权限、GUI 合约、PWA、AI native loop、设计/编码生产门禁、PPT 生产和宿主注入策略。
-- 知识与记忆边界：项目知识、公司知识、授权行业参考层和 KeyMemory 接力记忆分层管理，避免把个人偏好或未确认草稿当作事实源。
-- 产品化更新：普通用户看到的是数字办公室产品更新，不需要直接管理 Hermes、OpenClaw、skill 或底层模型。
+内置 7 个数字员工角色，通过统一注册表协作：
 
-## 支持宿主
+| 角色 | 职责 |
+|------|------|
+| **秘书** | 需求澄清、任务路由、交接管理、最终交付 |
+| **产品经理** | 产品判断、PRD、路线图、优先级 |
+| **研究员** | 市场调研、竞品分析、事实验证 |
+| **规划师** | 架构设计、方案规划、里程碑拆解 |
+| **设计师** | 视觉方向、UI 设计、原型 |
+| **工程师** | 编码、调试、测试、部署 |
+| **写手** | 文案、故事线、讲稿、文档 |
 
-| 宿主 | 默认目标目录 | 注入入口 | 默认 Agent 角色 |
-| --- | --- | --- | --- |
-| Hermes | `~/.hermes` | `SOUL.md` | `secretary` |
-| OpenClaw | `~/.openclaw` | `AGENTS.md` | `secretary` |
-| generic | `~/.digital-office-agent` | `AGENTS.md` | `secretary` |
+用户说出需求，秘书自动选择合适的角色组合，管理多 Agent 交接，确保后续角色使用前序产物而不是从头开始。
 
-宿主注入策略的机器可读来源是 `agent-system/host-injection.policy.json`。中文说明见 [agent-system/docs/host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md)。
+### 工作流引擎
 
-## 安装与注入
+内置可扩展的工作流控制面，支持：
 
-从仓库根目录执行：
+- **PPT 生产** — `intake → writing → design → intake`，从需求澄清到交付完整 deck
+- **Vibe Design** — 设计类任务的产品门禁保障
+- **Vibe Coding** — 编码类任务的 TDD + 质量审查
+- **AI Native Loop** — `感知 → 规划 → 执行 → 反思 → 迭代`，每一步可验证
+
+### 知识与记忆管理
+
+分层知识体系，避免把草稿当事实：
+
+1. **项目知识库** — 当前项目的文档、决策、素材（最高优先级）
+2. **公司知识库** — 组织级方法论、模板、标准
+3. **授权行业参考层** — 按权限挂载的行业知识
+4. **KeyMemory 接力记忆** — 跨会话、跨 Agent 的语义接力
+
+### 质量门禁
+
+每个生产任务必须通过 `harness-check` 和 `harness-runner` 验证：
+
+- 路由正确性
+- 工作流闭环
+- 知识权限合规
+- GUI 契约一致性
+- 生产门禁通过
+
+### 用户确认式迭代
+
+系统**不允许静默自我修改**。任何规则、工作流、Agent 行为、知识库的改进，都必须先生成迭代提案，等用户确认后才应用。
+
+---
+
+## 快速开始
+
+### 安装
 
 ```bash
+git clone https://github.com/digibeing1001/digital-office-agent-system.git
+cd digital-office-agent-system
+
+# 安装到 Hermes
 ./install.sh --host hermes --target ~/.hermes
+
+# 安装到 OpenClaw
 ./install.sh --host openclaw --target ~/.openclaw
 ```
 
-干净宿主会自动注入数字办公室默认 Agent 入口，并同步 `agent-system/`、`scripts/`、`profiles/`、`skills/`、README 和产品文档。
+安装器会自动：
+- 注入数字办公室秘书入口到宿主默认 Agent
+- 同步 agent-system、scripts、profiles、skills 和产品文档
+- 运行健康检查验证安装完整性
 
-如果目标宿主已有个人规则、用户偏好、项目、知识、任务或运行记录，安装器不会静默覆盖。管理员必须明确选择：
+### 已有宿主的安装选项
+
+如果目标宿主已有个人规则或数据，安装器不会静默覆盖：
 
 ```bash
-# 保留原宿主规则和个人数据，把数字办公室旁路安装到 digital-office/
+# 保留原规则，旁路安装
 ./install.sh --host openclaw --target ~/.openclaw --preserve-existing
 
-# 备份原入口文件，然后用数字办公室秘书入口覆盖默认 Agent 入口
+# 备份原入口后覆盖
 ./install.sh --host openclaw --target ~/.openclaw --overwrite-existing
 ```
 
-安装器默认运行：
+### 使用
+
+安装完成后，直接向宿主 Agent 描述需求即可。秘书会自动接管并路由到合适的数字员工：
+
+```
+> 帮我做一份竞品分析的 PPT 汇报
+> 帮我调研一下东南亚市场的 SaaS 机会
+> 写一个产品需求文档
+> 帮我重构这个 Python 模块
+```
+
+---
+
+## 支持的宿主
+
+| 宿主 | 默认目标目录 | 注入入口 | 默认 Agent 角色 |
+|------|-------------|---------|----------------|
+| [Hermes](https://hermes-agent.nousresearch.com) | `~/.hermes` | `SOUL.md` | secretary |
+| OpenClaw | `~/.openclaw` | `AGENTS.md` | secretary |
+| generic | `~/.digital-office-agent` | `AGENTS.md` | secretary |
+
+---
+
+## 面向开发者
+
+### 架构概览
+
+```
+┌─────────────────────────────────────────┐
+│           Digital Office GUI            │
+│         (Web UI / PWA Shell)            │
+├─────────────────────────────────────────┤
+│        Product Backend API              │
+│    (office-system CLI + web-serve)      │
+├─────────────────────────────────────────┤
+│      Tenant / Roles / Entitlements      │
+├─────────────────────────────────────────┤
+│     Agent Host Runtime (Hermes etc.)    │
+├─────────────────────────────────────────┤
+│       agent-system registries           │
+│   ┌──────────┬──────────┬──────────┐    │
+│   │ Router   │ Registry │ Policies │    │
+│   └──────────┴──────────┴──────────┘    │
+├─────────────────────────────────────────┤
+│    Agent Profiles + Skills Bundles      │
+├─────────────────────────────────────────┤
+│  Knowledge (Project / Company / RAG)    │
+├─────────────────────────────────────────┤
+│     KeyMemory Relay + Semantic Mem      │
+└─────────────────────────────────────────┘
+```
+
+### 仓库结构
+
+```
+.
+├── README.md                          # 本文件
+├── CHANGELOG.md                       # 开发进度日志
+├── SOUL.md                            # 默认秘书 Agent 入口
+├── install.sh                         # 安装器
+├── scripts/
+│   └── agent-router                   # 智能路由器
+├── profiles/                          # Agent Profile 模板
+│   ├── office-coder/
+│   ├── office-designer/
+│   ├── office-planner/
+│   ├── office-product-manager/
+│   ├── office-researcher/
+│   └── office-writer/
+├── skills/                            # 产品技能包
+│   ├── agent-team-staffing/
+│   ├── vibe-coding-production-harness/
+│   └── vibe-design-production-harness/
+└── agent-system/
+    ├── agents.registry.json           # Agent 注册表
+    ├── secretary.capabilities.json    # 秘书能力配置
+    ├── host-injection.policy.json     # 宿主注入策略
+    ├── product.release.manifest.json  # 发布清单
+    ├── skills.sources.json            # 外部技能来源
+    ├── memory.relay.registry.json     # KeyMemory 接力规则
+    ├── multimodal.pipeline.json       # 多模态处理管线
+    ├── harness/                       # 质量门禁
+    │   ├── production-gates.json
+    │   └── tasks/
+    ├── bin/                           # CLI 工具
+    │   ├── office-system.py           # GUI 后端控制面
+    │   ├── harness-check              # 门禁检查
+    │   └── harness-runner             # 门禁执行器
+    ├── docs/                          # 产品文档
+    ├── rules/                         # 规则体系
+    ├── knowledge/                     # 知识库骨架
+    ├── tests/                         # 测试
+    ├── web/                           # Web UI / PWA shell
+    └── deploy/                        # 部署模板
+```
+
+### 核心设计原则
+
+1. **Portable Role 优先** — 不把 Agent 名称写死到产品逻辑。先选择 portable role，再从注册表映射到具体 Agent。
+2. **知识分层** — KeyMemory 是接力记忆层，不是事实源。项目知识库 > 公司知识库 > 行业参考 > KeyMemory。
+3. **用户确认** — 不允许系统静默自我迭代。任何变更必须生成提案，等用户确认。
+4. **GUI 契约** — 所有后端能力必须有 GUI 命令合约，不只提供 CLI。
+5. **本地优先** — 模型权重不提交到仓库，部署时由安装器下载到客户主机。
+
+### 开发验证
+
+提交前运行：
 
 ```bash
-scripts/agent-router --health
-agent-system/bin/office-system health
+# 语法检查
+python3 -m py_compile agent-system/bin/office-system.py \
+  agent-system/bin/harness-check \
+  agent-system/bin/harness-runner \
+  scripts/agent-router
+
+# 门禁检查
 agent-system/bin/harness-check
 agent-system/bin/harness-runner --task all --no-write
-agent-system/bin/product-update status
-```
 
-## 默认秘书 Agent
-
-默认宿主 Agent 被注入为数字办公室秘书 Agent。秘书负责：
-
-1. 澄清用户意图、项目、受众、权限和验收标准。
-2. 通过 `agents.registry.json` 选择 portable role 和具体 Agent。
-3. 管理多 Agent 交接，确保后续角色使用前序产物，而不是重头开始。
-4. 使用 `production-gates.json` 和相关 harness 任务检查质量。
-5. 给出最终交付说明，包括文件路径、URL、打开方式、风险和未解决假设。
-
-默认秘书人设改为中性基线。用户偏好通过 GUI onboarding 和设置文件表达，不能覆盖安全、权限、知识来源、生产门禁或发布控制。
-
-## 典型工作流
-
-### PPT 生产
-
-PPT、slides、deck、presentation、汇报、幻灯片等需求会进入 `ppt_production`：
-
-```text
-intake -> writing -> design -> intake
-```
-
-- 秘书 `intake`：澄清目标、受众、页数、素材、交付格式和验收标准。
-- Writer `writing`：负责故事线、页面文案、标题层级、讲稿和事实表述。
-- Designer `design`：负责视觉方向、版式、媒体决策和可渲染 deck artifact。
-- 秘书 `intake`：执行最终门禁，交付文件路径、URL 或打开方式，并说明未解决假设。
-
-Writer 不承担最终 HTML/PPT deck 渲染，除非未来显式注册了 deck 渲染技能并通过同等门禁。
-
-### Vibe Design / Vibe Coding
-
-设计和编码类任务分别使用 `vibe-design-production-harness` 与 `vibe-coding-production-harness`。工作流必须保留产品判断、设计方向、实现验证和回归检查，不允许把生产门禁压缩成“看起来完成了”。
-
-### AI Native Product Loop
-
-生产任务遵循：
-
-```text
-Perceive -> Plan -> Execute -> Reflect -> Iterate
-```
-
-迭代必须生成用户可见提案。用户确认前，不允许静默修改规则、工作流、Agent 行为、知识库、skill bundle、模型路由、GUI 合约或发布配置。
-
-## GUI 化准备更新
-
-GUI 的入口命令由 `agent-system/bin/office-system` 提供。当前产品层已经具备以下后端契约：
-
-```bash
-agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
-agent-system/bin/office-system onboarding-options
-agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator --address-style neutral --language auto --initiative-level confirm_before_action --pushback-style risk_based --approval-strictness balanced --memory-mode project_only --work-mode balanced --confirmed
-agent-system/bin/office-system settings-status
-agent-system/bin/office-system settings-update --work-mode quality --confirmed
-```
-
-`gui-state` 返回健康状态、设置、能力、Agent、项目、工作流、任务、审批、通知、知识和审计摘要。`settings-update` 用于 GUI 的局部设置更新。普通用户不应直接编辑宿主规则文件。
-
-## Web UI And PWA
-
-仓库包含一个可安装的 Web/PWA shell，用于未来 GUI 迭代。管理员可以配置和启动本地 Web UI：
-
-```bash
-agent-system/bin/office-system web-config --public-url https://office.example.com
-agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url https://office.example.com
-```
-
-浏览器访问本地服务后可选择 Install as PWA。对外暴露时应使用 HTTPS，否则 PWA 安装能力和浏览器权限会受限。
-
-## 验证与开发
-
-本仓库以可分发产品版本为开发目标。每次更新都应确认：
-
-1. 安装包能在用户主机上完成安装、规则注入和健康检查。
-2. 关键工作流能闭环交付，不停留在文档或手动操作。
-3. `harness-check` 和相关 `harness-runner` 任务通过。
-4. 中文 README 面向用户、部署管理员和开发者，不写成个人运行记录。
-5. WSL Hermes 开发目录与 GitHub 仓库保持同步。
-
-常用检查：
-
-```bash
-python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
-agent-system/bin/harness-check
-agent-system/bin/harness-runner --task all --no-write
+# 冒烟测试
 bash agent-system/tests/smoke.sh
 ```
 
-查看路由：
+### 路由测试
 
 ```bash
+# 查看路由健康状态
 scripts/agent-router --health
+
+# 测试路由决策
 scripts/agent-router --route-json "帮我做一份PPT汇报"
-scripts/agent-router --route-json "research competitors, decide product requirements, design the interface, then implement the code"
+scripts/agent-router --route-json "research competitors and design the interface"
 ```
 
-## 仓库结构
+### GUI 后端入口
 
-```text
-.
-|-- install.sh
-|-- SOUL.md
-|-- README.md
-|-- README.zh-CN.md
-|-- scripts/
-|   `-- agent-router
-|-- profiles/
-|-- skills/
-`-- agent-system/
-    |-- agents.registry.json
-    |-- secretary.capabilities.json
-    |-- host-injection.policy.json
-    |-- product.release.manifest.json
-    |-- harness/
-    |-- docs/
-    |-- bin/
-    |-- rules/
-    |-- knowledge/
-    |-- projects/
-    |-- tasks/
-    `-- runs/
+```bash
+# 首页总览
+agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
+
+# Onboarding
+agent-system/bin/office-system onboarding-options
+agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator ...
+
+# 设置
+agent-system/bin/office-system settings-status
+agent-system/bin/office-system settings-update --work-mode quality --confirmed
+
+# Web UI
+agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787
 ```
+
+---
 
 ## 关键文档
 
-- [agent-system/docs/architecture.md](agent-system/docs/architecture.md)：总体架构、宿主注入、规则优先级、知识和发布模型。
-- [agent-system/docs/host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md)：Hermes、OpenClaw 和 generic 宿主注入策略。
-- [agent-system/docs/ppt-production-workflow.md](agent-system/docs/ppt-production-workflow.md)：PPT 生产工作流和角色边界。
-- [agent-system/docs/production-harness.md](agent-system/docs/production-harness.md)：生产门禁设计。
-- [agent-system/docs/gui-contract.md](agent-system/docs/gui-contract.md)：未来 GUI 与本地运行层的命令合约。
+| 文档 | 说明 |
+|------|------|
+| [architecture.md](agent-system/docs/architecture.md) | 总体架构、运行层、知识模型、发布模型 |
+| [host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md) | 宿主注入策略详解 |
+| [ppt-production-workflow.md](agent-system/docs/ppt-production-workflow.md) | PPT 生产工作流与角色边界 |
+| [production-harness.md](agent-system/docs/production-harness.md) | 生产门禁设计 |
+| [gui-contract.md](agent-system/docs/gui-contract.md) | GUI 与本地运行层的命令合约 |
 
-## 产品开发更新日志
+---
 
-### 2026-06-09
+## 开发进度
 
-- 新增 `ppt_production` 工作流，顺序为 `intake -> writing -> design -> intake`。
-- 新增 PPT 外部技能来源登记：`humanize-ppt`、`huashu-design`、`guizang-ppt-skill`、`frontend-slides`；`pitch-clarity-coach` 保持 research-only，不作为生产秘书技能启用。
-- 新增宿主注入策略，支持 Hermes、OpenClaw 和 generic 宿主。
-- 安装器新增 `--host`、`--overwrite-existing`、`--preserve-existing`、`--no-check` 选项。
-- 默认宿主 Agent 明确注入为数字办公室秘书 Agent。
-- 主 README 与中文 README 调整为面向用户、部署管理员和开发者的产品说明与开发更新日志。
+详见 [CHANGELOG.md](CHANGELOG.md)。
+
+---
+
+## 参考与致谢
+
+本系统的工程原则参考了以下方向：
+
+- **ReAct** — action / observation 循环
+- **Reflexion** — 反思反馈机制
+- **Generative Agents** — 记忆 / 反思 / 规划分层
+- **Voyager** — 可复用技能库
+- **MetaGPT / AutoGen** — 多 Agent 角色协作
+- **LangGraph** — 持久执行与 human-in-the-loop
+- **SWE-agent / OpenHands** — 编码 Agent harness
+- **RAGAS / Self-RAG** — 检索质量与自我评估
+
+---
+
+## 许可
+
+Private — 当前为内部开发通道。生产客户应接收经过验证的发布包。
