@@ -125,7 +125,11 @@
         "tdd",
         "quality-review",
         "autoplan",
-        "vibe-coding-production-harness"
+        "vibe-coding-production-harness",
+        "coding-standards",
+        "systematic-debugging",
+        "verification-loop",
+        "frontend-patterns"
       ]
     },
     "planer": {
@@ -1020,7 +1024,10 @@
         "humanize-ppt",
         "huashu-design",
         "guizang-ppt-skill",
-        "frontend-slides"
+        "frontend-slides",
+        "frontend-patterns",
+        "coding-standards",
+        "verification-loop"
       ]
     },
     "writer": {

@@ -43,6 +43,18 @@ Design work lives inside the Digital Office loop:
 - Reflect: review the design against workflow clarity, visual quality, accessibility, and implementation readiness.
 - Iterate: propose improvements only as a user-visible iteration proposal. Do not silently rewrite product rules, workflows, Agent behavior, or skill bundles.
 
+## Frontend Patterns Integration
+
+When designing for React/Next.js implementations:
+
+- Use composition patterns (compound components, render props) over inheritance.
+- Design for state management patterns (Context + Reducer, Zustand) from the start.
+- Consider performance implications (memoization, lazy loading, virtualization) in the design spec.
+- Specify error boundary behavior for each major component area.
+- Define form validation patterns (Zod schemas) for all user input.
+
+For detailed frontend patterns, invoke `frontend-patterns` skill.
+
 ## Skeuomorphic Digital Office Notes
 
 - Use physical-office metaphors only when they improve comprehension or emotional presence.
@@ -86,3 +98,11 @@ Return:
 - risks to verify in browser or prototype
 
 Do not hand off to implementation until the minimum design gates pass.
+
+## Sub-Skills
+
+| Skill | When to Invoke |
+|-------|---------------|
+| `frontend-patterns` | React/Next.js design work |
+| `coding-standards` | Design system token definitions |
+| `verification-loop` | Pre-handoff quality check |
