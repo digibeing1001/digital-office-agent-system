@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "task_id": "knowledge-space-acl-production",
+  "description": "Verify personal/project knowledge spaces, folder inheritance, explicit sharing, snapshot scope resolution, and access logging.",
+  "roles": [
+    "operations",
+    "governance"
+  ],
+  "workflow": "knowledge_space_acl",
+  "gates": [
+    {
+      "id": "gui_contract_mentions_knowledge_spaces",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/gui-contract.md",
+      "patterns": [
+        "knowledge-tree",
+        "knowledge-folder-create",
+        "knowledge-item-add",
+        "knowledge-share",
+        "knowledge-scope-resolve",
+        "knowledge-access-check"
+      ]
+    },
+    {
+      "id": "knowledge_acl_cli_close_loop",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; cp -a scripts \"$tmp/scripts\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; office=\"$tmp/agent-system/bin/office-system\"; \"$office\" knowledge-folder-create --space-type personal --owner alice --folder-id private --title Private --created-by alice --role member > \"$tmp/folder.json\"; \"$office\" knowledge-item-add --space-type personal --owner alice --folder-id private --item-id item-1 --title Secret --source-ref local://secret.md --created-by alice --role member > \"$tmp/item.json\"; set +e; \"$office\" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user bob --role member > \"$tmp/deny.json\" 2> \"$tmp/deny.err\"; code=$?; set -e; test \"$code\" -ne 0; \"$office\" knowledge-share --space-type personal --owner alice --resource-type folder --resource-id private --target-type user --target-id bob --shared-by alice --role member > \"$tmp/share-user.json\"; \"$office\" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user bob --role member > \"$tmp/allow-user.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"decision\"][\"allowed\"] is True' \"$tmp/allow-user.json\"; set +e; \"$office\" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user worker --role member --agent coder > \"$tmp/agent-deny.json\" 2> \"$tmp/agent-deny.err\"; code=$?; set -e; test \"$code\" -ne 0; \"$office\" knowledge-share --space-type personal --owner alice --resource-type item --resource-id item-1 --target-type agent --target-id coder --shared-by alice --role member > \"$tmp/share-agent.json\"; \"$office\" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user worker --role member --agent coder > \"$tmp/agent-allow.json\"; \"$office\" knowledge-scope-resolve --space-type personal --owner alice --folder-id private --user bob --role member > \"$tmp/scope.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"snapshot\"][\"mode\"] == \"snapshot\" and data[\"snapshot\"][\"item_ids\"] == [\"item-1\"]' \"$tmp/scope.json\"; grep -q knowledge_acl_access \"$tmp/agent-system/logs/knowledge-access.jsonl\""
+      ]
+    }
+  ]
+}

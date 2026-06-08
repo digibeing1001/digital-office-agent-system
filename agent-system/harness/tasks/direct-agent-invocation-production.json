@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "task_id": "direct-agent-invocation-production",
+  "description": "Verify GUI @Agent invocation stays governed and creates workflow, task, authorization, audit, and notification records.",
+  "roles": [
+    "operations",
+    "implementation"
+  ],
+  "workflow": "direct_agent_invocation",
+  "gates": [
+    {
+      "id": "gui_contract_mentions_agent_invoke",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/gui-contract.md",
+      "patterns": [
+        "agent-invoke",
+        "direct_agent",
+        "workflow_run_id",
+        "task_id"
+      ]
+    },
+    {
+      "id": "direct_agent_cli_close_loop",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; cp -a scripts \"$tmp/scripts\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; office=\"$tmp/agent-system/bin/office-system\"; \"$office\" project-create --project p1 --name 'Project One' --agents pm,coder >/dev/null; \"$office\" agent-invoke --tenant tenant-a --deployment dep-a --user manager --role project_manager --project p1 --agent coder --task 'Implement GUI backend hook' --run-id direct-run --task-id direct-task > \"$tmp/direct.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"invocation_mode\"] == \"direct_agent\" and data[\"agent_id\"] == \"coder\" and data[\"workflow_run_id\"] == \"direct-run\" and data[\"task_id\"] == \"direct-task\" and data[\"authorization\"][\"allowed\"] is True and data[\"audit_event_id\"]' \"$tmp/direct.json\"; \"$office\" workflow-status --run-id direct-run > \"$tmp/run.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"invocation_mode\"] == \"direct_agent\" and data[\"active_revision_id\"] and data[\"tasks\"] == [\"direct-task\"]' \"$tmp/run.json\"; \"$office\" task-status --task-id direct-task > \"$tmp/task.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"invocation_mode\"] == \"direct_agent\" and data[\"workflow_run_id\"] == \"direct-run\"' \"$tmp/task.json\"; \"$office\" notification-list --user manager > \"$tmp/notifications.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert any(item[\"resource_id\"] == \"direct-run\" for item in data[\"notifications\"])' \"$tmp/notifications.json\"; set +e; \"$office\" agent-invoke --tenant tenant-a --deployment dep-a --user viewer --role viewer --project p1 --agent coder --task denied > \"$tmp/viewer.json\" 2> \"$tmp/viewer.err\"; code=$?; set -e; test \"$code\" -ne 0; set +e; \"$office\" agent-invoke --tenant tenant-a --deployment dep-a --user manager --role project_manager --project p1 --agent researcher --task denied > \"$tmp/roster.json\" 2> \"$tmp/roster.err\"; code=$?; set -e; test \"$code\" -ne 0; set +e; \"$office\" agent-invoke --tenant tenant-a --deployment dep-a --user manager --role project_manager --project p1 --agent unknown --task denied > \"$tmp/unknown.json\" 2> \"$tmp/unknown.err\"; code=$?; set -e; test \"$code\" -ne 0"
+      ]
+    }
+  ]
+}

@@ -176,3 +176,25 @@ GUI 常用入口：
 ```
 
 外部 skill 和高星项目只能作为候选来源。企业生产中必须经过 staged review、许可和安全检查、适配、harness 验证、管理员确认后才可启用。
+
+## GUI Backplane Update
+
+This version reserves the backend needed for the future GUI before drawing the actual screens.
+
+- `agent-invoke` lets the GUI support direct `@Agent` calls without bypassing governance.
+- Workflow canvas edits use draft revisions, validation, and confirmed activation.
+- `workflow-control` supports run, pause, resume, and stop. Stop requires confirmation.
+- Canvas components are constrained to known office workflow types instead of arbitrary low-code blocks.
+- Knowledge spaces now support personal, project, team, company, workflow artifact, and shared-with-me views.
+- Personal folders are private by default. Sharing can target users, roles, Agents, projects, or workflow scopes.
+- `knowledge-scope-resolve` defaults to snapshot mode for reproducible workflow runs.
+- `workbench-state` returns role-specific dashboards for owners, project leads, members, approvers, and viewers.
+
+New production harness tasks:
+
+```bash
+~/.hermes/agent-system/bin/harness-runner --task direct-agent-invocation-production --no-write
+~/.hermes/agent-system/bin/harness-runner --task workflow-canvas-revision-production --no-write
+~/.hermes/agent-system/bin/harness-runner --task knowledge-space-acl-production --no-write
+~/.hermes/agent-system/bin/harness-runner --task role-workbench-production --no-write
+```

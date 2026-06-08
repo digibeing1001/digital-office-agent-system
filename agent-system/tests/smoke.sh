@@ -73,6 +73,7 @@ clean_runtime_state() {
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/iterations/status"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/knowledge/company"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/knowledge/mounts"
+  clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/knowledge/spaces"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/models/cache"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/models/locks"
   clean_dir_keep_placeholder "$WORK_DIR/repo/agent-system/rules/projects"
@@ -165,6 +166,10 @@ json_assert agent-system/harness/tasks/vibe-design-production.json 'data["task_i
 json_assert agent-system/harness/tasks/portable-routing-production.json 'data["task_id"] == "portable-routing-production"'
 json_assert agent-system/harness/tasks/ai-native-loop-production.json 'data["task_id"] == "ai-native-loop-production"'
 json_assert agent-system/harness/tasks/gui-readiness-production.json 'data["task_id"] == "gui-readiness-production"'
+json_assert agent-system/harness/tasks/direct-agent-invocation-production.json 'data["task_id"] == "direct-agent-invocation-production"'
+json_assert agent-system/harness/tasks/workflow-canvas-revision-production.json 'data["task_id"] == "workflow-canvas-revision-production"'
+json_assert agent-system/harness/tasks/knowledge-space-acl-production.json 'data["task_id"] == "knowledge-space-acl-production"'
+json_assert agent-system/harness/tasks/role-workbench-production.json 'data["task_id"] == "role-workbench-production"'
 json_assert agent-system/ai-native-loop.manifest.json 'data["stages"]["iterate"]["gates"][0] == "no_auto_iteration_without_user_confirmation"'
 json_assert agent-system/ai-native-loop.manifest.json '"silent self-iteration" in data["stages"]["iterate"]["forbidden"]'
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
@@ -196,7 +201,7 @@ json_assert "$WORK_DIR/settings-update.json" 'data["source"] == "gui_settings_up
 "$OFFICE" settings-status >"$WORK_DIR/settings-status.json"
 json_assert "$WORK_DIR/settings-status.json" 'data["configured"] is True and data["preferences"]["secretary_name"] == "Office Assistant"'
 "$OFFICE" gui-state --user user-a --limit 5 >"$WORK_DIR/gui-state-initial.json"
-json_assert "$WORK_DIR/gui-state-initial.json" 'data["settings"]["configured"] is True and "global_settings" in [item["id"] for item in data["capabilities"]]'
+json_assert "$WORK_DIR/gui-state-initial.json" 'data["settings"]["configured"] is True and "global_settings" in [item["id"] for item in data["capabilities"]] and "direct_agent_invocation" in [item["id"] for item in data["capabilities"]] and "knowledge_spaces" in [item["id"] for item in data["capabilities"]]'
 
 [ -f "$HOME_DIR/SOUL.md" ] || fail "default SOUL.md missing"
 [ ! -e "$HOME_DIR/profiles/secretary" ] || fail "secretary profile must not be duplicated"
@@ -343,6 +348,39 @@ json_assert "$WORK_DIR/workflow-list.json" 'len(data["runs"]) >= 1'
 "$OFFICE" task-list --project p1 --status queued >"$WORK_DIR/task-list.json"
 json_assert "$WORK_DIR/task-list.json" 'len(data["tasks"]) >= 1'
 
+"$OFFICE" agent-invoke --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --agent coder --task "direct backend implementation request" --run-id direct-run --task-id direct-task >"$WORK_DIR/direct-agent.json"
+json_assert "$WORK_DIR/direct-agent.json" 'data["invocation_mode"] == "direct_agent" and data["agent_id"] == "coder" and data["workflow_run_id"] == "direct-run" and data["task_id"] == "direct-task" and data["authorization"]["allowed"] is True and data["audit_event_id"]'
+must_fail "$OFFICE" agent-invoke --tenant tenant-a --deployment dep-a --user user-a --role viewer --project p1 --agent coder --task denied
+must_fail "$OFFICE" agent-invoke --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --agent researcher --task denied
+must_fail "$OFFICE" agent-invoke --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --agent unknown-agent --task denied
+"$OFFICE" workflow-status --run-id direct-run >"$WORK_DIR/direct-run-status.json"
+initial_revision="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["active_revision_id"])' "$WORK_DIR/direct-run-status.json")"
+json_assert "$WORK_DIR/direct-run-status.json" 'data["invocation_mode"] == "direct_agent" and data["active_revision_id"] and data["tasks"] == ["direct-task"]'
+"$OFFICE" workflow-draft-create --run-id direct-run --created-by user-a --role project_manager --revision-id invalid-draft >/dev/null
+"$OFFICE" workflow-draft-patch --run-id direct-run --revision-id invalid-draft --updated-by user-a --role project_manager --patch-json '{"operations":[{"op":"remove_node","node_id":"final-output"}]}' >"$WORK_DIR/invalid-draft-patch.json"
+"$OFFICE" workflow-draft-validate --run-id direct-run --revision-id invalid-draft >"$WORK_DIR/invalid-draft-validate.json"
+json_assert "$WORK_DIR/invalid-draft-validate.json" 'data["validation"]["status"] == "invalid" and len(data["validation"]["errors"]) >= 1'
+must_fail "$OFFICE" workflow-draft-activate --run-id direct-run --revision-id invalid-draft --activated-by user-a --role project_manager --confirmed
+"$OFFICE" workflow-draft-create --run-id direct-run --created-by user-a --role project_manager --revision-id draft-1 >/dev/null
+"$OFFICE" workflow-draft-patch --run-id direct-run --revision-id draft-1 --updated-by user-a --role project_manager --patch-json '{"operations":[{"op":"add_node","node":{"node_id":"approval-1","type":"approval_gate","title":"Approval"}},{"op":"remove_edge","from":"agent-1-coder","to":"final-output"},{"op":"add_edge","from":"agent-1-coder","to":"approval-1"},{"op":"add_edge","from":"approval-1","to":"final-output"}]}' >"$WORK_DIR/valid-draft-patch.json"
+"$OFFICE" workflow-draft-validate --run-id direct-run --revision-id draft-1 >"$WORK_DIR/valid-draft-validate.json"
+json_assert "$WORK_DIR/valid-draft-validate.json" 'data["validation"]["status"] == "valid"'
+must_fail "$OFFICE" workflow-draft-activate --run-id direct-run --revision-id draft-1 --activated-by user-a --role project_manager
+"$OFFICE" workflow-draft-activate --run-id direct-run --revision-id draft-1 --activated-by user-a --role project_manager --confirmed >"$WORK_DIR/draft-activate.json"
+json_assert "$WORK_DIR/draft-activate.json" 'data["active_revision_id"] == "draft-1" and data["validation"]["status"] == "valid"'
+"$OFFICE" workflow-node-context --run-id direct-run --node-id agent-1-coder >"$WORK_DIR/node-context.json"
+json_assert "$WORK_DIR/node-context.json" 'data["active_revision_id"] == "draft-1" and data["node"]["agent_id"] == "coder" and "approval-1" in data["downstream_node_ids"]'
+must_fail "$OFFICE" workflow-node-context --run-id direct-run --node-id agent-1-coder --revision-id "$initial_revision"
+"$OFFICE" workflow-control --run-id direct-run --action pause --requested-by user-a --role project_manager >"$WORK_DIR/workflow-pause.json"
+json_assert "$WORK_DIR/workflow-pause.json" 'data["status"] == "paused_after_current_node" and data["outcome"] == "pause_requested"'
+"$OFFICE" workflow-control --run-id direct-run --action resume --requested-by user-a --role project_manager >"$WORK_DIR/workflow-runtime-resume.json"
+json_assert "$WORK_DIR/workflow-runtime-resume.json" 'data["status"] == "executing"'
+must_fail "$OFFICE" workflow-control --run-id direct-run --action stop --requested-by user-a --role project_manager
+"$OFFICE" workflow-control --run-id direct-run --action stop --requested-by user-a --role project_manager --confirmed >"$WORK_DIR/workflow-stop.json"
+json_assert "$WORK_DIR/workflow-stop.json" 'data["status"] == "stopped" and data["outcome"] == "stopped"'
+"$OFFICE" task-status --task-id direct-task >"$WORK_DIR/direct-task-stopped.json"
+json_assert "$WORK_DIR/direct-task-stopped.json" 'data["status"] == "cancelled"'
+
 must_fail "$OFFICE" approval-create --tenant tenant-a --deployment dep-a --title "Approve smoke workflow" --action workflow.continue --resource-type workflow_run --resource-id "$workflow_run" --requested-by user-a --requested-by-role viewer --approver-role project_manager --project p1 --workflow-run "$workflow_run" --task-id "$workflow_task"
 "$OFFICE" approval-create --tenant tenant-a --deployment dep-a --title "Approve smoke workflow" --action workflow.continue --resource-type workflow_run --resource-id "$workflow_run" --requested-by user-a --requested-by-role project_manager --approver-role project_manager --project p1 --workflow-run "$workflow_run" --task-id "$workflow_task" >"$WORK_DIR/approval-create.json"
 approval_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["approval"]["approval_id"])' "$WORK_DIR/approval-create.json")"
@@ -363,7 +401,15 @@ json_assert "$WORK_DIR/audit-approval.json" 'len(data["events"]) >= 1 and data["
 "$OFFICE" notification-list --user user-a >"$WORK_DIR/notification-list.json"
 json_assert "$WORK_DIR/notification-list.json" 'len(data["notifications"]) >= 1'
 "$OFFICE" gui-state --user user-a --project p1 --limit 10 >"$WORK_DIR/gui-state-workflow.json"
-json_assert "$WORK_DIR/gui-state-workflow.json" 'data["settings"]["configured"] is True and data["workflows"]["count"] >= 1 and data["tasks"]["count"] >= 1 and data["approvals"]["count"] >= 1 and data["notifications"]["count"] >= 1'
+json_assert "$WORK_DIR/gui-state-workflow.json" 'data["settings"]["configured"] is True and data["workflows"]["count"] >= 1 and data["workflows"]["draft_revision_count"] >= 1 and data["tasks"]["count"] >= 1 and data["approvals"]["count"] >= 1 and data["notifications"]["count"] >= 1'
+"$OFFICE" workbench-state --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 >"$WORK_DIR/workbench-manager.json"
+json_assert "$WORK_DIR/workbench-manager.json" 'data["view"] == "project_lead" and "team_tasks" in data["sections"]'
+"$OFFICE" workbench-state --tenant tenant-a --deployment dep-a --user owner --role owner >"$WORK_DIR/workbench-owner.json"
+json_assert "$WORK_DIR/workbench-owner.json" 'data["view"] == "owner_global" and "project_health" in data["sections"] and "system_health" in data["sections"]'
+"$OFFICE" workbench-state --tenant tenant-a --deployment dep-a --user user-a --role member --project p1 >"$WORK_DIR/workbench-member.json"
+json_assert "$WORK_DIR/workbench-member.json" 'data["view"] == "member" and "my_tasks" in data["sections"]'
+"$OFFICE" workbench-state --tenant tenant-a --deployment dep-a --user user-a --role viewer --project p1 >"$WORK_DIR/workbench-viewer.json"
+json_assert "$WORK_DIR/workbench-viewer.json" 'data["view"] == "viewer" and "visible_projects" in data["sections"]'
 
 "$OFFICE" workflow-start --tenant tenant-a --deployment dep-a --user user-a --role project_manager --project p1 --task "hello there" >"$WORK_DIR/workflow-clarify.json"
 clarify_run="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["run_id"])' "$WORK_DIR/workflow-clarify.json")"
@@ -383,6 +429,26 @@ json_assert "$WORK_DIR/rag-pending.json" 'data["chunks"] == 0'
 json_assert "$WORK_DIR/rag-approved.json" 'data["chunks"] > 0'
 "$OFFICE" rag-search --scope project --project p1 --query beta >"$WORK_DIR/rag-search.json"
 json_assert "$WORK_DIR/rag-search.json" 'len(data["results"]) > 0'
+
+"$OFFICE" knowledge-folder-create --space-type personal --owner alice --folder-id private --title Private --created-by alice --role member >"$WORK_DIR/knowledge-folder.json"
+"$OFFICE" knowledge-item-add --space-type personal --owner alice --folder-id private --item-id item-1 --title Secret --source-ref local://secret.md --created-by alice --role member >"$WORK_DIR/knowledge-item.json"
+must_fail "$OFFICE" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user bob --role member
+"$OFFICE" knowledge-share --space-type personal --owner alice --resource-type folder --resource-id private --target-type user --target-id bob --shared-by alice --role member >"$WORK_DIR/knowledge-share-user.json"
+"$OFFICE" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user bob --role member >"$WORK_DIR/knowledge-access-bob.json"
+json_assert "$WORK_DIR/knowledge-access-bob.json" 'data["decision"]["allowed"] is True and data["decision"]["matched_shares"]'
+must_fail "$OFFICE" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user worker --role member --agent coder
+"$OFFICE" knowledge-share --space-type personal --owner alice --resource-type item --resource-id item-1 --target-type agent --target-id coder --shared-by alice --role member >"$WORK_DIR/knowledge-share-agent.json"
+"$OFFICE" knowledge-access-check --space-type personal --owner alice --resource-type item --resource-id item-1 --user worker --role member --agent coder >"$WORK_DIR/knowledge-access-agent.json"
+json_assert "$WORK_DIR/knowledge-access-agent.json" 'data["decision"]["allowed"] is True'
+"$OFFICE" knowledge-scope-resolve --space-type personal --owner alice --folder-id private --user bob --role member >"$WORK_DIR/knowledge-scope.json"
+json_assert "$WORK_DIR/knowledge-scope.json" 'data["snapshot"]["mode"] == "snapshot" and data["snapshot"]["item_ids"] == ["item-1"]'
+"$OFFICE" knowledge-tree --space-type shared_with_me --user bob --role member >"$WORK_DIR/knowledge-shared-tree.json"
+json_assert "$WORK_DIR/knowledge-shared-tree.json" 'len(data["items"]) >= 1'
+"$OFFICE" knowledge-folder-create --space-type project --project p1 --folder-id specs --title Specs --created-by user-a --role project_manager >"$WORK_DIR/project-knowledge-folder.json"
+"$OFFICE" knowledge-item-add --space-type project --project p1 --folder-id specs --item-id spec-1 --title Spec --source-ref local://spec.md --created-by user-a --role project_manager >"$WORK_DIR/project-knowledge-item.json"
+"$OFFICE" knowledge-access-check --space-type project --project p1 --resource-type item --resource-id spec-1 --user user-a --role project_manager >"$WORK_DIR/project-knowledge-access.json"
+json_assert "$WORK_DIR/project-knowledge-access.json" 'data["decision"]["allowed"] is True'
+grep -q knowledge_acl_access "$HOME_DIR/agent-system/logs/knowledge-access.jsonl" || fail "knowledge ACL access log missing"
 
 draft_path="$("$OFFICE" methodology-draft --project p1)"
 must_fail "$OFFICE" methodology-approve --project p1 --draft "$draft_path"

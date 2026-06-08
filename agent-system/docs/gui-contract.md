@@ -107,6 +107,63 @@ Authorization, audit, and notifications:
 - Approval approve/reject actions and workflow cancel actions require explicit `--confirmed`.
 - Audit events are append-only JSONL records with a lightweight hash chain through `previous_event_hash` and `event_hash`.
 
+Direct `@Agent` invocation:
+
+The chat UI may let users address a specific Agent, for example `@coder implement this API`. This is still a governed workflow entrypoint. The GUI must call `agent-invoke`, not bypass the control plane.
+
+```bash
+~/.hermes/agent-system/bin/office-system agent-invoke --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --agent <agent_id> --task "<task>"
+```
+
+Successful output includes `agent_id`, `project_id`, `requested_by`, `invocation_mode=direct_agent`, `workflow_run_id`, `task_id`, `active_revision_id`, `authorization`, and `audit_event_id`. A denied call returns a structured JSON denial or non-zero validation error for unknown Agent, missing project, missing project roster membership, or insufficient user role.
+
+Workflow canvas revisions and runtime controls:
+
+The workflow canvas is a constrained office workflow editor, not an unrestricted low-code platform. Edits to future workflow structure must use draft revisions. Completed nodes cannot be rewritten in place.
+
+```bash
+~/.hermes/agent-system/bin/office-system workflow-draft-create --run-id <run_id> --created-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-draft-patch --run-id <run_id> --revision-id <revision_id> --updated-by <user_id> --role <role> --patch-json '<json>'
+~/.hermes/agent-system/bin/office-system workflow-draft-validate --run-id <run_id> --revision-id <revision_id>
+~/.hermes/agent-system/bin/office-system workflow-draft-activate --run-id <run_id> --revision-id <revision_id> --activated-by <user_id> --role <role> --confirmed
+~/.hermes/agent-system/bin/office-system workflow-node-context --run-id <run_id> --node-id <node_id>
+~/.hermes/agent-system/bin/office-system workflow-control --run-id <run_id> --action run|pause|resume|stop --requested-by <user_id> --role <role>
+```
+
+Canvas component types reserved for GUI:
+
+- `agent_task`
+- `text_instruction`
+- `file_ref`
+- `folder_ref`
+- `knowledge_scope`
+- `approval_gate`
+- `human_input`
+- `output_artifact`
+- `merge_summary`
+- `condition`
+- `parallel_group`
+
+Simple mode should expose only Agent, text, file/folder/knowledge, approval, and output. Professional/admin modes may expose condition, merge, parallel, and human input components.
+
+Validation rules:
+
+- A runnable canvas must have a start node and a final `output_artifact`.
+- No isolated or unreachable nodes.
+- Ordinary cycles are rejected. Future loop components must declare exit condition and max iterations before they become runnable.
+- Agent nodes require both `agent_id` and instruction text.
+- File/folder/knowledge nodes require concrete ids or scopes.
+- Edges must connect compatible input/output types.
+- High-risk Agent nodes must have a downstream `approval_gate`.
+- `workflow-node-context` always reads the current active revision. If an Agent tries to use a stale revision id, the command returns `stale_revision`.
+
+Runtime controls:
+
+- `pause` records `pause_requested` and pauses after the current node finishes.
+- `resume` or `run` clears the pause request and restores the current stage status.
+- `stop` requires `--confirmed` and cancels queued/running linked tasks.
+- Completed, cancelled, or stopped workflows cannot be rewritten or controlled.
+
 AI Native Product Loop:
 
 The production loop is Perceive, Plan, Execute, Reflect, Iterate. The GUI should render it as five visible stages rather than a hidden background process.
@@ -148,6 +205,26 @@ Knowledge:
 ~/.hermes/agent-system/bin/office-system knowledge-source-mount --source-class provider_sold_industry_kb --source-id <pack_id> --tenant <tenant_id> --deployment <deployment_id> --created-by <user_id> --mount-target licensed_project_reference --project <project_id> --entitlement <entitlement_id>
 ~/.hermes/agent-system/bin/office-system knowledge-access-log --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --agent <agent_id> --source-class provider_sold_industry_kb --source-id <pack_id> --mount-id <mount_id> --knowledge-pack <pack_id> --entitlement <entitlement_id> --decision allow
 ```
+
+Knowledge spaces, folders, and ACL:
+
+The GUI should use knowledge spaces for fine-grained folder and file control. Supported spaces are `personal`, `project`, `team`, `company`, `workflow_artifacts`, and virtual `shared_with_me`.
+
+```bash
+~/.hermes/agent-system/bin/office-system knowledge-folder-create --space-type personal --owner <user_id> --folder-id <folder_id> --title "<title>" --created-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system knowledge-item-add --space-type personal --owner <user_id> --folder-id <folder_id> --item-id <item_id> --title "<title>" --source-ref <ref> --created-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system knowledge-share --space-type personal --owner <owner_id> --resource-type folder --resource-id <folder_id> --target-type user|role|agent|project|workflow --target-id <target_id> --shared-by <owner_id> --role <role>
+~/.hermes/agent-system/bin/office-system knowledge-access-check --space-type personal --owner <owner_id> --resource-type item --resource-id <item_id> --user <user_id> --role <role> --agent <agent_id>
+~/.hermes/agent-system/bin/office-system knowledge-scope-resolve --space-type project --project <project_id> --folder-id <folder_id> --user <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system knowledge-tree --space-type shared_with_me --user <user_id> --role <role>
+```
+
+- Personal folders are private by default.
+- A personal file or folder can be shared to a user, role, Agent, project, or workflow scope.
+- Explicit deny shares override allow shares.
+- Folder grants inherit to child folders and items unless `--no-inherit` is used.
+- `knowledge-scope-resolve` defaults to snapshot mode so workflow runs are reproducible. Use `--live-mode` only as an advanced explicit choice.
+- Every access check and scope resolution writes `knowledge_acl_access` to `logs/knowledge-access.jsonl`.
 
 Online knowledge injection:
 
@@ -191,6 +268,19 @@ Data sharing:
 ~/.hermes/agent-system/bin/office-system telemetry-export
 ~/.hermes/agent-system/bin/office-system telemetry-send --bundle <exported_bundle> --confirmed
 ```
+
+Role workbenches:
+
+The home page can show a universal project board, but role-specific workbenches should be available for focused work. Use `workbench-state` to populate those pages.
+
+```bash
+~/.hermes/agent-system/bin/office-system workbench-state --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role owner
+~/.hermes/agent-system/bin/office-system workbench-state --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role project_manager --project <project_id>
+~/.hermes/agent-system/bin/office-system workbench-state --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role member --project <project_id>
+~/.hermes/agent-system/bin/office-system workbench-state --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role professional_reviewer --project <project_id>
+```
+
+Returned views include `owner_global`, `project_lead`, `member`, `approver`, and `viewer`. Owners see global project health, blockers, cost/load placeholders, pending approvals, knowledge spaces, and system health. Project leads see project progress, team tasks, blockers, and project knowledge. Members see their tasks and workflows. Approvers see pending review queues. Viewers see read-only project/output summaries.
 
 New Agent plugin request:
 

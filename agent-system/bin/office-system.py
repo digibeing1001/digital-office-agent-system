@@ -64,6 +64,40 @@ TASK_STATUSES = {
     "failed",
     "cancelled",
 }
+WORKFLOW_CONTROL_ACTIONS = {"run", "pause", "stop", "resume"}
+CANVAS_NODE_TYPES = {
+    "start",
+    "agent_task",
+    "text_instruction",
+    "file_ref",
+    "folder_ref",
+    "knowledge_scope",
+    "approval_gate",
+    "human_input",
+    "output_artifact",
+    "merge_summary",
+    "condition",
+    "parallel_group",
+}
+SIMPLE_CANVAS_NODE_TYPES = {"agent_task", "text_instruction", "file_ref", "folder_ref", "knowledge_scope", "approval_gate", "output_artifact"}
+NODE_IO_TYPES = {
+    "start": {"outputs": {"control"}},
+    "text_instruction": {"outputs": {"instruction"}},
+    "file_ref": {"outputs": {"file_reference"}},
+    "folder_ref": {"outputs": {"folder_reference"}},
+    "knowledge_scope": {"outputs": {"knowledge_scope"}},
+    "human_input": {"outputs": {"human_input", "instruction", "file_reference"}},
+    "agent_task": {"inputs": {"control", "instruction", "file_reference", "folder_reference", "knowledge_scope", "human_input", "artifact"}, "outputs": {"artifact", "report", "decision"}},
+    "approval_gate": {"inputs": {"artifact", "proposal", "decision"}, "outputs": {"approved", "rejected"}},
+    "output_artifact": {"inputs": {"artifact", "report", "approved", "human_input"}},
+    "merge_summary": {"inputs": {"artifact", "report"}, "outputs": {"report", "artifact"}},
+    "condition": {"inputs": {"decision", "artifact", "approved"}, "outputs": {"decision"}},
+    "parallel_group": {"inputs": {"control", "instruction"}, "outputs": {"artifact", "report"}},
+}
+KNOWLEDGE_SPACE_TYPES = {"personal", "project", "team", "company", "workflow_artifacts", "shared_with_me"}
+KNOWLEDGE_RESOURCE_TYPES = {"folder", "item"}
+KNOWLEDGE_PERMISSIONS = {"read", "write", "manage"}
+KNOWLEDGE_TARGET_TYPES = {"user", "role", "agent", "project", "workflow"}
 APPROVAL_STATUSES = {"pending", "approved", "rejected", "cancelled", "expired"}
 APPROVAL_DECISION_TO_STATUS = {
     "approve": "approved",
@@ -79,45 +113,59 @@ ROLE_ACTIONS = {
         "audit.read",
         "notification.read",
         "project.manage",
+        "knowledge.manage",
+        "knowledge.read",
         "release.approve",
         "support.grant",
         "task.manage",
         "task.read",
         "workflow.cancel",
+        "workflow.control",
+        "workflow.edit",
         "workflow.read",
         "workflow.resume",
         "workflow.retry",
         "workflow.start",
+        "workbench.read",
     },
     "project_manager": {
         "agent.delegate",
         "approval.create",
         "approval.decide",
+        "knowledge.manage",
+        "knowledge.read",
         "notification.read",
         "task.manage",
         "task.read",
         "workflow.cancel",
+        "workflow.control",
+        "workflow.edit",
         "workflow.read",
         "workflow.resume",
         "workflow.retry",
         "workflow.start",
+        "workbench.read",
     },
     "professional_reviewer": {
         "approval.decide",
+        "knowledge.read",
         "notification.read",
         "regulated_output.approve",
         "task.read",
         "workflow.read",
+        "workbench.read",
     },
     "member": {
         "agent.delegate",
         "approval.create",
+        "knowledge.read",
         "notification.read",
         "task.read",
         "workflow.read",
         "workflow.start",
+        "workbench.read",
     },
-    "viewer": {"notification.read", "task.read", "workflow.read"},
+    "viewer": {"knowledge.read", "notification.read", "task.read", "workflow.read", "workbench.read"},
 }
 ONBOARDING_FIELDS = [
     "assistant_style",
@@ -1341,6 +1389,344 @@ def task_title(body: str) -> str:
     return compact[:80] or "Untitled task"
 
 
+def parse_json_arg(value: str | None, path: str | None, label: str) -> dict[str, Any]:
+    if path:
+        return read_json(Path(path).expanduser())
+    if value:
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError as exc:
+            print(f"office-system: invalid {label} JSON: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+        if not isinstance(data, dict):
+            print(f"office-system: {label} JSON must be an object", file=sys.stderr)
+            raise SystemExit(2)
+        return data
+    text = sys.stdin.read().strip()
+    if not text:
+        print(f"office-system: {label} JSON is required", file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        print(f"office-system: invalid {label} JSON: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    if not isinstance(data, dict):
+        print(f"office-system: {label} JSON must be an object", file=sys.stderr)
+        raise SystemExit(2)
+    return data
+
+
+def canvas_node(node_id: str, node_type: str, title: str, **extra: Any) -> dict[str, Any]:
+    node_id = safe_component(node_id, "node id")
+    if node_type not in CANVAS_NODE_TYPES:
+        print(f"office-system: invalid canvas node type: {node_type}", file=sys.stderr)
+        raise SystemExit(2)
+    node = {
+        "node_id": node_id,
+        "type": node_type,
+        "title": safe_claim(title, "node title"),
+        "inputs": sorted(NODE_IO_TYPES.get(node_type, {}).get("inputs", set())),
+        "outputs": sorted(NODE_IO_TYPES.get(node_type, {}).get("outputs", set())),
+        "status": "pending",
+    }
+    node.update({key: value for key, value in extra.items() if value not in (None, "")})
+    return node
+
+
+def default_canvas_from_route(root: Path, *, route: dict[str, Any], body: str, agent_id: str, workflow: str) -> dict[str, Any]:
+    steps = route.get("steps") or ([agent_id] if agent_id else [])
+    nodes = [canvas_node("start", "start", "Start")]
+    edges: list[dict[str, str]] = []
+    previous = "start"
+    for index, step_agent in enumerate(steps, start=1):
+        registered = registered_agent(root, str(step_agent))
+        node_id = f"agent-{index}-{registered}"
+        nodes.append(
+            canvas_node(
+                node_id,
+                "agent_task",
+                f"{registered} task",
+                agent_id=registered,
+                instruction=body,
+                execution_mode="direct" if workflow == "direct_agent" else "workflow",
+            )
+        )
+        edges.append({"from": previous, "to": node_id})
+        previous = node_id
+    output_id = "final-output"
+    nodes.append(canvas_node(output_id, "output_artifact", "Final output", required=True))
+    edges.append({"from": previous, "to": output_id})
+    return {
+        "mode": "simple",
+        "nodes": nodes,
+        "edges": edges,
+        "entry_node_id": "start",
+        "final_node_id": output_id,
+        "workflow": workflow,
+    }
+
+
+def new_canvas_revision(
+    root: Path,
+    *,
+    revision_id: str,
+    status: str,
+    created_by: str,
+    source: str,
+    parent_revision_id: str = "",
+    canvas: dict[str, Any],
+    change_summary: str = "",
+) -> dict[str, Any]:
+    validation = validate_canvas(root, canvas)
+    return {
+        "revision_id": safe_component(revision_id, "revision id"),
+        "status": safe_component(status, "revision status"),
+        "created_at": now_iso(),
+        "created_by": safe_claim(created_by, "revision creator", required=False),
+        "source": safe_component(source, "revision source"),
+        "parent_revision_id": safe_claim(parent_revision_id, "parent revision id", required=False),
+        "change_summary": safe_claim(change_summary, "change summary", required=False),
+        "canvas": canvas,
+        "validation": validation,
+    }
+
+
+def initial_canvas_revision(root: Path, *, route: dict[str, Any], body: str, agent_id: str, workflow: str, created_by: str) -> dict[str, Any]:
+    revision_id = f"rev-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    canvas = default_canvas_from_route(root, route=route, body=body, agent_id=agent_id, workflow=workflow)
+    return new_canvas_revision(
+        root,
+        revision_id=revision_id,
+        status="active",
+        created_by=created_by,
+        source="workflow_start",
+        canvas=canvas,
+        change_summary="Initial workflow canvas generated from router decision.",
+    )
+
+
+def revision_list(run: dict[str, Any]) -> list[dict[str, Any]]:
+    return run.setdefault("revisions", [])
+
+
+def find_revision(run: dict[str, Any], revision_id: str) -> dict[str, Any] | None:
+    revision_id = safe_component(revision_id, "revision id")
+    for revision in revision_list(run):
+        if revision.get("revision_id") == revision_id:
+            return revision
+    return None
+
+
+def active_revision(run: dict[str, Any]) -> dict[str, Any] | None:
+    active_id = run.get("active_revision_id")
+    if active_id:
+        found = find_revision(run, active_id)
+        if found:
+            return found
+    for revision in revision_list(run):
+        if revision.get("status") == "active":
+            return revision
+    return None
+
+
+def normalize_canvas_payload(root: Path, payload: dict[str, Any], base_canvas: dict[str, Any] | None = None) -> dict[str, Any]:
+    canvas = json.loads(json.dumps(base_canvas or {"mode": "simple", "nodes": [], "edges": []}, ensure_ascii=False))
+    if "mode" in payload:
+        mode = safe_component(str(payload["mode"]), "canvas mode")
+        if mode not in {"simple", "professional", "admin"}:
+            print(f"office-system: invalid canvas mode: {mode}", file=sys.stderr)
+            raise SystemExit(2)
+        canvas["mode"] = mode
+    if "nodes" in payload:
+        if not isinstance(payload["nodes"], list):
+            print("office-system: canvas nodes must be a list", file=sys.stderr)
+            raise SystemExit(2)
+        nodes = []
+        for item in payload["nodes"]:
+            if not isinstance(item, dict):
+                print("office-system: canvas node must be an object", file=sys.stderr)
+                raise SystemExit(2)
+            node_type = safe_component(str(item.get("type", "")), "canvas node type")
+            node_id = safe_component(str(item.get("node_id", "")), "node id")
+            title = safe_claim(str(item.get("title") or node_id), "node title")
+            extra = {key: value for key, value in item.items() if key not in {"node_id", "type", "title", "inputs", "outputs"}}
+            nodes.append(canvas_node(node_id, node_type, title, **extra))
+        canvas["nodes"] = nodes
+    if "edges" in payload:
+        if not isinstance(payload["edges"], list):
+            print("office-system: canvas edges must be a list", file=sys.stderr)
+            raise SystemExit(2)
+        edges = []
+        for item in payload["edges"]:
+            if not isinstance(item, dict):
+                print("office-system: canvas edge must be an object", file=sys.stderr)
+                raise SystemExit(2)
+            edges.append({"from": safe_component(str(item.get("from", "")), "edge from"), "to": safe_component(str(item.get("to", "")), "edge to")})
+        canvas["edges"] = edges
+    for operation in payload.get("operations", []) or []:
+        if not isinstance(operation, dict):
+            print("office-system: canvas operation must be an object", file=sys.stderr)
+            raise SystemExit(2)
+        apply_canvas_operation(root, canvas, operation)
+    return canvas
+
+
+def apply_canvas_operation(root: Path, canvas: dict[str, Any], operation: dict[str, Any]) -> None:
+    op = safe_component(str(operation.get("op", "")), "canvas operation")
+    nodes = canvas.setdefault("nodes", [])
+    edges = canvas.setdefault("edges", [])
+    if op == "add_node":
+        item = operation.get("node")
+        if not isinstance(item, dict):
+            print("office-system: add_node requires node object", file=sys.stderr)
+            raise SystemExit(2)
+        node = normalize_canvas_payload(root, {"nodes": [item]})["nodes"][0]
+        if any(existing.get("node_id") == node["node_id"] for existing in nodes):
+            print(f"office-system: canvas node already exists: {node['node_id']}", file=sys.stderr)
+            raise SystemExit(2)
+        nodes.append(node)
+    elif op == "remove_node":
+        node_id = safe_component(str(operation.get("node_id", "")), "node id")
+        canvas["nodes"] = [node for node in nodes if node.get("node_id") != node_id]
+        canvas["edges"] = [edge for edge in edges if edge.get("from") != node_id and edge.get("to") != node_id]
+    elif op == "replace_node":
+        item = operation.get("node")
+        if not isinstance(item, dict):
+            print("office-system: replace_node requires node object", file=sys.stderr)
+            raise SystemExit(2)
+        node = normalize_canvas_payload(root, {"nodes": [item]})["nodes"][0]
+        replaced = False
+        for index, existing in enumerate(nodes):
+            if existing.get("node_id") == node["node_id"]:
+                nodes[index] = node
+                replaced = True
+                break
+        if not replaced:
+            print(f"office-system: canvas node not found: {node['node_id']}", file=sys.stderr)
+            raise SystemExit(2)
+    elif op == "add_edge":
+        edge = {"from": safe_component(str(operation.get("from", "")), "edge from"), "to": safe_component(str(operation.get("to", "")), "edge to")}
+        if edge not in edges:
+            edges.append(edge)
+    elif op == "remove_edge":
+        edge = {"from": safe_component(str(operation.get("from", "")), "edge from"), "to": safe_component(str(operation.get("to", "")), "edge to")}
+        canvas["edges"] = [item for item in edges if item != edge]
+    else:
+        print(f"office-system: unsupported canvas operation: {op}", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def validate_canvas(root: Path, canvas: dict[str, Any]) -> dict[str, Any]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    nodes = canvas.get("nodes") or []
+    edges = canvas.get("edges") or []
+    node_by_id: dict[str, dict[str, Any]] = {}
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        return {"status": "invalid", "errors": ["canvas nodes and edges must be lists"], "warnings": warnings}
+    for node in nodes:
+        node_id = str(node.get("node_id", ""))
+        node_type = str(node.get("type", ""))
+        if not node_id:
+            errors.append("node missing node_id")
+            continue
+        if node_id in node_by_id:
+            errors.append(f"duplicate node id: {node_id}")
+            continue
+        node_by_id[node_id] = node
+        if node_type not in CANVAS_NODE_TYPES:
+            errors.append(f"invalid node type for {node_id}: {node_type}")
+        if canvas.get("mode", "simple") == "simple" and node_type not in SIMPLE_CANVAS_NODE_TYPES | {"start"}:
+            warnings.append(f"{node_id} uses advanced component {node_type}")
+        if node_type == "agent_task":
+            agent = str(node.get("agent_id", ""))
+            if not agent:
+                errors.append(f"agent_task {node_id} missing agent_id")
+            else:
+                try:
+                    registered_agent(root, agent)
+                except SystemExit:
+                    errors.append(f"agent_task {node_id} references unknown agent {agent}")
+            if not str(node.get("instruction", "")).strip():
+                errors.append(f"agent_task {node_id} missing instruction")
+        if node_type == "file_ref" and not node.get("file_id"):
+            errors.append(f"file_ref {node_id} missing file_id")
+        if node_type == "folder_ref" and not node.get("folder_id"):
+            errors.append(f"folder_ref {node_id} missing folder_id")
+        if node_type == "knowledge_scope" and not (node.get("scope_id") or node.get("space_id")):
+            errors.append(f"knowledge_scope {node_id} missing scope_id or space_id")
+
+    if not any(node.get("type") == "start" for node in nodes):
+        errors.append("canvas must include a start node")
+    if not any(node.get("type") == "output_artifact" for node in nodes):
+        errors.append("canvas must include a final output_artifact node")
+
+    incoming: dict[str, int] = {node_id: 0 for node_id in node_by_id}
+    outgoing: dict[str, int] = {node_id: 0 for node_id in node_by_id}
+    adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_by_id}
+    for edge in edges:
+        source = str(edge.get("from", ""))
+        target = str(edge.get("to", ""))
+        if source not in node_by_id:
+            errors.append(f"edge references missing source node: {source}")
+            continue
+        if target not in node_by_id:
+            errors.append(f"edge references missing target node: {target}")
+            continue
+        source_outputs = set(node_by_id[source].get("outputs") or NODE_IO_TYPES.get(str(node_by_id[source].get("type")), {}).get("outputs", set()))
+        target_inputs = set(node_by_id[target].get("inputs") or NODE_IO_TYPES.get(str(node_by_id[target].get("type")), {}).get("inputs", set()))
+        if target_inputs and source_outputs and not source_outputs.intersection(target_inputs):
+            errors.append(f"edge {source}->{target} has incompatible output/input types")
+        incoming[target] += 1
+        outgoing[source] += 1
+        adjacency[source].append(target)
+
+    for node_id, node in node_by_id.items():
+        node_type = node.get("type")
+        if node_type != "start" and incoming.get(node_id, 0) == 0:
+            errors.append(f"node is unreachable: {node_id}")
+        if node_type != "output_artifact" and outgoing.get(node_id, 0) == 0:
+            errors.append(f"node has no outgoing edge: {node_id}")
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def visit(node_id: str) -> None:
+        if node_id in visiting:
+            errors.append(f"cycle detected at node: {node_id}")
+            return
+        if node_id in visited:
+            return
+        visiting.add(node_id)
+        for child in adjacency.get(node_id, []):
+            visit(child)
+        visiting.remove(node_id)
+        visited.add(node_id)
+
+    for node_id in node_by_id:
+        visit(node_id)
+
+    for node in nodes:
+        if node.get("type") == "agent_task" and (node.get("risk") in {"high", "regulated"} or node.get("requires_approval")):
+            seen: set[str] = set()
+            stack = list(adjacency.get(str(node.get("node_id")), []))
+            has_approval = False
+            while stack:
+                current = stack.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                if node_by_id.get(current, {}).get("type") == "approval_gate":
+                    has_approval = True
+                    break
+                stack.extend(adjacency.get(current, []))
+            if not has_approval:
+                errors.append(f"high-risk agent node lacks downstream approval_gate: {node.get('node_id')}")
+
+    return {"status": "valid" if not errors else "invalid", "errors": errors, "warnings": warnings}
+
+
 def create_task_record(
     root: Path,
     *,
@@ -1452,6 +1838,7 @@ def workflow_start(args: argparse.Namespace) -> int:
     needs_clarification = bool(route.get("fallback") or route.get("clarification_required"))
     run_status = "blocked" if needs_clarification else "created"
     task_status = "blocked" if needs_clarification else "queued"
+    initial_revision = initial_canvas_revision(root, route=route, body=body, agent_id=agent, workflow=route.get("workflow", ""), created_by=args.user)
     run = {
         "version": "1.0.0",
         "kind": "digital-office-workflow-run",
@@ -1471,6 +1858,9 @@ def workflow_start(args: argparse.Namespace) -> int:
         "tasks": [task_id],
         "approvals": [],
         "route": route,
+        "active_revision_id": initial_revision["revision_id"],
+        "revisions": [initial_revision],
+        "canvas": initial_revision["canvas"],
         "authorization": auth,
         "blockers": ["clarification_required"] if needs_clarification else [],
         "idempotency_key": args.idempotency_key or "",
@@ -1736,6 +2126,254 @@ def workflow_retry(args: argparse.Namespace) -> int:
     write_json(run_record_path(root, args.run_id), run)
     append_audit_event(root, "workflow_retry", actor_id=args.requested_by or "", actor_role=args.role or "", project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome="retry_scheduled", reason=args.reason or "", extra={"stage": stage})
     print(json.dumps({"run_id": args.run_id, "stage": stage, "status": run["status"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def agent_invoke(args: argparse.Namespace) -> int:
+    root = system_root()
+    if not args.project:
+        print(json.dumps({"status": "denied", "error": "agent-invoke requires --project for governed dispatch"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    project = safe_component(args.project, "project id")
+    ensure_project(root, project)
+    registry = read_json(root / "agents.registry.json")
+    agent = safe_component(args.agent, "agent id")
+    if agent not in registry.get("agents", {}):
+        print(json.dumps({"status": "denied", "error": "unknown agent", "agent_id": agent}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    body = args.task if args.task is not None else sys.stdin.read()
+    body = body.strip()
+    if not body:
+        print(json.dumps({"status": "denied", "error": "agent-invoke requires --task or stdin body"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    run_id = safe_component(args.run_id, "run id") if args.run_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    task_id = safe_component(args.task_id, "task id") if args.task_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    if run_record_path(root, run_id).exists() or task_path(root, task_id).exists():
+        print(json.dumps({"status": "denied", "error": "run or task already exists", "run_id": run_id, "task_id": task_id}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    auth = compute_authorization_decision(root, tenant_id=args.tenant, deployment_id=args.deployment, user_id=args.user, user_role=args.role, action="agent.delegate", resource_type="agent", resource_id=agent, project_id=project, agent_id=agent, workflow_run_id=run_id, reason=args.reason or "direct GUI @Agent invocation")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    route = {"agent": agent, "workflow": "direct_agent", "steps": [agent], "confidence": "direct", "routing_reason": "explicit_agent_invocation", "display_name": registry["agents"][agent].get("display_name", agent)}
+    initial_revision = initial_canvas_revision(root, route=route, body=body, agent_id=agent, workflow="direct_agent", created_by=args.user)
+    run = {
+        "version": "1.0.0",
+        "kind": "digital-office-workflow-run",
+        "run_id": run_id,
+        "run_type": "workflow_run",
+        "invocation_mode": "direct_agent",
+        "status": "created",
+        "current_stage": "execute",
+        "project_id": project,
+        "agent_id": agent,
+        "workflow": "direct_agent",
+        "requested_by": safe_claim(args.user, "requested by"),
+        "requested_by_role": safe_component(args.role, "requested by role"),
+        "tenant_id": safe_claim(args.tenant, "tenant id"),
+        "deployment_id": safe_claim(args.deployment, "deployment id"),
+        "task": body,
+        "task_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
+        "tasks": [task_id],
+        "approvals": [],
+        "route": route,
+        "active_revision_id": initial_revision["revision_id"],
+        "revisions": [initial_revision],
+        "canvas": initial_revision["canvas"],
+        "authorization": auth,
+        "blockers": [],
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "stages": loop_stage_records(root),
+        "events": [{"time": now_iso(), "event": "agent_invoked", "agent_id": agent, "status": "created"}],
+    }
+    task = create_task_record(root, task_id=task_id, title=args.title or task_title(body), body=body, status="queued", priority=args.priority, project_id=project, agent_id=agent, workflow_run_id=run_id, assigned_user=args.user, requested_by=args.user, route=route, idempotency_key="")
+    task["invocation_mode"] = "direct_agent"
+    write_json(task_path(root, task_id), task)
+    write_json(run_record_path(root, run_id), run)
+    event = append_audit_event(root, "agent_invoked", actor_id=args.user, actor_role=args.role, tenant_id=args.tenant, deployment_id=args.deployment, project_id=project, agent_id=agent, resource_type="agent", resource_id=agent, workflow_run_id=run_id, task_id=task_id, outcome="created", reason=args.reason or "direct GUI @Agent invocation")
+    emit_notification(root, user_id=args.user, title="Agent task queued", body=task["title"], topic="agent", resource_type="workflow_run", resource_id=run_id, severity="info")
+    print(json.dumps({"status": "created", "invocation_mode": "direct_agent", "agent_id": agent, "project_id": project, "requested_by": args.user, "workflow_run_id": run_id, "task_id": task_id, "active_revision_id": initial_revision["revision_id"], "authorization": auth, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def authorize_workflow_mutation(root: Path, run: dict[str, Any], user: str, role: str, action: str) -> dict[str, Any]:
+    return compute_authorization_decision(root, tenant_id=run.get("tenant_id", "local"), deployment_id=run.get("deployment_id", "local"), user_id=user, user_role=role, action=action, resource_type="workflow_run", resource_id=run.get("run_id", ""), project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), workflow_run_id=run.get("run_id", ""))
+
+
+def workflow_draft_create(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    auth = authorize_workflow_mutation(root, run, args.created_by, args.role, "workflow.edit")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    parent = active_revision(run)
+    if not parent:
+        parent = initial_canvas_revision(root, route=run.get("route", {}), body=run.get("task", ""), agent_id=run.get("agent_id", ""), workflow=run.get("workflow", ""), created_by=args.created_by)
+        revision_list(run).append(parent)
+        run["active_revision_id"] = parent["revision_id"]
+        run["canvas"] = parent["canvas"]
+    revision_id = safe_component(args.revision_id, "revision id") if args.revision_id else f"draft-{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    if find_revision(run, revision_id):
+        print(f"office-system: workflow revision already exists: {revision_id}", file=sys.stderr)
+        return 2
+    draft = new_canvas_revision(root, revision_id=revision_id, status="draft", created_by=args.created_by, source="gui_canvas_editor", parent_revision_id=parent["revision_id"], canvas=parent["canvas"], change_summary=args.summary or "Draft workflow canvas revision.")
+    revision_list(run).append(draft)
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_draft_created", "revision_id": revision_id, "parent_revision_id": parent["revision_id"]})
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(root, "workflow_draft_created", actor_id=args.created_by, actor_role=args.role, project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome="draft", reason=args.summary or "")
+    print(json.dumps({"run_id": args.run_id, "revision": draft}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_draft_patch(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    revision = find_revision(run, args.revision_id)
+    if not revision or revision.get("status") != "draft":
+        print("office-system: workflow draft revision not found or not draft", file=sys.stderr)
+        return 2
+    auth = authorize_workflow_mutation(root, run, args.updated_by, args.role, "workflow.edit")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    patch = parse_json_arg(args.patch_json, args.patch_file, "workflow patch")
+    old_canvas = revision.get("canvas", {})
+    old_completed = {node.get("node_id"): node for node in old_canvas.get("nodes", []) if node.get("status") == "completed"}
+    canvas = normalize_canvas_payload(root, patch, old_canvas)
+    new_by_id = {node.get("node_id"): node for node in canvas.get("nodes", [])}
+    for node_id, old_node in old_completed.items():
+        if node_id not in new_by_id or new_by_id[node_id] != old_node:
+            print(f"office-system: completed node cannot be modified in draft revision: {node_id}", file=sys.stderr)
+            return 2
+    revision["canvas"] = canvas
+    revision["updated_at"] = now_iso()
+    revision["updated_by"] = safe_claim(args.updated_by, "updated by", required=False)
+    revision["change_summary"] = args.summary or revision.get("change_summary", "")
+    revision["validation"] = validate_canvas(root, canvas)
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_draft_patched", "revision_id": args.revision_id, "validation_status": revision["validation"]["status"]})
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(root, "workflow_draft_patched", actor_id=args.updated_by, actor_role=args.role, project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome=revision["validation"]["status"], reason=args.summary or "")
+    print(json.dumps({"run_id": args.run_id, "revision": revision}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_draft_validate(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    revision = find_revision(run, args.revision_id)
+    if not revision:
+        print("office-system: workflow revision not found", file=sys.stderr)
+        return 2
+    revision["validation"] = validate_canvas(root, revision.get("canvas", {}))
+    revision["validated_at"] = now_iso()
+    write_json(run_record_path(root, args.run_id), run)
+    print(json.dumps({"run_id": args.run_id, "revision_id": args.revision_id, "validation": revision["validation"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_draft_activate(args: argparse.Namespace) -> int:
+    root = system_root()
+    if not args.confirmed:
+        print("office-system: workflow-draft-activate requires --confirmed", file=sys.stderr)
+        return 2
+    run = load_run_record(root, args.run_id)
+    revision = find_revision(run, args.revision_id)
+    if not revision or revision.get("status") != "draft":
+        print("office-system: workflow draft revision not found or not draft", file=sys.stderr)
+        return 2
+    auth = authorize_workflow_mutation(root, run, args.activated_by, args.role, "workflow.edit")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    validation = validate_canvas(root, revision.get("canvas", {}))
+    revision["validation"] = validation
+    if validation["status"] != "valid":
+        write_json(run_record_path(root, args.run_id), run)
+        print(json.dumps({"status": "invalid", "validation": validation}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    for item in revision_list(run):
+        if item.get("status") == "active":
+            item["status"] = "superseded"
+            item["superseded_at"] = now_iso()
+    revision["status"] = "active"
+    revision["activated_at"] = now_iso()
+    revision["activated_by"] = safe_claim(args.activated_by, "activated by", required=False)
+    run["active_revision_id"] = args.revision_id
+    run["canvas"] = revision.get("canvas", {})
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_draft_activated", "revision_id": args.revision_id})
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(root, "workflow_draft_activated", actor_id=args.activated_by, actor_role=args.role, project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome="active", reason=args.reason or "")
+    print(json.dumps({"run_id": args.run_id, "active_revision_id": args.revision_id, "validation": validation}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_control(args: argparse.Namespace) -> int:
+    root = system_root()
+    action = safe_component(args.action, "workflow control action")
+    if action not in WORKFLOW_CONTROL_ACTIONS:
+        print(f"office-system: invalid workflow control action: {action}", file=sys.stderr)
+        return 2
+    if action == "stop" and not args.confirmed:
+        print("office-system: workflow stop requires --confirmed", file=sys.stderr)
+        return 2
+    run = load_run_record(root, args.run_id)
+    auth = authorize_workflow_mutation(root, run, args.requested_by, args.role, "workflow.control")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    if run.get("status") in {"completed", "cancelled", "stopped"}:
+        print("office-system: completed, cancelled, or stopped workflow cannot be controlled", file=sys.stderr)
+        return 2
+    if action in {"run", "resume"}:
+        run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+        run["pause_requested"] = False
+        outcome = "running"
+    elif action == "pause":
+        run["pause_requested"] = True
+        run["status"] = "paused_after_current_node"
+        outcome = "pause_requested"
+    else:
+        run["status"] = "stopped"
+        run["pause_requested"] = False
+        outcome = "stopped"
+        for task_id in linked_tasks(root, run):
+            task = load_task(root, task_id)
+            if task.get("status") not in {"completed", "failed", "cancelled"}:
+                update_task_status(root, task_id, "cancelled", message=args.reason or "workflow stopped", actor_id=args.requested_by, actor_role=args.role)
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": f"workflow_control_{action}", "reason": args.reason or ""})
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(root, f"workflow_control_{action}", actor_id=args.requested_by, actor_role=args.role, project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome=outcome, reason=args.reason or "")
+    print(json.dumps({"run_id": args.run_id, "action": action, "status": run["status"], "outcome": outcome}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_node_context(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    active = active_revision(run)
+    if not active:
+        print("office-system: workflow has no active revision", file=sys.stderr)
+        return 2
+    if args.revision_id and args.revision_id != active.get("revision_id"):
+        print(json.dumps({"status": "stale_revision", "active_revision_id": active.get("revision_id"), "requested_revision_id": args.revision_id}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    node_id = safe_component(args.node_id, "node id")
+    nodes = active.get("canvas", {}).get("nodes", [])
+    node = next((item for item in nodes if item.get("node_id") == node_id), None)
+    if not node:
+        print(f"office-system: workflow node not found: {node_id}", file=sys.stderr)
+        return 2
+    edges = active.get("canvas", {}).get("edges", [])
+    upstream_ids = [edge["from"] for edge in edges if edge.get("to") == node_id]
+    downstream_ids = [edge["to"] for edge in edges if edge.get("from") == node_id]
+    upstream_nodes = [item for item in nodes if item.get("node_id") in upstream_ids]
+    print(json.dumps({"kind": "digital-office-workflow-node-context", "run_id": args.run_id, "project_id": run.get("project_id", ""), "active_revision_id": active.get("revision_id"), "node_id": node_id, "node": node, "upstream_node_ids": upstream_ids, "downstream_node_ids": downstream_ids, "inputs": upstream_nodes, "run_status": run.get("status"), "pause_requested": bool(run.get("pause_requested"))}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -3012,6 +3650,605 @@ def knowledge_access_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def knowledge_spaces_root(root: Path) -> Path:
+    return root / "knowledge" / "spaces"
+
+
+def knowledge_space_id_for(space_type: str, *, owner: str = "", project: str = "", team: str = "", workflow_run: str = "") -> str:
+    space_type = safe_component(space_type, "knowledge space type")
+    if space_type not in KNOWLEDGE_SPACE_TYPES:
+        print(f"office-system: invalid knowledge space type: {space_type}", file=sys.stderr)
+        raise SystemExit(2)
+    if space_type == "personal":
+        owner = safe_claim(owner, "space owner")
+        return safe_component(f"personal-{slugify(owner)}", "knowledge space id")
+    if space_type == "project":
+        project = safe_component(project, "project id")
+        return safe_component(f"project-{project}", "knowledge space id")
+    if space_type == "team":
+        team = safe_component(team, "team id")
+        return safe_component(f"team-{team}", "knowledge space id")
+    if space_type == "workflow_artifacts":
+        workflow_run = safe_component(workflow_run, "workflow run id")
+        return safe_component(f"workflow-{workflow_run}", "knowledge space id")
+    if space_type == "shared_with_me":
+        owner = safe_claim(owner, "shared-with-me user")
+        return safe_component(f"shared-{slugify(owner)}", "knowledge space id")
+    return "company"
+
+
+def knowledge_space_dir(root: Path, space_id: str) -> Path:
+    return knowledge_spaces_root(root) / safe_component(space_id, "knowledge space id")
+
+
+def knowledge_folder_path(root: Path, space_id: str, folder_id: str) -> Path:
+    return knowledge_space_dir(root, space_id) / "folders" / f"{safe_component(folder_id, 'folder id')}.json"
+
+
+def knowledge_item_path(root: Path, space_id: str, item_id: str) -> Path:
+    return knowledge_space_dir(root, space_id) / "items" / f"{safe_component(item_id, 'item id')}.json"
+
+
+def knowledge_share_path(root: Path, space_id: str, share_id: str) -> Path:
+    return knowledge_space_dir(root, space_id) / "shares" / f"{safe_component(share_id, 'share id')}.json"
+
+
+def ensure_knowledge_space(
+    root: Path,
+    *,
+    space_type: str,
+    owner: str = "",
+    project: str = "",
+    team: str = "",
+    workflow_run: str = "",
+    created_by: str = "",
+) -> dict[str, Any]:
+    space_id = knowledge_space_id_for(space_type, owner=owner, project=project, team=team, workflow_run=workflow_run)
+    if space_type == "project":
+        ensure_project(root, project)
+    if space_type == "workflow_artifacts" and not run_record_path(root, workflow_run).exists():
+        print(f"office-system: workflow run not found: {workflow_run}", file=sys.stderr)
+        raise SystemExit(2)
+    if space_type == "shared_with_me":
+        return {
+            "version": "1.0.0",
+            "kind": "digital-office-knowledge-space",
+            "space_id": space_id,
+            "space_type": "shared_with_me",
+            "owner_user_id": safe_claim(owner, "shared-with-me user"),
+            "virtual": True,
+        }
+    directory = knowledge_space_dir(root, space_id)
+    record_path = directory / "space.json"
+    if record_path.exists():
+        return read_json(record_path)
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-knowledge-space",
+        "space_id": space_id,
+        "space_type": space_type,
+        "owner_user_id": safe_claim(owner, "space owner", required=space_type == "personal"),
+        "project_id": safe_component(project, "project id") if project else "",
+        "team_id": safe_component(team, "team id") if team else "",
+        "workflow_run_id": safe_component(workflow_run, "workflow run id") if workflow_run else "",
+        "default_visibility": "private" if space_type == "personal" else space_type,
+        "created_by": safe_claim(created_by, "created by", required=False),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    write_json(record_path, record)
+    root_folder = {
+        "version": "1.0.0",
+        "kind": "digital-office-knowledge-folder",
+        "space_id": space_id,
+        "folder_id": "root",
+        "parent_folder_id": "",
+        "title": "Root",
+        "created_by": record["created_by"],
+        "created_at": record["created_at"],
+        "updated_at": record["updated_at"],
+    }
+    write_json(knowledge_folder_path(root, space_id, "root"), root_folder)
+    append_log(root, {"event": "knowledge_space_created", "space_id": space_id, "space_type": space_type, "created_by": record["created_by"]})
+    return record
+
+
+def load_knowledge_space(root: Path, space_id: str) -> dict[str, Any]:
+    path = knowledge_space_dir(root, space_id) / "space.json"
+    if not path.exists():
+        print(f"office-system: knowledge space not found: {space_id}", file=sys.stderr)
+        raise SystemExit(2)
+    return read_json(path)
+
+
+def load_knowledge_folders(root: Path, space_id: str) -> list[dict[str, Any]]:
+    return read_records(knowledge_space_dir(root, space_id) / "folders", "digital-office-knowledge-folder")
+
+
+def load_knowledge_items(root: Path, space_id: str) -> list[dict[str, Any]]:
+    return read_records(knowledge_space_dir(root, space_id) / "items", "digital-office-knowledge-item")
+
+
+def load_knowledge_shares(root: Path, space_id: str) -> list[dict[str, Any]]:
+    return read_records(knowledge_space_dir(root, space_id) / "shares", "digital-office-knowledge-share")
+
+
+def space_from_args(root: Path, args: argparse.Namespace, *, create: bool = True) -> dict[str, Any]:
+    space_type = args.space_type
+    owner = getattr(args, "owner", "") or getattr(args, "user", "") or getattr(args, "created_by", "") or getattr(args, "shared_by", "")
+    project = getattr(args, "project", "") or ""
+    team = getattr(args, "team", "") or ""
+    workflow_run = getattr(args, "workflow_run", "") or ""
+    if create:
+        return ensure_knowledge_space(root, space_type=space_type, owner=owner, project=project, team=team, workflow_run=workflow_run, created_by=getattr(args, "created_by", "") or getattr(args, "shared_by", "") or getattr(args, "user", ""))
+    space_id = knowledge_space_id_for(space_type, owner=owner, project=project, team=team, workflow_run=workflow_run)
+    if space_type == "shared_with_me":
+        return ensure_knowledge_space(root, space_type=space_type, owner=owner, project=project, team=team, workflow_run=workflow_run, created_by="")
+    return load_knowledge_space(root, space_id)
+
+
+def target_matches_share(share: dict[str, Any], *, user: str, role: str, agent: str, project: str, workflow_run: str) -> bool:
+    target_type = share.get("target_type")
+    target_id = share.get("target_id")
+    return (
+        (target_type == "user" and target_id == user)
+        or (target_type == "role" and target_id == role)
+        or (target_type == "agent" and target_id == agent)
+        or (target_type == "project" and target_id == project)
+        or (target_type == "workflow" and target_id == workflow_run)
+    )
+
+
+def permission_rank(permission: str) -> int:
+    return {"read": 1, "write": 2, "manage": 3}.get(permission, 0)
+
+
+def folder_lineage(root: Path, space_id: str, folder_id: str) -> list[str]:
+    folders = {folder.get("folder_id"): folder for folder in load_knowledge_folders(root, space_id)}
+    lineage: list[str] = []
+    current = safe_component(folder_id, "folder id")
+    seen: set[str] = set()
+    while current and current not in seen and current in folders:
+        lineage.append(current)
+        seen.add(current)
+        current = folders[current].get("parent_folder_id", "")
+    if "root" not in lineage:
+        lineage.append("root")
+    return lineage
+
+
+def knowledge_resource_targets(root: Path, space_id: str, resource_type: str, resource_id: str) -> tuple[list[str], list[str]]:
+    resource_type = safe_component(resource_type, "knowledge resource type")
+    resource_id = safe_component(resource_id, "knowledge resource id")
+    if resource_type == "folder":
+        if not knowledge_folder_path(root, space_id, resource_id).exists():
+            print(f"office-system: folder not found: {resource_id}", file=sys.stderr)
+            raise SystemExit(2)
+        return [], folder_lineage(root, space_id, resource_id)
+    if resource_type == "item":
+        item_path = knowledge_item_path(root, space_id, resource_id)
+        if not item_path.exists():
+            print(f"office-system: item not found: {resource_id}", file=sys.stderr)
+            raise SystemExit(2)
+        item = read_json(item_path)
+        return [resource_id], folder_lineage(root, space_id, item.get("folder_id", "root"))
+    print(f"office-system: invalid knowledge resource type: {resource_type}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def share_applies_to_resource(share: dict[str, Any], *, item_ids: list[str], folder_ids: list[str]) -> bool:
+    resource_type = share.get("resource_type")
+    resource_id = share.get("resource_id")
+    if resource_type == "item":
+        return resource_id in item_ids
+    if resource_type == "folder":
+        if resource_id not in folder_ids:
+            return False
+        if share.get("inherit", True):
+            return True
+        return not item_ids and bool(folder_ids) and resource_id == folder_ids[0]
+    return False
+
+
+def knowledge_access_allowed(
+    root: Path,
+    *,
+    space: dict[str, Any],
+    resource_type: str,
+    resource_id: str,
+    permission: str,
+    user: str,
+    role: str,
+    agent: str = "",
+    project: str = "",
+    workflow_run: str = "",
+) -> dict[str, Any]:
+    permission = safe_component(permission, "knowledge permission")
+    if permission not in KNOWLEDGE_PERMISSIONS:
+        print(f"office-system: invalid knowledge permission: {permission}", file=sys.stderr)
+        raise SystemExit(2)
+    user = safe_claim(user, "user id")
+    role = safe_component(role, "user role")
+    agent = registered_agent(root, agent) if agent else ""
+    project = safe_component(project, "project id") if project else space.get("project_id", "")
+    workflow_run = safe_component(workflow_run, "workflow run id") if workflow_run else ""
+    space_id = space["space_id"]
+    item_ids, folder_ids = knowledge_resource_targets(root, space_id, resource_type, resource_id)
+    matching_shares = [
+        share
+        for share in load_knowledge_shares(root, space_id)
+        if target_matches_share(share, user=user, role=role, agent=agent, project=project, workflow_run=workflow_run)
+        and share_applies_to_resource(share, item_ids=item_ids, folder_ids=folder_ids)
+        and permission_rank(share.get("permission", "")) >= permission_rank(permission)
+    ]
+    denies = [share for share in matching_shares if share.get("effect") == "deny"]
+    if denies:
+        return {"allowed": False, "outcome": "deny", "reasons": ["explicit deny share matched"], "matched_shares": [share.get("share_id") for share in denies]}
+    allows = [share for share in matching_shares if share.get("effect") == "allow"]
+    if allows:
+        return {"allowed": True, "outcome": "allow", "reasons": ["explicit allow share matched"], "matched_shares": [share.get("share_id") for share in allows]}
+
+    space_type = space.get("space_type")
+    owner_user_id = space.get("owner_user_id", "")
+    if space_type == "personal":
+        if owner_user_id and user == owner_user_id:
+            return {"allowed": True, "outcome": "allow", "reasons": ["personal space owner"], "matched_shares": []}
+        return {"allowed": False, "outcome": "deny", "reasons": ["personal space is private by default"], "matched_shares": []}
+    if space_type == "project":
+        auth = compute_authorization_decision(root, tenant_id="local", deployment_id="local", user_id=user, user_role=role, action="knowledge.read" if permission == "read" else "knowledge.manage", resource_type="knowledge", resource_id=space_id, project_id=space.get("project_id", ""), audit=False)
+        return {"allowed": auth["allowed"], "outcome": auth["outcome"], "reasons": auth["reasons"] or [f"project space {permission} allowed by role"], "matched_shares": []}
+    if space_type in {"team", "company", "workflow_artifacts"}:
+        action = "knowledge.read" if permission == "read" else "knowledge.manage"
+        allowed = role_allows_action(role, action)
+        return {"allowed": allowed, "outcome": "allow" if allowed else "deny", "reasons": [f"role {role} {'can' if allowed else 'cannot'} perform {action}"], "matched_shares": []}
+    return {"allowed": False, "outcome": "deny", "reasons": ["unsupported knowledge space type"], "matched_shares": []}
+
+
+def append_knowledge_acl_log(root: Path, event: dict[str, Any]) -> dict[str, Any]:
+    event = {"time": now_iso(), "event": "knowledge_acl_access", **event}
+    append_jsonl(root / "logs" / "knowledge-access.jsonl", event)
+    append_log(root, {"event": "knowledge_acl_access", "space_id": event.get("space_id", ""), "resource_type": event.get("resource_type", ""), "resource_id": event.get("resource_id", ""), "decision": event.get("outcome", "")})
+    return event
+
+
+def authorize_knowledge_manage(root: Path, space: dict[str, Any], *, user: str, role: str) -> dict[str, Any]:
+    user = safe_claim(user, "user id")
+    role = safe_component(role, "user role")
+    if space.get("space_type") == "personal" and space.get("owner_user_id") == user:
+        return {"allowed": True, "outcome": "allow", "reasons": ["personal space owner"]}
+    return compute_authorization_decision(root, tenant_id="local", deployment_id="local", user_id=user, user_role=role, action="knowledge.manage", resource_type="knowledge", resource_id=space.get("space_id", ""), project_id=space.get("project_id", ""), audit=False)
+
+
+def knowledge_folder_create(args: argparse.Namespace) -> int:
+    root = system_root()
+    space = space_from_args(root, args, create=True)
+    auth = authorize_knowledge_manage(root, space, user=args.created_by, role=args.role)
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    folder_id = safe_component(args.folder_id or slugify(args.title), "folder id")
+    parent_id = safe_component(args.parent_folder, "parent folder id")
+    if not knowledge_folder_path(root, space["space_id"], parent_id).exists():
+        print(f"office-system: parent folder not found: {parent_id}", file=sys.stderr)
+        return 2
+    target = knowledge_folder_path(root, space["space_id"], folder_id)
+    if target.exists() and not args.replace:
+        print(f"office-system: folder already exists: {folder_id}; pass --replace to replace", file=sys.stderr)
+        return 2
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-knowledge-folder",
+        "space_id": space["space_id"],
+        "folder_id": folder_id,
+        "parent_folder_id": parent_id,
+        "title": safe_claim(args.title, "folder title"),
+        "created_by": safe_claim(args.created_by, "created by"),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    write_json(target, record)
+    append_audit_event(root, "knowledge_folder_created", actor_id=args.created_by, actor_role=args.role, project_id=space.get("project_id", ""), resource_type="knowledge_folder", resource_id=folder_id, outcome="created", extra={"space_id": space["space_id"]})
+    print(json.dumps({"space": space, "folder": record}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def knowledge_item_add(args: argparse.Namespace) -> int:
+    root = system_root()
+    space = space_from_args(root, args, create=True)
+    auth = authorize_knowledge_manage(root, space, user=args.created_by, role=args.role)
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    folder_id = safe_component(args.folder_id, "folder id")
+    if not knowledge_folder_path(root, space["space_id"], folder_id).exists():
+        print(f"office-system: folder not found: {folder_id}", file=sys.stderr)
+        return 2
+    item_id = safe_component(args.item_id or f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{slugify(args.title)}", "item id")
+    target = knowledge_item_path(root, space["space_id"], item_id)
+    if target.exists() and not args.replace:
+        print(f"office-system: item already exists: {item_id}; pass --replace to replace", file=sys.stderr)
+        return 2
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-knowledge-item",
+        "space_id": space["space_id"],
+        "item_id": item_id,
+        "folder_id": folder_id,
+        "title": safe_claim(args.title, "item title"),
+        "source_ref": safe_claim(args.source_ref, "source reference"),
+        "content_type": safe_claim(args.content_type or "application/octet-stream", "content type"),
+        "connector_id": safe_claim(args.connector_id, "connector id", required=False),
+        "snapshot_mode_default": True,
+        "created_by": safe_claim(args.created_by, "created by"),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+    }
+    write_json(target, record)
+    append_audit_event(root, "knowledge_item_added", actor_id=args.created_by, actor_role=args.role, project_id=space.get("project_id", ""), resource_type="knowledge_item", resource_id=item_id, outcome="created", extra={"space_id": space["space_id"], "folder_id": folder_id})
+    print(json.dumps({"space": space, "item": record}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def knowledge_share(args: argparse.Namespace) -> int:
+    root = system_root()
+    space = space_from_args(root, args, create=True)
+    auth = authorize_knowledge_manage(root, space, user=args.shared_by, role=args.role)
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    resource_type = safe_component(args.resource_type, "knowledge resource type")
+    resource_id = safe_component(args.resource_id, "knowledge resource id")
+    knowledge_resource_targets(root, space["space_id"], resource_type, resource_id)
+    target_type = safe_component(args.target_type, "share target type")
+    if target_type not in KNOWLEDGE_TARGET_TYPES:
+        print(f"office-system: invalid share target type: {target_type}", file=sys.stderr)
+        return 2
+    permission = safe_component(args.permission, "knowledge permission")
+    if permission not in KNOWLEDGE_PERMISSIONS:
+        print(f"office-system: invalid knowledge permission: {permission}", file=sys.stderr)
+        return 2
+    share_id = safe_component(args.share_id or f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}", "share id")
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-knowledge-share",
+        "share_id": share_id,
+        "space_id": space["space_id"],
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "effect": args.effect,
+        "permission": permission,
+        "target_type": target_type,
+        "target_id": safe_claim(args.target_id, "share target id"),
+        "inherit": not args.no_inherit,
+        "created_by": safe_claim(args.shared_by, "shared by"),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "reason": safe_claim(args.reason, "share reason", required=False),
+    }
+    write_json(knowledge_share_path(root, space["space_id"], share_id), record)
+    append_audit_event(root, "knowledge_share_updated", actor_id=args.shared_by, actor_role=args.role, project_id=space.get("project_id", ""), resource_type="knowledge_share", resource_id=share_id, outcome=args.effect, reason=args.reason or "", extra={"space_id": space["space_id"]})
+    print(json.dumps({"space": space, "share": record}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def knowledge_access_check(args: argparse.Namespace) -> int:
+    root = system_root()
+    space = space_from_args(root, args, create=False)
+    decision = knowledge_access_allowed(root, space=space, resource_type=args.resource_type, resource_id=args.resource_id, permission=args.permission, user=args.user, role=args.role, agent=args.agent or "", project=args.project or "", workflow_run=args.workflow_run or "")
+    event = append_knowledge_acl_log(
+        root,
+        {
+            "space_id": space["space_id"],
+            "space_type": space.get("space_type", ""),
+            "resource_type": args.resource_type,
+            "resource_id": args.resource_id,
+            "permission": args.permission,
+            "user_id": args.user,
+            "user_role": args.role,
+            "agent_id": args.agent or "",
+            "project_id": args.project or space.get("project_id", ""),
+            "workflow_run_id": args.workflow_run or "",
+            "outcome": decision["outcome"],
+            "reasons": decision["reasons"],
+        },
+    )
+    print(json.dumps({"space": space, "decision": decision, "access_event": event}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if decision["allowed"] else 2
+
+
+def folder_descendants(folders: list[dict[str, Any]], folder_id: str) -> set[str]:
+    children: dict[str, list[str]] = {}
+    for folder in folders:
+        children.setdefault(folder.get("parent_folder_id", ""), []).append(folder.get("folder_id", ""))
+    seen: set[str] = set()
+    stack = [folder_id]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        stack.extend(child for child in children.get(current, []) if child)
+    return seen
+
+
+def knowledge_scope_resolve(args: argparse.Namespace) -> int:
+    root = system_root()
+    space = space_from_args(root, args, create=False)
+    folders = load_knowledge_folders(root, space["space_id"])
+    items = load_knowledge_items(root, space["space_id"])
+    folder_id = safe_component(args.folder_id, "folder id") if args.folder_id else ""
+    item_id = safe_component(args.item_id, "item id") if args.item_id else ""
+    snapshot_mode = not args.live_mode
+    resolved_items: list[dict[str, Any]] = []
+    resolved_folders: list[dict[str, Any]] = []
+    if item_id:
+        candidates = [item for item in items if item.get("item_id") == item_id]
+    else:
+        selected_folder = folder_id or "root"
+        descendant_ids = folder_descendants(folders, selected_folder)
+        resolved_folders = [folder for folder in folders if folder.get("folder_id") in descendant_ids]
+        candidates = [item for item in items if item.get("folder_id") in descendant_ids]
+    for item in candidates:
+        decision = knowledge_access_allowed(root, space=space, resource_type="item", resource_id=item.get("item_id", ""), permission="read", user=args.user, role=args.role, agent=args.agent or "", project=args.project or "", workflow_run=args.workflow_run or "")
+        append_knowledge_acl_log(root, {"space_id": space["space_id"], "resource_type": "item", "resource_id": item.get("item_id", ""), "permission": "read", "user_id": args.user, "user_role": args.role, "agent_id": args.agent or "", "project_id": args.project or space.get("project_id", ""), "workflow_run_id": args.workflow_run or "", "outcome": decision["outcome"], "reasons": decision["reasons"], "source": "knowledge_scope_resolve"})
+        if decision["allowed"]:
+            resolved_items.append(item)
+    snapshot = {
+        "snapshot_id": f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}" if snapshot_mode else "",
+        "mode": "snapshot" if snapshot_mode else "live",
+        "created_at": now_iso() if snapshot_mode else "",
+        "item_ids": [item.get("item_id") for item in resolved_items],
+        "folder_ids": [folder.get("folder_id") for folder in resolved_folders],
+    }
+    print(json.dumps({"kind": "digital-office-knowledge-scope", "space": space, "snapshot": snapshot, "items": resolved_items, "folders": resolved_folders}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def knowledge_tree(args: argparse.Namespace) -> int:
+    root = system_root()
+    if args.space_type == "shared_with_me":
+        spaces: list[dict[str, Any]] = []
+        visible_items: list[dict[str, Any]] = []
+        for space_file in sorted(knowledge_spaces_root(root).glob("*/space.json")):
+            space = read_json(space_file)
+            for item in load_knowledge_items(root, space["space_id"]):
+                decision = knowledge_access_allowed(root, space=space, resource_type="item", resource_id=item.get("item_id", ""), permission="read", user=args.user, role=args.role, agent=args.agent or "", project=args.project or "", workflow_run=args.workflow_run or "")
+                if decision["allowed"] and not (space.get("space_type") == "personal" and space.get("owner_user_id") == args.user):
+                    spaces.append(space)
+                    visible_items.append(item)
+        unique_spaces = {space["space_id"]: space for space in spaces}
+        print(json.dumps({"kind": "digital-office-knowledge-tree", "space_type": "shared_with_me", "spaces": list(unique_spaces.values()), "items": visible_items}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    space = space_from_args(root, args, create=False)
+    folders = []
+    for folder in load_knowledge_folders(root, space["space_id"]):
+        decision = knowledge_access_allowed(root, space=space, resource_type="folder", resource_id=folder.get("folder_id", ""), permission="read", user=args.user, role=args.role, agent=args.agent or "", project=args.project or "", workflow_run=args.workflow_run or "")
+        if decision["allowed"]:
+            folders.append(folder)
+    items = []
+    for item in load_knowledge_items(root, space["space_id"]):
+        decision = knowledge_access_allowed(root, space=space, resource_type="item", resource_id=item.get("item_id", ""), permission="read", user=args.user, role=args.role, agent=args.agent or "", project=args.project or "", workflow_run=args.workflow_run or "")
+        if decision["allowed"]:
+            items.append(item)
+    print(json.dumps({"kind": "digital-office-knowledge-tree", "space": space, "folders": folders, "items": items}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def knowledge_space_summaries(root: Path, *, user: str = "", role: str = "", limit: int = 50) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for space_file in sorted(knowledge_spaces_root(root).glob("*/space.json")):
+        try:
+            space = read_json(space_file)
+        except Exception:
+            continue
+        folders = load_knowledge_folders(root, space["space_id"])
+        items = load_knowledge_items(root, space["space_id"])
+        visible = True
+        if space.get("space_type") == "personal" and user and space.get("owner_user_id") != user:
+            visible = False
+        if user and role and items:
+            visible = any(
+                knowledge_access_allowed(root, space=space, resource_type="item", resource_id=item.get("item_id", ""), permission="read", user=user, role=role, project=space.get("project_id", ""))["allowed"]
+                for item in items
+            )
+        elif space.get("space_type") == "personal" and user:
+            visible = space.get("owner_user_id") == user
+        if visible:
+            summaries.append(
+                {
+                    "space_id": space["space_id"],
+                    "space_type": space.get("space_type", ""),
+                    "owner_user_id": space.get("owner_user_id", ""),
+                    "project_id": space.get("project_id", ""),
+                    "folder_count": len(folders),
+                    "item_count": len(items),
+                    "updated_at": space.get("updated_at", space.get("created_at", "")),
+                }
+            )
+        if len(summaries) >= limit:
+            break
+    return summaries
+
+
+def workbench_state(args: argparse.Namespace) -> int:
+    root = system_root()
+    limit = max(1, min(args.limit, 100))
+    project = safe_component(args.project, "project id") if args.project else ""
+    if project:
+        ensure_project(root, project)
+    auth = compute_authorization_decision(root, tenant_id=args.tenant, deployment_id=args.deployment, user_id=args.user, user_role=args.role, action="workbench.read", resource_type="workbench", resource_id=args.role, project_id=project, audit=True)
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    runs = [run for run in read_run_records(root) if not project or run.get("project_id") == project]
+    tasks = [task for task in read_records(root / "tasks", "digital-office-task") if not project or task.get("project_id") == project]
+    approvals = [approval for approval in read_records(root / "approvals", "digital-office-approval") if not project or approval.get("project_id") == project]
+    notifications = [item for item in read_records(root / "notifications", "digital-office-notification") if item.get("user_id") in {"", args.user}]
+    if args.role not in TENANT_ADMIN_ROLES and args.role != "project_manager":
+        runs = [run for run in runs if run.get("requested_by") in {"", args.user}]
+        tasks = [task for task in tasks if task.get("requested_by") in {"", args.user} or task.get("assigned_user") in {"", args.user}]
+        approvals = [approval for approval in approvals if approval.get("requested_by") in {"", args.user} or approval.get("approver_role") == args.role]
+    agent_load: dict[str, int] = {}
+    for task in tasks:
+        agent = task.get("assigned_agent") or task.get("agent_id") or "unassigned"
+        agent_load[agent] = agent_load.get(agent, 0) + 1
+    if args.role in TENANT_ADMIN_ROLES:
+        view = "owner_global"
+        sections = {
+            "project_health": project_summaries(root, limit),
+            "blocked_workflows": compact_records([run for run in runs if run.get("status") in {"blocked", "waiting_user_confirmation", "paused_after_current_node"}], ["run_id", "status", "project_id", "agent_id", "updated_at"], limit),
+            "cost_and_load": {"agent_load": dict(sorted(agent_load.items())), "queued_tasks": sum(1 for item in tasks if item.get("status") == "queued")},
+            "pending_approvals": compact_records([item for item in approvals if item.get("status") == "pending"], ["approval_id", "title", "project_id", "approver_role", "updated_at"], limit),
+            "knowledge_spaces": knowledge_space_summaries(root, user=args.user, role=args.role, limit=limit),
+            "system_health": health_checks(root),
+        }
+    elif args.role == "project_manager":
+        view = "project_lead"
+        sections = {
+            "project_progress": compact_records(runs, ["run_id", "status", "project_id", "agent_id", "workflow", "updated_at"], limit),
+            "team_tasks": compact_records(tasks, ["task_id", "title", "status", "priority", "assigned_agent", "assigned_user", "updated_at"], limit),
+            "blocked_items": compact_records([item for item in tasks if item.get("status") in {"blocked", "waiting_approval", "failed"}], ["task_id", "title", "status", "workflow_run_id", "updated_at"], limit),
+            "knowledge_spaces": knowledge_space_summaries(root, user=args.user, role=args.role, limit=limit),
+        }
+    elif args.role == "professional_reviewer":
+        view = "approver"
+        sections = {
+            "pending_approvals": compact_records([item for item in approvals if item.get("status") == "pending" and item.get("approver_role") == "professional_reviewer"], ["approval_id", "title", "risk", "project_id", "workflow_run_id", "updated_at"], limit),
+            "recent_decisions": compact_records([item for item in approvals if item.get("status") != "pending"], ["approval_id", "title", "status", "updated_at"], limit),
+        }
+    elif args.role == "viewer":
+        view = "viewer"
+        visible_projects = [item for item in project_summaries(root, limit) if not project or item.get("project_id") == project]
+        sections = {
+            "visible_projects": visible_projects,
+            "recent_outputs": compact_records([run for run in runs if run.get("status") == "completed"], ["run_id", "project_id", "agent_id", "workflow", "updated_at"], limit),
+            "notifications": compact_records(notifications, ["notification_id", "title", "topic", "status", "created_at"], limit),
+        }
+    else:
+        view = "member"
+        sections = {
+            "my_tasks": compact_records(tasks, ["task_id", "title", "status", "priority", "project_id", "workflow_run_id", "updated_at"], limit),
+            "my_workflows": compact_records(runs, ["run_id", "status", "project_id", "agent_id", "workflow", "updated_at"], limit),
+            "notifications": compact_records(notifications, ["notification_id", "title", "topic", "status", "created_at"], limit),
+            "knowledge_spaces": knowledge_space_summaries(root, user=args.user, role=args.role, limit=limit),
+        }
+    payload = {
+        "kind": "digital-office-workbench-state",
+        "version": "1.0.0",
+        "generated_at": now_iso(),
+        "tenant_id": args.tenant,
+        "deployment_id": args.deployment,
+        "user_id": args.user,
+        "role": args.role,
+        "project_id": project,
+        "view": view,
+        "authorization": auth,
+        "sections": sections,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def loop_manifest(root: Path) -> dict[str, Any]:
     return read_json(root / "ai-native-loop.manifest.json")
 
@@ -3316,6 +4553,7 @@ def health_checks(root: Path) -> dict[str, Any]:
         "approval_center_dir": (root / "approvals").exists(),
         "notifications_dir": (root / "notifications").exists(),
         "audit_logs_dir": (root / "logs").exists(),
+        "knowledge_spaces_dir": (root / "knowledge" / "spaces").exists(),
         "tesseract": bool(shutil.which("tesseract")),
         "pdftotext": bool(shutil.which("pdftotext")),
         "rapidocr_onnxruntime": bool(importlib.util.find_spec("rapidocr_onnxruntime")),
@@ -3343,6 +4581,7 @@ def required_health_keys() -> tuple[str, ...]:
         "approval_center_dir",
         "notifications_dir",
         "audit_logs_dir",
+        "knowledge_spaces_dir",
     )
 
 
@@ -3404,12 +4643,17 @@ def gui_capabilities() -> list[dict[str, Any]]:
     return [
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
         {"id": "first_run_onboarding", "status": "ready", "commands": ["onboarding-options", "onboarding-apply"]},
-        {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry"]},
+        {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry", "workflow-control"]},
+        {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
+        {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
+        {"id": "workflow_runtime_controls", "status": "ready", "commands": ["workflow-control", "workflow-node-context"]},
         {"id": "task_inbox", "status": "ready", "commands": ["task-list", "task-status", "task-update"]},
         {"id": "approval_center", "status": "ready", "commands": ["approval-create", "approval-list", "approval-decision"]},
         {"id": "notification_center", "status": "ready", "commands": ["notification-list", "notification-mark-read"]},
         {"id": "audit_events", "status": "ready", "commands": ["audit-events"]},
         {"id": "project_knowledge", "status": "ready", "commands": ["knowledge-add", "knowledge-add-text", "rag-index", "rag-search"]},
+        {"id": "knowledge_spaces", "status": "ready", "commands": ["knowledge-tree", "knowledge-folder-create", "knowledge-item-add", "knowledge-share", "knowledge-scope-resolve", "knowledge-access-check"]},
+        {"id": "role_workbenches", "status": "ready", "commands": ["workbench-state"]},
         {"id": "agent_registry", "status": "ready", "commands": ["agent-plugin-report", "agent-plugin-decision", "agent-plugin-activate"]},
         {"id": "product_updates", "status": "ready", "commands": ["iteration-proposal-create", "iteration-proposal-decision", "iteration-proposal-apply"]},
         {"id": "data_sharing", "status": "ready", "commands": ["telemetry-status", "telemetry-export", "telemetry-send"]},
@@ -3422,6 +4666,7 @@ def gui_state(args: argparse.Namespace) -> int:
     limit = max(1, min(args.limit, 100))
     project = safe_component(args.project, "project id") if args.project else ""
     user = safe_claim(args.user, "user", required=False)
+    role = safe_component(args.role, "role") if args.role else ""
     preferences = current_onboarding_preferences(root)
     runs = [
         run
@@ -3449,11 +4694,14 @@ def gui_state(args: argparse.Namespace) -> int:
     checks = health_checks(root)
     agents = agent_summaries(root)
     projects = project_summaries(root, 1000)
+    active_workflows = [run for run in runs if run.get("status") not in {"completed", "cancelled", "stopped"}]
+    draft_revision_count = sum(1 for run in runs for revision in run.get("revisions", []) if revision.get("status") == "draft")
+    knowledge_spaces = knowledge_space_summaries(root, user=user, role=role, limit=limit)
     payload = {
         "kind": "digital-office-gui-state",
         "version": "1.0.0",
         "generated_at": now_iso(),
-        "scope": {"project_id": project, "user_id": user},
+        "scope": {"project_id": project, "user_id": user, "role": role},
         "health": {"status": "ok" if all(checks[k] for k in required_health_keys()) else "degraded", "checks": checks},
         "settings": {
             "configured": preferences is not None,
@@ -3467,8 +4715,10 @@ def gui_state(args: argparse.Namespace) -> int:
         "projects": {"count": len(projects), "items": projects[:limit]},
         "workflows": {
             "count": len(runs),
+            "active_count": len(active_workflows),
+            "draft_revision_count": draft_revision_count,
             "by_status": status_counts(runs),
-            "recent": compact_records(runs, ["run_id", "title", "status", "project_id", "agent_id", "workflow", "requested_by", "created_at", "updated_at"], limit),
+            "recent": compact_records(runs, ["run_id", "title", "status", "project_id", "agent_id", "workflow", "invocation_mode", "active_revision_id", "requested_by", "created_at", "updated_at"], limit),
         },
         "tasks": {
             "count": len(tasks),
@@ -3489,12 +4739,20 @@ def gui_state(args: argparse.Namespace) -> int:
         "knowledge": {
             "company_entries": len(company_entries),
             "external_mounts": len(mounts),
+            "spaces": {"count": len(knowledge_spaces), "items": knowledge_spaces},
             "rag_index_configured": (root / "rag.pipeline.json").exists(),
+        },
+        "workbench": {
+            "command": "workbench-state",
+            "entry_points": ["owner_global", "project_lead", "member", "approver", "admin", "viewer"],
         },
         "audit": {"recent": audit_rows[-limit:]},
         "next_gui_actions": [
             "Show settings status and prompt for configuration when settings.configured is false.",
             "Surface pending approvals, unread notifications, blocked workflows, and waiting tasks on the home screen.",
+            "Use agent-invoke for explicit @Agent dispatch and keep every dispatch linked to a workflow run and task.",
+            "Use workflow draft revisions for canvas edits; activate only after validation and explicit confirmation.",
+            "Resolve knowledge folders through knowledge-scope-resolve before running Agent nodes.",
             "Route all mutating actions through the matching command and require explicit GUI confirmation where commands expose --confirmed.",
         ],
     }
@@ -3508,6 +4766,14 @@ def health(args: argparse.Namespace) -> int:
     print(json.dumps(checks, ensure_ascii=False, indent=2, sort_keys=True))
     required = required_health_keys()
     return 0 if all(checks[k] for k in required) else 1
+
+
+def add_knowledge_space_selector(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--space-type", choices=sorted(KNOWLEDGE_SPACE_TYPES), required=True)
+    parser.add_argument("--owner")
+    parser.add_argument("--project")
+    parser.add_argument("--team")
+    parser.add_argument("--workflow-run")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -3539,6 +4805,71 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--approve", action="store_true")
     p.set_defaults(func=add_text_entry)
 
+    p = sub.add_parser("knowledge-folder-create")
+    add_knowledge_space_selector(p)
+    p.add_argument("--folder-id")
+    p.add_argument("--parent-folder", default="root")
+    p.add_argument("--title", required=True)
+    p.add_argument("--created-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--replace", action="store_true")
+    p.set_defaults(func=knowledge_folder_create)
+
+    p = sub.add_parser("knowledge-item-add")
+    add_knowledge_space_selector(p)
+    p.add_argument("--item-id")
+    p.add_argument("--folder-id", default="root")
+    p.add_argument("--title", required=True)
+    p.add_argument("--source-ref", required=True)
+    p.add_argument("--content-type")
+    p.add_argument("--connector-id")
+    p.add_argument("--created-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--replace", action="store_true")
+    p.set_defaults(func=knowledge_item_add)
+
+    p = sub.add_parser("knowledge-share")
+    add_knowledge_space_selector(p)
+    p.add_argument("--resource-type", choices=sorted(KNOWLEDGE_RESOURCE_TYPES), required=True)
+    p.add_argument("--resource-id", required=True)
+    p.add_argument("--target-type", choices=sorted(KNOWLEDGE_TARGET_TYPES), required=True)
+    p.add_argument("--target-id", required=True)
+    p.add_argument("--permission", choices=sorted(KNOWLEDGE_PERMISSIONS), default="read")
+    p.add_argument("--effect", choices=["allow", "deny"], default="allow")
+    p.add_argument("--shared-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--share-id")
+    p.add_argument("--reason")
+    p.add_argument("--no-inherit", action="store_true")
+    p.set_defaults(func=knowledge_share)
+
+    p = sub.add_parser("knowledge-access-check")
+    add_knowledge_space_selector(p)
+    p.add_argument("--resource-type", choices=sorted(KNOWLEDGE_RESOURCE_TYPES), required=True)
+    p.add_argument("--resource-id", required=True)
+    p.add_argument("--permission", choices=sorted(KNOWLEDGE_PERMISSIONS), default="read")
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--agent")
+    p.set_defaults(func=knowledge_access_check)
+
+    p = sub.add_parser("knowledge-scope-resolve")
+    add_knowledge_space_selector(p)
+    p.add_argument("--folder-id")
+    p.add_argument("--item-id")
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--agent")
+    p.add_argument("--live-mode", action="store_true")
+    p.set_defaults(func=knowledge_scope_resolve)
+
+    p = sub.add_parser("knowledge-tree")
+    add_knowledge_space_selector(p)
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--agent")
+    p.set_defaults(func=knowledge_tree)
+
     p = sub.add_parser("rule-add")
     p.add_argument("--scope", choices=["global", "agent", "project"], required=True)
     p.add_argument("--project")
@@ -3555,8 +4886,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("gui-state")
     p.add_argument("--project")
     p.add_argument("--user")
+    p.add_argument("--role")
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=gui_state)
+
+    p = sub.add_parser("workbench-state")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--project")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=workbench_state)
 
     p = sub.add_parser("onboarding-options")
     p.set_defaults(func=onboarding_options)
@@ -3620,6 +4961,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason")
     p.set_defaults(func=workflow_start)
 
+    p = sub.add_parser("agent-invoke")
+    p.add_argument("--tenant", required=True)
+    p.add_argument("--deployment", required=True)
+    p.add_argument("--user", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--project", required=True)
+    p.add_argument("--agent", required=True)
+    p.add_argument("--task")
+    p.add_argument("--title")
+    p.add_argument("--priority", choices=["low", "normal", "high", "urgent"], default="normal")
+    p.add_argument("--run-id")
+    p.add_argument("--task-id")
+    p.add_argument("--reason")
+    p.set_defaults(func=agent_invoke)
+
     p = sub.add_parser("workflow-status")
     p.add_argument("--run-id", required=True)
     p.set_defaults(func=workflow_status)
@@ -3653,6 +5009,53 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", required=True)
     p.add_argument("--reason")
     p.set_defaults(func=workflow_retry)
+
+    p = sub.add_parser("workflow-draft-create")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--created-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--revision-id")
+    p.add_argument("--summary")
+    p.set_defaults(func=workflow_draft_create)
+
+    p = sub.add_parser("workflow-draft-patch")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--revision-id", required=True)
+    p.add_argument("--updated-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--patch-json")
+    p.add_argument("--patch-file")
+    p.add_argument("--summary")
+    p.set_defaults(func=workflow_draft_patch)
+
+    p = sub.add_parser("workflow-draft-validate")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--revision-id", required=True)
+    p.set_defaults(func=workflow_draft_validate)
+
+    p = sub.add_parser("workflow-draft-activate")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--revision-id", required=True)
+    p.add_argument("--activated-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=workflow_draft_activate)
+
+    p = sub.add_parser("workflow-control")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--action", choices=sorted(WORKFLOW_CONTROL_ACTIONS), required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=workflow_control)
+
+    p = sub.add_parser("workflow-node-context")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--node-id", required=True)
+    p.add_argument("--revision-id")
+    p.set_defaults(func=workflow_node_context)
 
     p = sub.add_parser("task-list")
     p.add_argument("--status", choices=sorted(TASK_STATUSES))

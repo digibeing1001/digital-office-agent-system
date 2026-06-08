@@ -304,3 +304,48 @@ GUI 常用入口：
 ~/.hermes/agent-system/bin/office-system settings-status
 ~/.hermes/agent-system/bin/office-system settings-update --work-mode quality --confirmed
 ```
+
+## GUI Backplane Update: Direct Agents, Canvas, Knowledge, Workbenches
+
+This release adds the backend contract needed before building the visual Digital Office GUI.
+
+What users will be able to do from the GUI:
+
+- Directly call a specific employee Agent with `@Agent`, while still creating a governed workflow run, task, authorization decision, audit event, and notification.
+- Start, pause, resume, and stop workflows from visible controls. Stop is a destructive action and requires explicit confirmation.
+- View and edit future workflow steps on a canvas. Canvas edits use draft revisions, validation, and confirmed activation, so a running workflow does not silently change under the user.
+- Add constrained canvas components: Agent task, text instruction, file reference, folder reference, knowledge scope, approval gate, human input, output artifact, merge summary, condition, and parallel group.
+- Keep personal folders private by default. A user can share a file or folder with another user, a role, an Agent, a project, or a workflow scope.
+- Resolve workflow knowledge in snapshot mode by default, so a run can be reproduced later even if source folders change.
+- Open role-specific workbenches: owner/global, project lead, member, approver, and viewer.
+
+Key GUI-facing commands:
+
+```bash
+~/.hermes/agent-system/bin/office-system agent-invoke --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --agent <agent_id> --task "<task>"
+
+~/.hermes/agent-system/bin/office-system workflow-draft-create --run-id <run_id> --created-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-draft-patch --run-id <run_id> --revision-id <revision_id> --updated-by <user_id> --role <role> --patch-json '<json>'
+~/.hermes/agent-system/bin/office-system workflow-draft-validate --run-id <run_id> --revision-id <revision_id>
+~/.hermes/agent-system/bin/office-system workflow-draft-activate --run-id <run_id> --revision-id <revision_id> --activated-by <user_id> --role <role> --confirmed
+~/.hermes/agent-system/bin/office-system workflow-control --run-id <run_id> --action pause --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-node-context --run-id <run_id> --node-id <node_id>
+
+~/.hermes/agent-system/bin/office-system knowledge-folder-create --space-type personal --owner <user_id> --folder-id <folder_id> --title "<title>" --created-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system knowledge-item-add --space-type personal --owner <user_id> --folder-id <folder_id> --item-id <item_id> --title "<title>" --source-ref <ref> --created-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system knowledge-share --space-type personal --owner <owner_id> --resource-type folder --resource-id <folder_id> --target-type user --target-id <user_id> --shared-by <owner_id> --role <role>
+~/.hermes/agent-system/bin/office-system knowledge-scope-resolve --space-type project --project <project_id> --folder-id <folder_id> --user <user_id> --role <role>
+
+~/.hermes/agent-system/bin/office-system workbench-state --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role project_manager --project <project_id>
+```
+
+New production harness tasks:
+
+```bash
+~/.hermes/agent-system/bin/harness-runner --task direct-agent-invocation-production --no-write
+~/.hermes/agent-system/bin/harness-runner --task workflow-canvas-revision-production --no-write
+~/.hermes/agent-system/bin/harness-runner --task knowledge-space-acl-production --no-write
+~/.hermes/agent-system/bin/harness-runner --task role-workbench-production --no-write
+```
+
+The GUI should use these commands instead of reading or editing runtime files directly.

@@ -39,6 +39,8 @@ agent-system/agent-plugins/reports/
 agent-system/agent-plugins/status/
 agent-system/knowledge/company/entries/
 agent-system/knowledge/company/index/
+agent-system/knowledge/spaces/*
+!agent-system/knowledge/spaces/.gitignore
 agent-system/projects/*
 !agent-system/projects/_template/
 !agent-system/projects/_template/**

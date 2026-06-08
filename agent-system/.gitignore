@@ -29,6 +29,8 @@ knowledge/company/entries/*
 knowledge/company/index/*
 knowledge/mounts/*
 !knowledge/mounts/.gitignore
+knowledge/spaces/*
+!knowledge/spaces/.gitignore
 projects/*
 !projects/_template/
 !projects/_template/**
