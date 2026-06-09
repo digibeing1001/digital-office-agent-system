@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-06-10
+
+### 新增
+
+- **Coder Agent 能力迭代 — 集成 vibe-coding-production-harness**
+  - 来源：https://github.com/digibeing1001/claude-vibe-coding-setup
+  - 新增 skill：`skills/vibe-coding-production-harness/SKILL.md`（含 Soul Principles + 8 阶段 + 六角色 + 质量门）
+  - `profiles/office-coder/SOUL.md`：新增 Primary Skill / Quality Bar / Cross-Session Memory Discipline 三段
+  - `agent-system/agents.registry.json`：coder 节点绑定 `primary_skill` / `default_skill_chain` / `quality_gates` / `source_iteration`
+  - 跨 profile 同步：与 `~/.hermes/profiles/kenny-vibe-coder/SOUL.md` 共享方法论，差异仅 voice + overlay
+  - KeyMemory entity：`545d2fb5-43e3-4367-a2bb-fa12addd1f99`（规则4：harness 主入口）
+  - 公共根 ↔ 仓库端 byte 一致（sha256 `60aeff3456e86076...`）
+
+### 设计决策
+
+- 不搬运 Claude Code 的 120+ Toolkit Plugin，改为映射到 Hermes 原生 skill（a11y/bundle/dead-code 等由 harness Quality Gate 内置）
+- 跨会话记忆走 KeyMemory（全局硬规则2），不引入 Claude Mem
+- SOUL.md 说 "why + boundaries"，harness SKILL.md 说 "how"，不重复路由逻辑
+
 ## 2026-06-09
 
 ### 新增
