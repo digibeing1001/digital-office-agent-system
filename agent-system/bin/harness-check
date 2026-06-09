@@ -103,7 +103,7 @@ def main() -> int:
 
     router = hermes / "scripts" / "agent-router"
     if router.exists():
-        proc = subprocess.run([str(router), "--health"], text=True, capture_output=True)
+        proc = subprocess.run([sys.executable, str(router), "--health"], text=True, capture_output=True)
         if proc.returncode != 0:
             errors.append("agent-router health failed")
             if proc.stdout:
@@ -114,7 +114,7 @@ def main() -> int:
         errors.append(f"missing router: {router}")
 
     if runner_path.exists():
-        proc = subprocess.run([str(runner_path), "--list"], text=True, capture_output=True)
+        proc = subprocess.run([sys.executable, str(runner_path), "--list"], text=True, capture_output=True)
         if proc.returncode != 0:
             errors.append("harness-runner list failed")
             if proc.stderr:

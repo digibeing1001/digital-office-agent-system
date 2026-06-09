@@ -25,6 +25,62 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+try:
+    import fcntl
+    _HAS_FCNTL = True
+except ImportError:
+    _HAS_FCNTL = False
+
+
+class JsonFileLock:
+    """Cross-process advisory lock for JSON file writes."""
+
+    def __init__(self, lock_path: Path):
+        self.lock_path = lock_path
+        self._fd: Any = None
+
+    def acquire(self) -> None:
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._fd = os.open(str(self.lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+        if _HAS_FCNTL:
+            fcntl.flock(self._fd, fcntl.LOCK_EX)
+        else:
+            # Windows fallback: not ideal, but prevents same-process races
+            import msvcrt
+            msvcrt.locking(self._fd, msvcrt.LK_LOCK, 1)
+
+    def release(self) -> None:
+        if self._fd is not None:
+            if _HAS_FCNTL:
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+            else:
+                import msvcrt
+                msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+            os.close(self._fd)
+            self._fd = None
+
+    def __enter__(self) -> "JsonFileLock":
+        self.acquire()
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.release()
+
+
+def write_json_locked(path: Path, data: dict[str, Any]) -> None:
+    lock_file = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(lock_file):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with tmp.open("w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp, path)
+        finally:
+            if tmp.exists():
+                tmp.unlink()
+
 
 TEXT_EXTS = {".md", ".txt", ".json", ".csv"}
 DOCX_EXTS = {".docx"}
@@ -255,16 +311,7 @@ def read_json(path: Path) -> dict[str, Any]:
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with tmp.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
-            handle.write("\n")
-        os.replace(tmp, path)
-    finally:
-        if tmp.exists():
-            tmp.unlink()
+    write_json_locked(path, data)
 
 
 def append_jsonl(path: Path, event: dict[str, Any]) -> None:
@@ -2535,49 +2582,57 @@ def approval_decision(args: argparse.Namespace) -> int:
     if args.decision in {"approve", "reject"} and not args.confirmed:
         print("office-system: approval decision requires --confirmed", file=sys.stderr)
         return 2
-    approval = load_approval(root, args.approval_id)
-    auth = compute_authorization_decision(
-        root,
-        tenant_id=approval.get("tenant_id", "local"),
-        deployment_id=approval.get("deployment_id", "local"),
-        user_id=args.decided_by,
-        user_role=args.role,
-        action="approval.decide",
-        resource_type="approval",
-        resource_id=args.approval_id,
-        project_id=approval.get("project_id", ""),
-        agent_id=approval.get("agent_id", ""),
-        workflow_run_id=approval.get("workflow_run_id", ""),
-    )
-    if not auth["allowed"]:
-        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 2
-    if approval.get("status") != "pending":
-        print("office-system: approval is not pending", file=sys.stderr)
-        return 2
-    if approval.get("approver_role") == "professional_reviewer" and args.role != "professional_reviewer":
-        print("office-system: this approval requires professional_reviewer", file=sys.stderr)
-        return 2
-    if args.role not in TENANT_ADMIN_ROLES and args.role != approval.get("approver_role"):
-        print("office-system: actor role does not match required approver role", file=sys.stderr)
-        return 2
-    status = APPROVAL_DECISION_TO_STATUS[args.decision]
-    approval["status"] = status
-    approval["updated_at"] = now_iso()
-    approval["decisions"].append({"time": approval["updated_at"], "decision": args.decision, "decided_by": args.decided_by, "role": args.role, "message": args.message or ""})
-    write_json(approval_path(root, args.approval_id), approval)
-    if approval.get("task_id"):
-        update_task_status(root, approval["task_id"], "queued" if status == "approved" else "blocked", message=args.message or f"approval {status}", actor_id=args.decided_by, actor_role=args.role)
-    if approval.get("workflow_run_id"):
-        run = load_run_record(root, approval["workflow_run_id"])
-        if status == "approved":
-            run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
-        else:
-            run["status"] = "blocked"
-            run.setdefault("blockers", []).append(f"approval_{status}")
-        run["updated_at"] = now_iso()
-        run.setdefault("events", []).append({"time": run["updated_at"], "event": "approval_decision", "approval_id": args.approval_id, "status": status})
-        write_json(run_record_path(root, approval["workflow_run_id"]), run)
+    approval_path_value = approval_path(root, args.approval_id)
+    # Acquire exclusive lock on the approval file to prevent race conditions
+    lock_file = approval_path_value.with_name(f".{approval_path_value.name}.lock")
+    with JsonFileLock(lock_file):
+        # Re-read approval under lock to ensure atomicity
+        approval = read_json(approval_path_value)
+        if approval.get("kind") != "digital-office-approval":
+            print("office-system: invalid approval record", file=sys.stderr)
+            return 2
+        auth = compute_authorization_decision(
+            root,
+            tenant_id=approval.get("tenant_id", "local"),
+            deployment_id=approval.get("deployment_id", "local"),
+            user_id=args.decided_by,
+            user_role=args.role,
+            action="approval.decide",
+            resource_type="approval",
+            resource_id=args.approval_id,
+            project_id=approval.get("project_id", ""),
+            agent_id=approval.get("agent_id", ""),
+            workflow_run_id=approval.get("workflow_run_id", ""),
+        )
+        if not auth["allowed"]:
+            print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+            return 2
+        if approval.get("status") != "pending":
+            print("office-system: approval is not pending", file=sys.stderr)
+            return 2
+        if approval.get("approver_role") == "professional_reviewer" and args.role != "professional_reviewer":
+            print("office-system: this approval requires professional_reviewer", file=sys.stderr)
+            return 2
+        if args.role not in TENANT_ADMIN_ROLES and args.role != approval.get("approver_role"):
+            print("office-system: actor role does not match required approver role", file=sys.stderr)
+            return 2
+        status = APPROVAL_DECISION_TO_STATUS[args.decision]
+        approval["status"] = status
+        approval["updated_at"] = now_iso()
+        approval["decisions"].append({"time": approval["updated_at"], "decision": args.decision, "decided_by": args.decided_by, "role": args.role, "message": args.message or ""})
+        write_json(approval_path_value, approval)
+        if approval.get("task_id"):
+            update_task_status(root, approval["task_id"], "queued" if status == "approved" else "blocked", message=args.message or f"approval {status}", actor_id=args.decided_by, actor_role=args.role)
+        if approval.get("workflow_run_id"):
+            run = load_run_record(root, approval["workflow_run_id"])
+            if status == "approved":
+                run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+            else:
+                run["status"] = "blocked"
+                run.setdefault("blockers", []).append(f"approval_{status}")
+            run["updated_at"] = now_iso()
+            run.setdefault("events", []).append({"time": run["updated_at"], "event": "approval_decision", "approval_id": args.approval_id, "status": status})
+            write_json(run_record_path(root, approval["workflow_run_id"]), run)
     event = append_audit_event(root, "approval_decision", actor_id=args.decided_by, actor_role=args.role, tenant_id=approval.get("tenant_id", ""), deployment_id=approval.get("deployment_id", ""), project_id=approval.get("project_id", ""), agent_id=approval.get("agent_id", ""), resource_type="approval", resource_id=args.approval_id, workflow_run_id=approval.get("workflow_run_id", ""), task_id=approval.get("task_id", ""), approval_id=args.approval_id, outcome=status, reason=args.message or "")
     emit_notification(root, user_id=approval.get("requested_by", ""), title=f"Approval {status}", body=approval.get("title", ""), topic="approval", resource_type="approval", resource_id=args.approval_id, severity="info" if status == "approved" else "warning")
     print(json.dumps({"approval": approval, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
@@ -4573,15 +4628,9 @@ def health_checks(root: Path) -> dict[str, Any]:
 def required_health_keys() -> tuple[str, ...]:
     return (
         "agents_registry",
-        "knowledge_registry",
-        "identity_access_registry",
-        "industry_solutions_registry",
-        "external_knowledge_sources_registry",
         "ai_native_loop_manifest",
         "onboarding_presets",
         "settings_dir",
-        "rules_registry",
-        "multimodal_pipeline",
         "workflow_runs_dir",
         "task_inbox_dir",
         "approval_center_dir",
@@ -4592,6 +4641,17 @@ def required_health_keys() -> tuple[str, ...]:
         "web_index",
         "pwa_manifest",
         "service_worker",
+    )
+
+
+def optional_health_keys() -> tuple[str, ...]:
+    return (
+        "knowledge_registry",
+        "identity_access_registry",
+        "industry_solutions_registry",
+        "external_knowledge_sources_registry",
+        "rules_registry",
+        "multimodal_pipeline",
     )
 
 

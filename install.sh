@@ -145,10 +145,19 @@ fi
 
 mkdir -p "$INSTALL_ROOT/scripts" "$INSTALL_ROOT/profiles" "$INSTALL_ROOT/skills"
 
-rsync -a "$SOURCE_DIR/agent-system/" "$INSTALL_ROOT/agent-system/"
-rsync -a "$SOURCE_DIR/scripts/" "$INSTALL_ROOT/scripts/"
-rsync -a "$SOURCE_DIR/profiles/" "$INSTALL_ROOT/profiles/"
-rsync -a "$SOURCE_DIR/skills/" "$INSTALL_ROOT/skills/"
+sync_dir() {
+  local src="$1" dst="$2"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a "$src" "$dst"
+  else
+    cp -R "$src" "$dst"
+  fi
+}
+
+sync_dir "$SOURCE_DIR/agent-system/" "$INSTALL_ROOT/agent-system/"
+sync_dir "$SOURCE_DIR/scripts/" "$INSTALL_ROOT/scripts/"
+sync_dir "$SOURCE_DIR/profiles/" "$INSTALL_ROOT/profiles/"
+sync_dir "$SOURCE_DIR/skills/" "$INSTALL_ROOT/skills/"
 cp "$SOURCE_DIR/README.md" "$INSTALL_ROOT/README.md"
 cp "$SOURCE_DIR/README.zh-CN.md" "$INSTALL_ROOT/README.zh-CN.md"
 cp "$SOURCE_DIR/install.sh" "$INSTALL_ROOT/install.sh"

@@ -501,7 +501,8 @@ def run_step(prompt: str, cfg: dict[str, Any]) -> subprocess.CompletedProcess[st
     cmd.extend(["-m", cfg["model"], "--provider", cfg["provider"], "-z", prompt])
     env = os.environ.copy()
     env["HERMES_AGENT_ROUTER_BYPASS"] = "1"
-    return subprocess.run(cmd, text=True, capture_output=True, env=env)
+    # 5-minute timeout to prevent indefinite hangs on model inference or network issues
+    return subprocess.run(cmd, text=True, capture_output=True, env=env, timeout=300)
 
 
 def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, Any]) -> int:
