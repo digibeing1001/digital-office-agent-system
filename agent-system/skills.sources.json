@@ -19,11 +19,12 @@
         "secretary"
       ],
       "name": "ECC",
-      "observed_stars": 209604,
-      "remote": "https://github.com/affaan-m/ECC.git",
+      "observed_stars": null,
+      "remote": "https://github.com/everything-claude-code/everything-claude-code.git",
       "status": "research_only_stage_before_install",
       "type": "git-candidate",
-      "use_case": "agent harness construction, regression testing, production-quality workflow patterns"
+      "use_case": "agent harness construction, regression testing, production-quality workflow patterns",
+      "notes": "Star count removed to avoid staleness; verify current count before citing."
     },
     {
       "candidate_for": [

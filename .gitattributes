@@ -1,8 +1,40 @@
 * text=auto eol=lf
+
+# Shell scripts must always use LF
 *.sh text eol=lf
+
+# Python source
 *.py text eol=lf
-*.json text eol=lf
-*.md text eol=lf
+
+# JSON must be UTF-8 to prevent Chinese garbling
+*.json text eol=lf encoding=UTF-8
+
+# Markdown must be UTF-8
+*.md text eol=lf encoding=UTF-8
+
+# Web assets
 *.js text eol=lf
 *.css text eol=lf
 *.html text eol=lf
+*.webmanifest text eol=lf
+
+# YAML config
+*.yaml text eol=lf encoding=UTF-8
+*.yml text eol=lf encoding=UTF-8
+
+# TOML config
+*.toml text eol=lf encoding=UTF-8
+
+# Binary assets (no text normalization)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.svg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.db binary

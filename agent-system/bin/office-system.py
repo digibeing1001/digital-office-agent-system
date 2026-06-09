@@ -20,6 +20,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import tarfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -4655,6 +4656,99 @@ def optional_health_keys() -> tuple[str, ...]:
     )
 
 
+
+
+def detailed_health(root: Path) -> dict[str, Any]:
+    """Return detailed component-level health status for the /api/health endpoint."""
+    checks = health_checks(root)
+    components: dict[str, Any] = {}
+
+    # knowledge_base
+    kb_reg = root / 'knowledge.registry.json'
+    if kb_reg.exists():
+        try:
+            kb_data = json.loads(kb_reg.read_text(encoding='utf-8'))
+            spaces_count = len(kb_data.get('knowledge_bases', {}))
+            components['knowledge_base'] = {'status': 'ok', 'spaces_count': spaces_count}
+        except (json.JSONDecodeError, OSError):
+            components['knowledge_base'] = {'status': 'degraded', 'spaces_count': 0}
+    else:
+        components['knowledge_base'] = {'status': 'not_found', 'spaces_count': 0}
+
+    # rag_index
+    rag_pipe = root / 'rag.pipeline.json'
+    if rag_pipe.exists():
+        try:
+            rag_data = json.loads(rag_pipe.read_text(encoding='utf-8'))
+            stores = rag_data.get('stores', {})
+            default_store = rag_data.get('default_store', '')
+            if default_store and default_store in stores:
+                store_cfg = stores[default_store]
+                index_path = root / store_cfg.get('index_dir', 'data/rag-index')
+                if index_path.exists() and any(index_path.iterdir()):
+                    components['rag_index'] = {'status': 'ok'}
+                else:
+                    components['rag_index'] = {'status': 'not_indexed'}
+            else:
+                components['rag_index'] = {'status': 'not_indexed'}
+        except (json.JSONDecodeError, OSError):
+            components['rag_index'] = {'status': 'degraded'}
+    else:
+        components['rag_index'] = {'status': 'not_found'}
+
+    # agents
+    agents_reg = root / 'agents.registry.json'
+    if agents_reg.exists():
+        try:
+            agents_data = json.loads(agents_reg.read_text(encoding='utf-8'))
+            registered_count = len(agents_data.get('agents', {}))
+            components['agents'] = {'status': 'ok', 'registered_count': registered_count}
+        except (json.JSONDecodeError, OSError):
+            components['agents'] = {'status': 'degraded', 'registered_count': 0}
+    else:
+        components['agents'] = {'status': 'not_found', 'registered_count': 0}
+
+    # workflows
+    runs_dir = root / 'runs'
+    if runs_dir.exists():
+        active_count = sum(1 for p in runs_dir.iterdir() if p.is_dir())
+        components['workflows'] = {'status': 'ok', 'active_count': active_count}
+    else:
+        components['workflows'] = {'status': 'not_found', 'active_count': 0}
+
+    # disk
+    try:
+        disk_usage = shutil.disk_usage(str(root))
+        available_mb = disk_usage.free // (1024 * 1024)
+        disk_status = 'ok' if available_mb > 500 else 'low'
+        components['disk'] = {'status': disk_status, 'available_mb': available_mb}
+    except OSError:
+        components['disk'] = {'status': 'unknown', 'available_mb': 0}
+
+    # Determine overall status
+    any_degraded = any(
+        c.get('status') not in ('ok', 'low')
+        for c in components.values()
+    )
+    any_down = any(
+        c.get('status') in ('not_found',)
+        for c in components.values()
+    )
+    required = required_health_keys()
+    all_required_ok = all(checks.get(k) for k in required)
+
+    if not all_required_ok or any_down:
+        overall = 'down'
+    elif any_degraded:
+        overall = 'degraded'
+    else:
+        overall = 'ok'
+
+    return {
+        'status': overall,
+        'timestamp': now_iso(),
+        'components': components,
+    }
 def status_counts(records: list[dict[str, Any]], field: str = "status") -> dict[str, int]:
     counts: dict[str, int] = {}
     for record in records:
@@ -4960,8 +5054,9 @@ def web_serve(args: argparse.Namespace) -> int:
                 return values[0] if values else default
 
             if parsed.path in {"/healthz", "/api/health"}:
-                checks = health_checks(root)
-                web_json_response(self, 200 if all(checks[key] for key in required_health_keys()) else 503, {"status": "ok" if all(checks[key] for key in required_health_keys()) else "degraded", "checks": checks, "generated_at": now_iso()})
+                detail = detailed_health(root)
+                code = 200 if detail["status"] == "ok" else 503 if detail["status"] == "down" else 200
+                web_json_response(self, code, detail)
                 return
             if parsed.path == "/api/gui-state":
                 try:
@@ -4990,6 +5085,102 @@ def web_serve(args: argparse.Namespace) -> int:
         server.server_close()
     return 0
 
+
+def backup(args: argparse.Namespace) -> int:
+    """Create a tar.gz backup of critical user data."""
+    root = system_root()
+    timestamp = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
+    backup_name = f'digital-office-backup-{timestamp}.tar.gz'
+    backup_path = Path.cwd() / backup_name
+
+    critical_dirs = [
+        'settings',
+        'knowledge',
+        'projects',
+        'approvals',
+        'notifications',
+        'iterations',
+        'tasks',
+        'agent-requests',
+    ]
+
+    existing_dirs = [d for d in critical_dirs if (root / d).exists()]
+    if not existing_dirs:
+        print('backup: no critical data directories found, nothing to back up', file=sys.stderr)
+        return 1
+
+    try:
+        with tarfile.open(str(backup_path), 'w:gz') as tar:
+            for dirname in existing_dirs:
+                tar.add(str(root / dirname), arcname=dirname)
+        print(str(backup_path))
+        return 0
+    except (OSError, tarfile.TarError) as exc:
+        print(f'backup: failed to create archive: {exc}', file=sys.stderr)
+        return 1
+
+def restore(args: argparse.Namespace) -> int:
+    """Restore from a tar.gz backup file."""
+    backup_file = Path(args.backup_file)
+    if not backup_file.exists():
+        print(f'restore: backup file not found: {backup_file}', file=sys.stderr)
+        return 1
+    if not backup_file.is_file():
+        print(f'restore: not a file: {backup_file}', file=sys.stderr)
+        return 1
+
+    # Verify tar.gz structure
+    try:
+        with tarfile.open(str(backup_file), 'r:gz') as tar:
+            members = tar.getmembers()
+            top_dirs = set()
+            for m in members:
+                parts = m.name.split('/')
+                if parts:
+                    top_dirs.add(parts[0])
+    except (tarfile.TarError, OSError) as exc:
+        print(f'restore: invalid backup archive: {exc}', file=sys.stderr)
+        return 1
+
+    expected_dirs = {'settings', 'knowledge', 'projects', 'approvals', 'notifications', 'iterations', 'tasks', 'agent-requests'}
+    found_dirs = top_dirs & expected_dirs
+    if not found_dirs:
+        print('restore: no recognized data directories found in backup', file=sys.stderr)
+        return 1
+
+    # Warn about running processes
+    print('restore: WARNING - ensure no office-system processes are running before restoring.', file=sys.stderr)
+
+    root = system_root()
+
+    # Extract with path traversal protection
+    try:
+        with tarfile.open(str(backup_file), 'r:gz') as tar:
+            for member in tar.getmembers():
+                member_path = (root / member.name).resolve()
+                if not str(member_path).startswith(str(root.resolve())):
+                    print(f'restore: skipping unsafe path: {member.name}', file=sys.stderr)
+                    continue
+                tar.extract(member, path=str(root))
+    except (tarfile.TarError, OSError) as exc:
+        print(f'restore: extraction failed: {exc}', file=sys.stderr)
+        return 1
+
+    # Verify JSON files are valid after extraction
+    json_errors: list[str] = []
+    for json_file in root.glob('**/*.json'):
+        try:
+            json.loads(json_file.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, OSError) as exc:
+            json_errors.append(f'{json_file.name}: {exc}')
+
+    restored = sorted(found_dirs)
+    print(f"restore: restored {len(restored)} component(s): {', '.join(restored)}")
+    if json_errors:
+        print(f'restore: WARNING - {len(json_errors)} JSON file(s) may be corrupt:', file=sys.stderr)
+        for err in json_errors[:10]:
+            print(f'  {err}', file=sys.stderr)
+    return 0
 
 def health(args: argparse.Namespace) -> int:
     root = system_root()
@@ -5596,6 +5787,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--confirmed", action="store_true")
     p.add_argument("--timeout", type=int, default=30)
     p.set_defaults(func=telemetry_send)
+
+    p = sub.add_parser("backup")
+    p.set_defaults(func=backup)
+
+    p = sub.add_parser("restore")
+    p.add_argument("backup_file", help="Path to the backup tar.gz file")
+    p.set_defaults(func=restore)
 
     p = sub.add_parser("health")
     p.set_defaults(func=health)

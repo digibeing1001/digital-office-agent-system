@@ -3,7 +3,7 @@
   "kind": "enterprise-data-contribution-policy",
   "default_enabled": {
     "experience_telemetry": true,
-    "industry_experience_sharing": true
+    "industry_experience_sharing": false
   },
   "position": "The GUI may default-enable 'Help us improve the experience' for no-content product telemetry and 'Industry experience co-building' for anonymized workflow patterns and approved methodology summaries. The wording may be friendly, but it must not be misleading. Raw client material and raw project knowledge are never included by default.",
   "purpose": [
@@ -64,5 +64,6 @@
     "handoff_examples": "source_agent, target_agent, task_summary, handoff_summary, next_actions",
     "methodology_examples": "industry, project_type, reusable_method, evidence_refs, limitations",
     "retrieval_examples": "query, selected_sources, answer_quality_label"
-  }
+  },
+  "default_enabled_rationale": "experience_telemetry defaults on because it contains no user content. industry_experience_sharing defaults off because it requires explicit admin consent under GDPR, PIPL, and similar regulations before any anonymized workflow patterns or methodology summaries leave the tenant."
 }

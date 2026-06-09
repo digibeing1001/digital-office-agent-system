@@ -245,7 +245,7 @@ HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "please debug this bug" >"$WORK_D
 json_assert "$WORK_DIR/route-coder.json" 'data["agent"] == "coder" and data["workflow"] == "single" and data["confidence"] == "high"'
 
 HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "先调研竞品，再规划数字办公室的产品方案" >"$WORK_DIR/route-research-plan.json"
-json_assert "$WORK_DIR/route-research-plan.json" 'data["agent"] == "planer" and data["workflow"] == "research_then_plan" and data["steps"] == ["researcher", "planer"] and data["workflow_reason"]["source"] == "workflow_route"'
+json_assert "$WORK_DIR/route-research-plan.json" 'data["agent"] == "planner" and data["workflow"] == "research_then_plan" and data["steps"] == ["researcher", "planner"] and data["workflow_reason"]["source"] == "workflow_route"'
 
 HERMES_HOME="$HOME_DIR" "$ROUTER" --route-json "先做市场调研，再判断这个产品该不该做和路线图" >"$WORK_DIR/route-research-pm.json"
 json_assert "$WORK_DIR/route-research-pm.json" 'data["agent"] == "pm" and data["workflow"] == "research_then_pm" and data["steps"] == ["researcher", "pm"]'

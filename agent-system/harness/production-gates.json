@@ -121,6 +121,23 @@
         "claims_trace_to_source_or_are_marked_as_assumptions",
         "tone_matches_audience_and_context"
       ]
+    },
+    "delivery": {
+      "entry_contract": [
+        "design or writing gate has passed",
+        "target artifact format is specified (file path, URL, or open instruction)",
+        "audience and delivery context are known"
+      ],
+      "exit_artifacts": [
+        "artifact path or URL",
+        "delivery notes with unresolved assumptions",
+        "user-facing summary"
+      ],
+      "minimum_gates": [
+        "artifact_exists_and_is_readable",
+        "unresolved_assumptions_are_named",
+        "secretary_delivery_notes_include_artifact_path_or_url"
+      ]
     }
   },
   "workflow_gates": {
@@ -145,7 +162,8 @@
       "intake_acceptance_criteria_confirmed",
       "storyline_and_speaker_notes_written_before_design",
       "design_gate_passed_before_deck_delivery",
-      "secretary_delivery_notes_include_artifact_path_or_url"
+      "secretary_delivery_notes_include_artifact_path_or_url",
+      "delivery_gate_passed_before_user_delivery"
     ]
   },
   "quality_metrics": {

@@ -163,108 +163,6 @@
       },
       "source_iteration": "digibeing1001/claude-vibe-coding-setup adapted 2026-06-10"
     },
-    "planer": {
-      "decision": {
-        "avoid_when": [
-          "the user only needs factual research",
-          "the main task is writing final copy",
-          "the main task is coding without planning ambiguity"
-        ],
-        "primary_outputs": [
-          "plan",
-          "architecture direction",
-          "scope and milestone breakdown",
-          "risk and dependency list"
-        ],
-        "use_when": [
-          "the user needs a plan, architecture, roadmap, feasibility path, or implementation sequence",
-          "research output must be turned into an actionable plan",
-          "the work needs scope, milestones, dependencies, or risk ordering"
-        ]
-      },
-      "display_name": "Digital Office Planner",
-      "fallbacks": [
-        {
-          "model": "deepseek/deepseek-v4-pro",
-          "provider": "deepseek"
-        }
-      ],
-      "memory_policy": "keymemory",
-      "model": "gpt-5.5",
-      "orchestration_roles": [
-        "planning"
-      ],
-      "portable_role": "planning-and-architecture-specialist",
-      "profile": "office-planner",
-      "provider": "openai-codex",
-      "routing": {
-        "default_workflow": "research_then_plan",
-        "keywords": [
-          {
-            "term": "plan",
-            "weight": 4
-          },
-          {
-            "term": "planning",
-            "weight": 4
-          },
-          {
-            "term": "requirements",
-            "weight": 4
-          },
-          {
-            "term": "architecture",
-            "weight": 5
-          },
-          {
-            "term": "roadmap",
-            "weight": 4
-          },
-          {
-            "term": "scope this out",
-            "weight": 5
-          },
-          {
-            "term": "how to implement",
-            "weight": 3
-          },
-          {
-            "term": "feasibility plan",
-            "weight": 5
-          },
-          {
-            "term": "规划",
-            "weight": 5
-          },
-          {
-            "term": "计划",
-            "weight": 4
-          },
-          {
-            "term": "方案",
-            "weight": 4
-          },
-          {
-            "term": "架构",
-            "weight": 5
-          },
-          {
-            "term": "可行性",
-            "weight": 4
-          },
-          {
-            "term": "怎么实现",
-            "weight": 4
-          }
-        ],
-        "priority": 60
-      },
-      "skills": [
-        "pm-clarity",
-        "brainstorming",
-        "writing-plans"
-      ]
-    },
     "pm": {
       "decision": {
         "avoid_when": [
@@ -1170,16 +1068,118 @@
         "copywriting",
         "content-strategy"
       ]
+    },
+    "planner": {
+      "decision": {
+        "avoid_when": [
+          "the user only needs factual research",
+          "the main task is writing final copy",
+          "the main task is coding without planning ambiguity"
+        ],
+        "primary_outputs": [
+          "plan",
+          "architecture direction",
+          "scope and milestone breakdown",
+          "risk and dependency list"
+        ],
+        "use_when": [
+          "the user needs a plan, architecture, roadmap, feasibility path, or implementation sequence",
+          "research output must be turned into an actionable plan",
+          "the work needs scope, milestones, dependencies, or risk ordering"
+        ]
+      },
+      "display_name": "Digital Office Planner",
+      "fallbacks": [
+        {
+          "model": "deepseek/deepseek-v4-pro",
+          "provider": "deepseek"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "model": "gpt-5.5",
+      "orchestration_roles": [
+        "planning"
+      ],
+      "portable_role": "planning-and-architecture-specialist",
+      "profile": "office-planner",
+      "provider": "openai-codex",
+      "routing": {
+        "default_workflow": "research_then_plan",
+        "keywords": [
+          {
+            "term": "plan",
+            "weight": 4
+          },
+          {
+            "term": "planning",
+            "weight": 4
+          },
+          {
+            "term": "requirements",
+            "weight": 4
+          },
+          {
+            "term": "architecture",
+            "weight": 5
+          },
+          {
+            "term": "roadmap",
+            "weight": 4
+          },
+          {
+            "term": "scope this out",
+            "weight": 5
+          },
+          {
+            "term": "how to implement",
+            "weight": 3
+          },
+          {
+            "term": "feasibility plan",
+            "weight": 5
+          },
+          {
+            "term": "规划",
+            "weight": 5
+          },
+          {
+            "term": "计划",
+            "weight": 4
+          },
+          {
+            "term": "方案",
+            "weight": 4
+          },
+          {
+            "term": "架构",
+            "weight": 5
+          },
+          {
+            "term": "可行性",
+            "weight": 4
+          },
+          {
+            "term": "怎么实现",
+            "weight": 4
+          }
+        ],
+        "priority": 60
+      },
+      "skills": [
+        "pm-clarity",
+        "brainstorming",
+        "writing-plans"
+      ]
     }
   },
   "aliases": {
     "designer": "vibe-designer",
     "dev": "coder",
     "developer": "coder",
-    "planner": "planer",
     "product": "pm",
     "research": "researcher",
-    "vibe_designer": "vibe-designer"
+    "vibe_designer": "vibe-designer",
+    "planer": "planner"
   },
   "defaults": {
     "fallback_agent": "secretary",
@@ -1219,7 +1219,7 @@
     "planning": {
       "description": "Turns intent and evidence into plans, architecture, milestones, dependencies, and feasible execution paths.",
       "preferred_agents": [
-        "planer"
+        "planner"
       ]
     },
     "product": {
@@ -1232,6 +1232,12 @@
       "description": "Owns articles, posts, copywriting, editing, and publishable narrative.",
       "preferred_agents": [
         "writer"
+      ]
+    },
+    "delivery": {
+      "description": "Final delivery validation, artifact packaging, user-facing summary, and unresolved assumption reporting.",
+      "preferred_agents": [
+        "secretary"
       ]
     }
   },
@@ -1249,7 +1255,7 @@
   },
   "route_tests": [
     {
-      "expect": "planer",
+      "expect": "planner",
       "prompt": "规划一下产品方案"
     },
     {
@@ -1273,10 +1279,10 @@
       "prompt": "这个数字办公室产品该不该做"
     },
     {
-      "expect": "planer",
+      "expect": "planner",
       "expect_steps": [
         "researcher",
-        "planer"
+        "planner"
       ],
       "expect_workflow": "research_then_plan",
       "prompt": "先调研竞品，再规划数字办公室的产品方案"
@@ -1342,7 +1348,7 @@
         "secretary"
       ],
       "expect_workflow": "ppt_production",
-      "prompt": "?????PPT??"
+      "prompt": "帮我做一份PPT"
     },
     {
       "expect": "secretary",
@@ -1353,7 +1359,7 @@
         "secretary"
       ],
       "expect_workflow": "ppt_production",
-      "prompt": "???6????????"
+      "prompt": "做一份6页的产品汇报"
     },
     {
       "expect": "secretary",
@@ -1713,23 +1719,23 @@
             "weight": 8
           },
           {
-            "term": "??",
+            "term": "幻灯",
             "weight": 6
           },
           {
-            "term": "???",
+            "term": "演示文稿",
             "weight": 8
           },
           {
-            "term": "??",
+            "term": "幻灯",
             "weight": 6
           },
           {
-            "term": "??",
+            "term": "幻灯",
             "weight": 5
           },
           {
-            "term": "??",
+            "term": "幻灯",
             "weight": 3
           }
         ]
@@ -1766,7 +1772,7 @@
         "@role:intake",
         "@role:writing",
         "@role:design",
-        "@role:intake"
+        "@role:delivery"
       ]
     },
     "research_then_plan": {
