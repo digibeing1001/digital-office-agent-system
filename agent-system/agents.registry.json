@@ -130,7 +130,38 @@
         "systematic-debugging",
         "verification-loop",
         "frontend-patterns"
-      ]
+      ],
+      "workflows": [
+        "vibe-coding-eight-phase"
+      ],
+      "default_skill_chain": [
+        "vibe-coding-production-harness",
+        "verification-loop",
+        "systematic-debugging",
+        "coding-standards"
+      ],
+      "primary_skill": "vibe-coding-production-harness",
+      "quality_gates": {
+        "code": [
+          "type-safety",
+          "lint",
+          "smoke-test-ge3",
+          "dead-code",
+          "complexity-le15",
+          "file-le400"
+        ],
+        "design": "ge7.5-of-10",
+        "security": [
+          "no-hardcoded-secrets",
+          "owasp-top10-no-high",
+          "npm-audit-moderate"
+        ],
+        "ship": [
+          "six-role-review",
+          "all-gates-pass"
+        ]
+      },
+      "source_iteration": "digibeing1001/claude-vibe-coding-setup adapted 2026-06-10"
     },
     "planer": {
       "decision": {

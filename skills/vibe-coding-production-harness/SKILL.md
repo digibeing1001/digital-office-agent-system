@@ -8,6 +8,17 @@ origin: digital-office
 
 Use this skill whenever the `implementation` role is asked to produce, modify, review, or ship code.
 
+## Soul Principles (inherited from Karpathy)
+
+These four principles sit above every phase below. When a phase rule conflicts with a soul principle, the soul principle wins.
+
+1. **Think Before Coding** — State assumptions. Surface tradeoffs. Ask when uncertain. Never silently pick between competing interpretations.
+2. **Simplicity First** — Minimum code that solves the problem. No speculative features. No abstractions for single-use code. No error handling for impossible scenarios. If 200 lines could be 50, rewrite.
+3. **Surgical Changes** — Touch only what the request demands. Do not "improve" adjacent code, comments, or formatting. Match existing style. Remove only YOUR orphans. Every changed line must trace to the user's request.
+4. **Goal-Driven Execution** — Transform tasks into verifiable goals with concrete pass/fail signals ("Add validation" → "Write tests for invalid inputs, then make them pass"). State a brief plan with verify steps for multi-step work.
+
+These principles also live in each Coder Agent's SOUL.md (`kenny-vibe-coder` personal + `office-coder` product). When invoking this harness, treat the four principles as binding unless an explicit user override is given.
+
 ## Operating Principle
 
 Good vibe coding is not improvisation. It is fast creative implementation inside a visible harness:
@@ -134,3 +145,174 @@ Do not claim production readiness unless the required gates passed.
 | `systematic-debugging` | Hard bugs, performance regressions |
 | `verification-loop` | Pre-PR verification, comprehensive quality check |
 | `frontend-patterns` | React/Next.js component work |
+
+---
+
+# AI Native Eight-Phase Decision Tree
+
+This harness operates inside an eight-phase loop. **Pick the smallest path that matches the task**. Small tasks skip the heavyweight phases; complex tasks route through every one.
+
+```
+User says "build X"
+    │
+    ▼
+≤ 15 min change? ──→ fast-path: intent → diff → smoke → done
+    │
+    └─→ > 15 min
+            │
+            UI work? ──→ include Phase 3 Design (score ≥ 7.5)
+            │
+            new project? ──→ Phase 1 + Phase 2 with product/design routing
+            │
+            existing project? ──→ Phase 1 baseline + Phase 2 minimum plan
+            │
+            ▼
+        1. Perceive  →  2. Plan  →  3. Design (UI)  →  4. Execute
+            →  5. Verify  →  6. Review  →  7. Ship  →  8. Reflect
+```
+
+### Phase Routing Table
+
+| Trigger | Phase | Skill to Invoke |
+|---------|-------|-----------------|
+| "Build X", "Add feature", "Fix bug" | 1 → 4 → 5 | `vibe-coding-production-harness` (this skill) |
+| "Design UI", "Make it pretty" | 3 → 4 | `vibe-design-production-harness` |
+| "Review code", "Audit" | 6 | `verification-loop` + six-role review checklist (below) |
+| "Debug this", "Why is it slow" | 4 (debug branch) | `systematic-debugging` |
+| "Refactor X" | 4 → 5 → 6 | `coding-standards` + `verification-loop` |
+| "Ship", "Deploy", "Release" | 5 → 6 → 7 | `verification-loop` → six-role review → production gate |
+| "Plan X", "Break down epic" | 2 | `brainstorming` → `grill-me` for depth |
+| "Generate tests" | 5 | `test-driven-development` + `verification-loop` |
+| "Setup CI" / "Add hooks" | 7 | `finishing-a-development-branch` |
+| "Hand off", "Pause", "Resume" | 8 | `handoff` + KeyMemory relay |
+
+**Rule**: Process skill > Implementation skill. When in doubt, route to `vibe-coding-production-harness` first; it will branch into the right sub-skill.
+
+---
+
+# Quality Gates (Quantified)
+
+## Code Quality Gate
+
+| Dimension | Pass Criteria | Verification |
+|-----------|--------------|--------------|
+| **Type Safety** | `tsc --noEmit` zero errors | CLI |
+| **Lint** | ESLint + Prettier zero errors | CLI |
+| **Test Coverage** | Smoke Test ≥ 3 assertions per module | Test runner |
+| **Dead Code** | No unused imports/vars/functions (`no-unused`) | Static analysis |
+| **Cyclomatic Complexity** | Single function ≤ 15 | Static analysis |
+| **File Length** | Single file ≤ 400 lines (split if exceeded) | Manual |
+
+**Hard rule**: 3+ test failures = module needs redesign, not patch-and-pray.
+
+## Design Quality Gate (UI Projects Only)
+
+| Dimension | Weight | Pass Criteria | Verification |
+|-----------|--------|--------------|--------------|
+| Visual Distinctiveness | 20% | Non-default font, no purple-gradient-on-white, clear palette | Visual review |
+| Usability | 25% | Krug's law: self-evident, painless click, scannable copy | Heuristic |
+| Accessibility | 20% | WCAG 2.2 AA: 4.5:1 body, 3:1 UI, semantic HTML, keyboard | axe-core / manual |
+| Technical Quality | 15% | Image dimensions, lazy-load, no `transition: all`, 60fps | Lighthouse |
+| Motion | 10% | Only `transform`/`opacity`, respects `prefers-reduced-motion`, interruptible | DevTools |
+| Copy | 10% | Active voice, specific button labels, errors include next step | Manual |
+| **Total** | 100% | **≥ 7.5 / 10** required to ship | Self-score |
+
+If score < 7.5, return to Phase 3 with the gap list. Do not ship UI below the gate.
+
+## Security Gate
+
+- No hardcoded secrets, passwords, tokens (regex scan + grep)
+- All user input validated + escaped
+- Parameterized SQL (no string concatenation)
+- No `eval()` / `new Function()` on user input
+- OWASP Top 10 self-audit: no high/critical findings
+- Dependencies: `npm audit --audit-level=moderate` clean
+
+## Ship Gate (must all pass)
+
+| Gate | Trigger | Required |
+|------|---------|----------|
+| Lint | on save | ✓ |
+| Smoke Test | per module | ≥ 3 assertions, all green |
+| Design Score | design complete | ≥ 7.5 / 10 |
+| Code Review | feature complete | no blocking findings |
+| Security | pre-ship | no high/critical |
+| Browser QA | pre-ship (UI) | no regressions |
+
+---
+
+# Six-Role Review Checklist
+
+When code is ready to ship, run reviews from six distinct role lenses. Each role produces a separate findings list. Do not collapse roles — they catch different classes of problem.
+
+| Role | Question | Output Format |
+|------|----------|---------------|
+| **CEO** | Does this match business goal? Is scope creeping? | "In/out of scope: ..."; "Wasted work: ..." |
+| **Architect** | Is structure sound? Will it create tech debt? | "Boundaries: ..."; "Debt introduced: ..."; "Refactor needed: yes/no" |
+| **DevEx** | Can a new dev onboard this in < 1 day? | "Onboarding blockers: ..."; "Naming consistency: ..." |
+| **QA** | Edge cases? Error paths? Flaky tests? | "Untested paths: ..."; "Flakiness risk: ..."; "Coverage gaps: ..." |
+| **Security** | OWASP Top 10? STRIDE? Hardcoded secrets? | "Threats: ..."; "Severity: critical/high/medium/low"; "Fix: ..." |
+| **Designer** | Visual consistency? AI slop? Accessibility? | "Slop score: ..."; "Consistency: ..."; "a11y: ..." |
+
+**Output template** for each review pass:
+
+```
+## Role: <name>
+L<file>:<line> <severity> <problem>. <fix>.
+...
+**Verdict**: ship / rework / block
+```
+
+**Verdict aggregation**:
+- Any `block` → return to Phase 4 with rework list
+- Any `critical` Security finding → block until fixed
+- 3+ `medium` findings → rework recommended
+- Otherwise → ship
+
+---
+
+# Hooks Mapping (Hermes Adaptation)
+
+The source `claude-vibe-coding-setup` uses Claude Code's `hooks.json` for automated gates. Under Hermes, those hooks map to **skill invocations at phase boundaries**:
+
+| Source Hook | Hermes Equivalent |
+|-------------|-------------------|
+| `pre-commit` (prettier/eslint/tsc) | Phase 4 self-check before commit message |
+| `pre-test` (vitest/playwright) | Phase 5 `verification-loop` |
+| `pre-ship` (security-review/qa/code-review) | Phase 6 six-role review + Phase 7 ship gate |
+| `pre-merge` (simplify/caveman-review) | Phase 6 `simplify` + manual lint |
+
+**Rationale**: Hermes has no file-watcher hook infrastructure. The Coder Agent must invoke the corresponding skill at the right phase boundary. This is enforced by SOUL.md and `agents.registry.json` `default_skill_chain`.
+
+---
+
+# Toolkit Plugin Mapping (Avoid Pollution)
+
+The source bundle ships 120+ Claude Code plugins. Under Hermes, we **do not** install them one-to-one. Instead:
+
+| Source Plugin | Hermes Native Equivalent |
+|---------------|--------------------------|
+| `code-architect` | `improve-codebase-architecture` skill |
+| `schema-designer` | domain skill (project-specific) |
+| `ui-designer` / `frontend-developer` | `vibe-design-production-harness` + `frontend-patterns` |
+| `code-review-assistant` / `code-guardian` | six-role review checklist above + `plankton-code-quality` |
+| `dead-code-finder` | `coding-standards` lint rules |
+| `a11y-audit` | Design Quality Gate (a11y 20% weight) |
+| `bundle-analyzer` | Lighthouse (run on demand) |
+| `deploy-pilot` / `release-manager` | `finishing-a-development-branch` skill |
+| `codebase-documenter` | Diataxis-style doc task in Phase 7 |
+| `security-guidance` | Security Gate + role-based review |
+
+When a project genuinely needs a plugin that has no Hermes equivalent, escalate via KeyMemory entity with the `tooling-gap` tag — do not silently install Claude Code plugins.
+
+---
+
+# Cross-Session Memory
+
+The source uses Claude Mem for cross-session memory. Under Hermes, **KeyMemory is the only durable memory** (see `~/.hermes/SOUL.md` global rule #2). The Coder Agent:
+
+1. Reads prior relay notes from KeyMemory before starting Phase 1 (Perceive).
+2. Writes implementation summary, gates passed, and residual risks to KeyMemory at Phase 8 (Reflect).
+3. Never writes durable facts to local `~/.hermes/MEMORY.md` or session-bound memory tools — those are session-scoped only.
+
+If a decision affects future Coder Agent behavior (e.g., "always run axe-core on UI tasks"), promote it to KeyMemory `entity` layer and mirror to the relevant SOUL.md (rule #3 of global rules).
