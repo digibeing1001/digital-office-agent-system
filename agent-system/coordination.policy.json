@@ -1,0 +1,72 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-coordination-policy",
+  "decision": "Choose the smallest collaboration topology that can satisfy the task without increasing drift. High-risk work is human-gated; independent specialist work may run as a parallel DAG; ordered specialist work runs as a sequential chain.",
+  "max_parallel_agents": 3,
+  "modes": {
+    "single_agent": {
+      "use_when": [
+        "one specialist can own the task end to end",
+        "risk is low or medium",
+        "no handoff is required"
+      ],
+      "required_controls": [
+        "run_ledger_hash_chain",
+        "checkpoint_before_completion"
+      ]
+    },
+    "secretary_centralized": {
+      "use_when": [
+        "route is ambiguous",
+        "specialists are not yet selected",
+        "user-facing scope needs clarification"
+      ],
+      "required_controls": [
+        "route_judgment",
+        "rule_elicitation_when_rules_are_missing"
+      ]
+    },
+    "sequential_specialist_chain": {
+      "use_when": [
+        "later work depends on earlier artifacts",
+        "handoffs are required",
+        "review or approval must happen before delivery"
+      ],
+      "required_controls": [
+        "typed_handoff_contract",
+        "handoff_contract_hash",
+        "checkpoint_between_agents"
+      ]
+    },
+    "parallel_expert_dag": {
+      "use_when": [
+        "workstreams are independent",
+        "the orchestrator assigns non-overlapping scope",
+        "merge or synthesis happens after specialist work completes"
+      ],
+      "required_controls": [
+        "explicit_agent_scope_assignment",
+        "no_file_or_artifact_overlap_without_merge_plan",
+        "synthesis_checkpoint"
+      ]
+    },
+    "human_gated": {
+      "use_when": [
+        "risk is high or critical",
+        "regulated professional judgment is involved",
+        "external side effects or durable memory promotion are possible"
+      ],
+      "required_controls": [
+        "human_judgment_case",
+        "approval_or_rejection_record",
+        "resume_only_after_closed_judgment"
+      ]
+    }
+  },
+  "drift_controls": [
+    "Every production run writes a hash-chained run ledger.",
+    "Every pause/resume boundary has a checkpoint with state_hash and resume_cursor.",
+    "Every cross-Agent handoff has a typed envelope and contract hash.",
+    "Every release-critical behavior is covered by deterministic eval cases."
+  ]
+}

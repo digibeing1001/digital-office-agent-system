@@ -121,7 +121,8 @@
         "knowledge_priority_is_respected",
         "licensed_reference_access_logged_when_used",
         "keymemory_is_relay_not_source_of_truth",
-        "ambiguity_is_escalated_to_secretary"
+        "ambiguity_is_escalated_to_secretary",
+        "human_judgment_case_created_when_route_or_scope_is_unsafe"
       ]
     },
     "plan": {
@@ -145,7 +146,8 @@
         "acceptance_criteria_are_testable",
         "handoff_contract_is_present_for_multi_agent_work",
         "risk_and_rollback_are_named",
-        "user_confirmation_required_for_high_risk_plan"
+        "user_confirmation_required_for_high_risk_plan",
+        "human_judgment_gate_closed_before_execution"
       ]
     },
     "execute": {
@@ -159,6 +161,9 @@
       ],
       "required_artifacts": [
         "execution_log",
+        "run_ledger",
+        "checkpoint_records",
+        "typed_handoff_envelopes",
         "agent_handoff_reports",
         "changed_files_or_generated_outputs",
         "command_outputs",
@@ -169,7 +174,11 @@
         "agent_steps_match_workflow",
         "required_harness_skills_available",
         "deterministic_checks_run_when_applicable",
-        "failed_gate_routes_to_rework"
+        "run_ledger_hash_chain_recorded",
+        "checkpoint_recorded_before_resume",
+        "typed_handoff_contracts_recorded",
+        "failed_gate_routes_to_rework",
+        "open_human_judgment_cases_block_dispatch"
       ]
     },
     "reflect": {
@@ -193,7 +202,8 @@
         "reflection_references_evidence",
         "known_failures_are_not_hidden",
         "reusable_methods_require_user_review_before_company_promotion",
-        "iteration_proposals_are_explicit"
+        "iteration_proposals_are_explicit",
+        "durable_user_rules_are_captured_as_reviewable_rule_proposals"
       ]
     },
     "iterate": {
@@ -261,9 +271,14 @@
     ],
     "storage": {
       "runs": "agent-system/runs/<run_id>/run.json",
+      "run_ledger": "agent-system/runs/<run_id>/ledger.jsonl",
+      "checkpoints": "agent-system/runs/<run_id>/checkpoints/<checkpoint_id>.json",
+      "handoffs": "agent-system/runs/<run_id>/handoffs/<handoff_id>.json",
       "proposal_reports": "agent-system/iterations/proposals/<proposal_id>.md",
       "proposal_status": "agent-system/iterations/status/<proposal_id>.json",
-      "applied_records": "agent-system/iterations/applied/<proposal_id>.json"
+      "applied_records": "agent-system/iterations/applied/<proposal_id>.json",
+      "eval_suites": "agent-system/evals/<suite_id>.json",
+      "coordination_policy": "agent-system/coordination.policy.json"
     }
   },
   "gui_contract": {
@@ -292,6 +307,10 @@
     "Iteration is never automatic. The system may propose improvements, but user confirmation is required before application.",
     "The proposal must explain what will change, why, expected impact, risk, rollback, affected Agents/workflows/knowledge, and required regression checks.",
     "The secretary owns ambiguous routes, user confirmation, iteration proposals, and failed-gate recovery.",
-    "A production claim requires deterministic harness gates plus a reflection report."
+    "A production claim requires deterministic harness gates plus a reflection report.",
+    "Open human judgment cases block workflow resume, retry, task completion, Agent dispatch, and loop stage progress.",
+    "Durable user preferences discovered during collaboration become rule proposals first; active global, project, or Agent rules require human confirmation.",
+    "Every production run must be replayable from its run record, hash-chained ledger, checkpoints, typed handoff envelopes, and deterministic eval results.",
+    "Coordination mode must be selected from the coordination policy instead of letting Agent count or prompt style decide the topology implicitly."
   ]
 }

@@ -57,6 +57,96 @@ def load_registry(path: Path) -> dict[str, Any]:
     return registry
 
 
+def load_judgment_policy(home: Path) -> dict[str, Any]:
+    path = home / "agent-system" / "judgment.policy.json"
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception:
+        return {
+            "thresholds": {
+                "pause_risk_score": 0.65,
+                "route_low_confidence_values": ["low", "ambiguous"],
+            },
+            "default_options": [
+                {"id": "approve_with_scope", "label": "Approve with explicit scope"},
+                {"id": "request_more_evidence", "label": "Request more evidence"},
+                {"id": "reject_or_stop", "label": "Reject or stop this action"},
+            ],
+            "hard_block_actions": [],
+            "categories": [],
+        }
+
+
+def evaluate_judgment(prompt: str, route_info: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
+    thresholds = policy.get("thresholds", {})
+    pause_threshold = float(thresholds.get("pause_risk_score", 0.65))
+    route_pause_values = {str(item) for item in thresholds.get("route_low_confidence_values", ["low", "ambiguous"])}
+    risk_score = 0.0
+    triggers: list[dict[str, Any]] = []
+    blocked_actions: set[str] = set()
+    required_roles: list[str] = []
+    text = prompt.lower()
+    for category in policy.get("categories", []):
+        if not isinstance(category, dict):
+            continue
+        matched = [str(keyword) for keyword in category.get("keywords", []) if str(keyword).lower() in text]
+        if not matched:
+            continue
+        category_score = float(category.get("risk_score", 0.0))
+        risk_score = max(risk_score, category_score)
+        blocked_actions.update(str(item) for item in category.get("blocked_actions", []))
+        role = str(category.get("required_human_role", "project_manager"))
+        if role and role not in required_roles:
+            required_roles.append(role)
+        triggers.append(
+            {
+                "type": "policy_category",
+                "category": str(category.get("id", "unknown")),
+                "risk_score": category_score,
+                "matched_keywords": matched[:8],
+                "required_human_role": role,
+            }
+        )
+    confidence = str(route_info.get("confidence", ""))
+    if route_info.get("fallback") or route_info.get("clarification_required") or confidence in route_pause_values:
+        risk_score = max(risk_score, 0.72)
+        blocked_actions.add("workflow_continue")
+        if "project_manager" not in required_roles:
+            required_roles.append("project_manager")
+        triggers.append(
+            {
+                "type": "route_uncertainty",
+                "risk_score": 0.72,
+                "confidence": confidence,
+                "fallback": bool(route_info.get("fallback")),
+                "clarification_required": bool(route_info.get("clarification_required")),
+            }
+        )
+    if risk_score >= 0.85:
+        risk_label = "critical"
+    elif risk_score >= 0.65:
+        risk_label = "high"
+    elif risk_score >= 0.4:
+        risk_label = "medium"
+    else:
+        risk_label = "low"
+    return {
+        "version": "1.0.0",
+        "kind": "digital-office-router-judgment",
+        "decision": "pause" if risk_score >= pause_threshold or blocked_actions else "continue",
+        "risk_score": round(risk_score, 3),
+        "risk_label": risk_label,
+        "required_human_role": required_roles[0] if required_roles else "project_manager",
+        "required_human_roles": required_roles,
+        "blocked_actions": sorted(blocked_actions),
+        "triggers": triggers,
+        "options": policy.get("default_options", []),
+        "recommended_option": "request_more_evidence" if risk_score >= pause_threshold else "approve_with_scope",
+        "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+    }
+
+
 def normalize_agent_name(name: str, registry: dict[str, Any]) -> str:
     agents = registry["agents"]
     aliases = registry.get("aliases", {})
@@ -402,6 +492,7 @@ def append_route_log(home: Path, prompt: str, requested_agent: str, route_info: 
         "scores": route_info.get("scores", {}),
         "routing_reason": route_info.get("routing_reason"),
         "confidence": route_info.get("confidence"),
+        "judgment": route_info.get("judgment", {}),
         "clarification_required": route_info.get("clarification_required", False),
         "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
         "prompt_chars": len(prompt),
@@ -506,6 +597,12 @@ def run_step(prompt: str, cfg: dict[str, Any]) -> subprocess.CompletedProcess[st
 
 
 def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, Any]) -> int:
+    judgment = route_info.get("judgment", {})
+    if judgment.get("decision") == "pause":
+        print("HUMAN_JUDGMENT_REQUIRED: Agent dispatch paused before execution.")
+        print(json.dumps(judgment, ensure_ascii=False, indent=2, sort_keys=True))
+        return 4
+
     if not route_info["matched"]:
         print(f"AGENT_SWITCH: {route_info['agent']} / model: {route_info['model']}")
         print("No specialist route matched. Handle in secretary agent.")
@@ -639,6 +736,7 @@ def main() -> int:
     home = discover_home()
     path = registry_path(home)
     registry = load_registry(path)
+    judgment_policy = load_judgment_policy(home)
     args = parse_args(registry)
 
     if args.list:
@@ -654,6 +752,7 @@ def main() -> int:
         return 2
 
     route_info = route(prompt, args.agent, registry, args.workflow)
+    route_info["judgment"] = evaluate_judgment(prompt, route_info, judgment_policy)
     append_route_log(home, prompt, args.agent, route_info)
 
     if args.route_json:

@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "task_id": "human-judgment-gate-production",
+  "description": "Verify that high-risk or ambiguous Agent work opens a human judgment case and cannot continue, resume, or complete until a qualified human decision closes it.",
+  "roles": [
+    "secretary",
+    "project_manager",
+    "professional_reviewer"
+  ],
+  "workflow": "human_judgment_gate",
+  "gates": [
+    {
+      "id": "judgment_policy_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/judgment.policy.json"
+    },
+    {
+      "id": "gui_contract_documents_judgment",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/gui-contract.md",
+      "patterns": [
+        "Human judgment gates",
+        "waiting_human_judgment",
+        "judgment-decision"
+      ]
+    },
+    {
+      "id": "judgment_gate_blocks_and_resumes",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 120,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; cp -a scripts \"$tmp/scripts\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; export HERMES_HOME=\"$tmp\"; office=\"$tmp/agent-system/bin/office-system\"; router=\"$tmp/scripts/agent-router\"; task='请律师团队输出一份正式合同法律意见，并发送给客户。'; \"$office\" judgment-evaluate --task \"$task\" --stage plan --action final_delivery > \"$tmp/eval.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"evaluation\"][\"decision\"] == \"pause\"; assert \"final_delivery\" in data[\"evaluation\"][\"blocked_actions\"]' \"$tmp/eval.json\"; \"$router\" --route-json \"$task\" > \"$tmp/route.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"judgment\"][\"decision\"] == \"pause\"' \"$tmp/route.json\"; \"$office\" workflow-start --tenant t1 --deployment d1 --user u1 --role project_manager --task \"$task\" --run-id jrun --task-id jtask > \"$tmp/workflow.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"status\"] == \"waiting_human_judgment\"; assert data[\"task_status\"] == \"waiting_human_judgment\"; assert data[\"judgment_case\"][\"status\"] == \"pending\"; print(data[\"judgment_case\"][\"case_id\"])' \"$tmp/workflow.json\" > \"$tmp/case_id\"; case_id=$(cat \"$tmp/case_id\"); set +e; \"$office\" workflow-resume --run-id jrun --requested-by u1 --role project_manager > \"$tmp/resume_blocked.json\" 2>&1; code=$?; set -e; test \"$code\" -ne 0; set +e; \"$office\" task-update --task-id jtask --status completed --updated-by u1 --role project_manager > \"$tmp/task_completion_blocked.json\" 2>&1; code=$?; set -e; test \"$code\" -ne 0; set +e; \"$office\" loop-stage --run-id jrun --stage perceive --status started > \"$tmp/stage_blocked.json\" 2>&1; code=$?; set -e; test \"$code\" -ne 0; \"$office\" judgment-decision --case-id \"$case_id\" --decision approve --decided-by reviewer1 --role professional_reviewer --confirmed --message 'Reviewed legal-risk boundary; continue as draft only.' > \"$tmp/decision.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"judgment\"][\"status\"] == \"approved\"' \"$tmp/decision.json\"; \"$office\" judgment-resume --run-id jrun --requested-by u1 --role project_manager > \"$tmp/resumed.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"status\"] in {\"created\", \"perceiving\"}' \"$tmp/resumed.json\"; \"$office\" task-status --task-id jtask > \"$tmp/task.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"status\"] == \"queued\"' \"$tmp/task.json\""
+      ]
+    }
+  ]
+}

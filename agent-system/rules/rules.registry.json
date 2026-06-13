@@ -42,12 +42,18 @@
   "conflict_policy": {
     "default": "higher_priority_wins_with_visible_conflict_report",
     "project_exception_requires_user_confirmation": true,
-    "agent_may_not_override_system_or_company_security_rules": true
+    "agent_may_not_override_system_or_company_security_rules": true,
+    "rule_proposals_include_governance_report": true,
+    "conflicting_rule_approval_requires_override_flag": true
   },
   "gui_contract": {
     "create_global_rule": "office-system rule add --scope global --title <title> --body <body>",
     "create_agent_rule": "office-system rule add --scope agent --agent <agent> --title <title> --body <body>",
     "create_project_rule": "office-system rule add --scope project --project <project_id> --title <title> --body <body>",
+    "elicit_rule_gaps": "office-system rule-elicit --project <project_id> --agent <agent_id> --context <context>",
+    "suggest_rule_from_conversation": "office-system rule-suggest --title <title> --body <user_stated_rule>",
+    "approve_rule_proposal": "office-system rule-proposal-decision --proposal-id <proposal_id> --decision approve --confirmed",
+    "approve_conflicting_rule_proposal": "office-system rule-proposal-decision --proposal-id <proposal_id> --decision approve --confirmed --override-conflicts",
     "render_context": "office-system context --project <project_id> --agent <agent>"
   }
 }

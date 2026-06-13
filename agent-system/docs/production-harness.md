@@ -52,15 +52,42 @@ These sources are not installed directly into production. They are candidate sou
 
 ## Harness Model
 
-The production harness uses five layers:
+The production harness uses eight layers:
 
 1. `agent-system/harness/production-gates.json`: portable gate definitions for product, design, implementation, and workflows.
 2. `skills/vibe-design-production-harness`: design-role operating contract and gates.
 3. `skills/vibe-coding-production-harness`: implementation-role operating contract and gates.
 4. `agent-system/ai-native-loop.manifest.json`: Perceive, Plan, Execute, Reflect, Iterate loop contract.
-5. `agent-system/bin/harness-check` and `agent-system/bin/harness-runner`: deterministic local checks that validate registry wiring, loop policy, route stability, and CLI behavior.
+5. `agent-system/coordination.policy.json`: topology selection for single-Agent, secretary-led, sequential specialist, parallel DAG, and human-gated workflows.
+6. `agent-system/runs/<run_id>/ledger.jsonl`: hash-chained execution trace for replay, audit, and drift diagnosis.
+7. `agent-system/evals/*.json`: deterministic eval suites for judgment gates, coordination policy, multilingual regressions, and rule-scope inference.
+8. `agent-system/bin/harness-check` and `agent-system/bin/harness-runner`: deterministic local checks that validate registry wiring, loop policy, route stability, replayability, and CLI behavior.
 
-The required task set includes `workflow-control-plane-production`, which verifies the GUI-facing workflow run, task inbox, approval center, authorization decision, audit event, notification, and secretary clarification loop.
+The required task set includes `workflow-control-plane-production`, which verifies the GUI-facing workflow run, task inbox, approval center, authorization decision, audit event, notification, and secretary clarification loop. It also includes `runtime-replay-production` and `multilingual-agent-eval-production`, which verify checkpointed replay, typed handoff envelopes, coordination policy decisions, and multilingual judgment regressions.
+
+## Runtime Replay Contract
+
+Production work must not depend on an Agent's private conversational memory. A run is production-replayable only when these records exist:
+
+- `run.json`: durable workflow state, current stage, linked tasks, blockers, judgments, checkpoints, and handoffs.
+- `ledger.jsonl`: append-only, hash-chained runtime events with input/output hashes, artifact refs, model/provider metadata when available, and links to checkpoint or handoff ids.
+- `checkpoints/<checkpoint_id>.json`: resumable state snapshots with `state_hash`, `resume_cursor`, artifacts, and optional human judgment case.
+- `handoffs/<handoff_id>.json`: typed cross-Agent envelopes with source/target Agent, schema hash, context hash, artifacts, and acceptance criteria.
+- eval report: deterministic release-critical checks from `office-system eval-run`.
+
+If any of these are missing for a production claim, the run is still a draft or debug run, not a completed production workflow.
+
+## Coordination Contract
+
+The secretary must choose a coordination mode from `coordination.policy.json` instead of deciding implicitly from prompt style or the number of available Agents. The default modes are:
+
+- `single_agent`: one specialist can own the task end to end.
+- `secretary_centralized`: routing or scope is ambiguous.
+- `sequential_specialist_chain`: ordered specialist handoffs are required.
+- `parallel_expert_dag`: independent workstreams can run in parallel and merge later.
+- `human_gated`: risk is high, regulated, externally visible, or irreversible.
+
+Every cross-Agent handoff needs `handoff-create`; every pause/resume boundary needs `checkpoint-create`; every production release needs the multilingual eval suite to pass.
 
 ## Production Loop Contract
 

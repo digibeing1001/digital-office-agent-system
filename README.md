@@ -1,5 +1,44 @@
 # 数字办公室 Agent System
 
+## GUI Readiness Update
+
+The backend now exposes a GUI-ready control contract through `gui-state`,
+`settings-update`, workflow control commands, approval records, human judgment
+gates, and collaborative rule-intake proposals. The default secretary persona
+changed to a neutral baseline so the first GUI can guide users through
+configuration without requiring them to understand Hermes internals.
+
+## Human Judgment Gates And Rule Intake
+
+Production workflows can pause themselves before risky or ambiguous work. The
+runtime creates a human judgment case, blocks dispatch/resume/completion, and
+waits for a qualified human decision before continuing. During collaboration,
+Agents can use `rule-elicit` to ask focused questions about missing operating
+rules and `rule-suggest` to turn user-stated preferences into pending global,
+project, or Agent-scoped rule proposals.
+
+## Runtime Replay, Checkpoints, And Agent Handoffs
+
+Production runs now write a hash-chained runtime ledger under
+`agent-system/runs/<run_id>/ledger.jsonl`. Long-running work can create
+checkpoint records with `checkpoint-create`, and every cross-Agent handoff can
+be represented as a typed handoff envelope with a contract hash. Coordination
+mode is selected through `coordination.policy.json` so a deployment can choose
+single-Agent, secretary-led, sequential specialist, parallel DAG, or human-gated
+execution without hard-coding today's Agent names.
+
+The deterministic eval harness lives under `agent-system/evals/`. The baseline
+suite verifies multilingual judgment pauses, coordination mode selection, and
+rule-scope inference before a production release can be claimed.
+
+## Web UI And PWA
+
+The Web shell exposes read-only GUI APIs through `web-config`, `web-serve`,
+`/api/health`, `/api/gui-state`, and `/api/web-app`. It ships with
+`manifest.webmanifest` and `service-worker.js` so a deployment can be installed
+as a PWA. Install as PWA requires HTTPS in normal browsers, with localhost
+allowed for local development.
+
 > 把 AI Agent 变成你的数字员工团队 — 秘书、产品经理、研究员、规划师、设计师、工程师、写手，各司其职，协同交付。
 
 数字办公室是一套**可分发的多 Agent 办公运行层**。部署到 [Hermes](https://hermes-agent.nousresearch.com)、OpenClaw 或其他兼容 Agent 宿主后，它将宿主默认 Agent 注入为"数字办公室秘书"，由秘书统一完成需求收口、角色路由、工作流编排、知识边界、质量门禁和交付说明。

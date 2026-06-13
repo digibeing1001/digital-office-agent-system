@@ -83,6 +83,19 @@ def write_json_locked(path: Path, data: dict[str, Any]) -> None:
                 tmp.unlink()
 
 
+def write_json_unlocked(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
 TEXT_EXTS = {".md", ".txt", ".json", ".csv"}
 DOCX_EXTS = {".docx"}
 PDF_EXTS = {".pdf"}
@@ -118,6 +131,7 @@ TASK_STATUSES = {
     "queued",
     "running",
     "waiting_approval",
+    "waiting_human_judgment",
     "blocked",
     "completed",
     "failed",
@@ -163,6 +177,29 @@ APPROVAL_DECISION_TO_STATUS = {
     "reject": "rejected",
     "cancel": "cancelled",
 }
+JUDGMENT_STATUSES = {"pending", "approved", "rejected", "needs_evidence", "cancelled", "expired"}
+JUDGMENT_BLOCKING_STATUSES = {"pending", "needs_evidence"}
+JUDGMENT_DECISION_TO_STATUS = {
+    "approve": "approved",
+    "reject": "rejected",
+    "request_evidence": "needs_evidence",
+    "revise_scope": "pending",
+    "cancel": "cancelled",
+}
+PASSING_GATE_STATUSES = {"passed", "success", "completed", "approved"}
+RULE_PROPOSAL_STATUSES = {"pending_user_confirmation", "approved", "needs_tuning", "rejected", "applied"}
+RULE_PROPOSAL_DECISION_TO_STATUS = {
+    "approve": "approved",
+    "tune": "needs_tuning",
+    "reject": "rejected",
+}
+COORDINATION_MODES = {
+    "single_agent",
+    "secretary_centralized",
+    "sequential_specialist_chain",
+    "parallel_expert_dag",
+    "human_gated",
+}
 TENANT_ADMIN_ROLES = {"owner", "enterprise_admin"}
 ROLE_ACTIONS = {
     "owner": {"*"},
@@ -172,6 +209,7 @@ ROLE_ACTIONS = {
         "audit.read",
         "notification.read",
         "project.manage",
+        "rule.manage",
         "knowledge.manage",
         "knowledge.read",
         "release.approve",
@@ -194,6 +232,7 @@ ROLE_ACTIONS = {
         "knowledge.manage",
         "knowledge.read",
         "notification.read",
+        "rule.manage",
         "task.manage",
         "task.read",
         "workflow.cancel",
@@ -266,6 +305,16 @@ def system_root() -> Path:
 
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def canonical_hash(value: Any) -> str:
+    if isinstance(value, bytes):
+        payload = value
+    elif isinstance(value, str):
+        payload = value.encode("utf-8")
+    else:
+        payload = json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def slugify(value: str) -> str:
@@ -638,6 +687,54 @@ def task_path(root: Path, task_id: str) -> Path:
 
 def approval_path(root: Path, approval_id: str) -> Path:
     return root / "approvals" / f"{safe_component(approval_id, 'approval id')}.json"
+
+
+def judgment_path(root: Path, case_id: str) -> Path:
+    return root / "judgments" / f"{safe_component(case_id, 'judgment case id')}.json"
+
+
+def rule_proposal_path(root: Path, proposal_id: str) -> Path:
+    return root / "rule-proposals" / f"{safe_component(proposal_id, 'rule proposal id')}.json"
+
+
+def run_dir(root: Path, run_id: str) -> Path:
+    return root / "runs" / safe_component(run_id, "run id")
+
+
+def run_ledger_path(root: Path, run_id: str) -> Path:
+    return run_dir(root, run_id) / "ledger.jsonl"
+
+
+def checkpoint_dir(root: Path, run_id: str) -> Path:
+    return run_dir(root, run_id) / "checkpoints"
+
+
+def checkpoint_path(root: Path, run_id: str, checkpoint_id: str) -> Path:
+    return checkpoint_dir(root, run_id) / f"{safe_component(checkpoint_id, 'checkpoint id')}.json"
+
+
+def handoff_dir(root: Path, run_id: str) -> Path:
+    return run_dir(root, run_id) / "handoffs"
+
+
+def handoff_path(root: Path, run_id: str, handoff_id: str) -> Path:
+    return handoff_dir(root, run_id) / f"{safe_component(handoff_id, 'handoff id')}.json"
+
+
+def load_judgment_case(root: Path, case_id: str) -> dict[str, Any]:
+    path = judgment_path(root, case_id)
+    if not path.exists():
+        print(f"office-system: judgment case not found: {case_id}", file=sys.stderr)
+        raise SystemExit(2)
+    return read_json(path)
+
+
+def load_rule_proposal(root: Path, proposal_id: str) -> dict[str, Any]:
+    path = rule_proposal_path(root, proposal_id)
+    if not path.exists():
+        print(f"office-system: rule proposal not found: {proposal_id}", file=sys.stderr)
+        raise SystemExit(2)
+    return read_json(path)
 
 
 def load_task(root: Path, task_id: str) -> dict[str, Any]:
@@ -1029,32 +1126,439 @@ def add_text_entry(args: argparse.Namespace) -> int:
     return 0
 
 
+def write_rule_to_store(root: Path, *, scope: str, title: str, body: str, project: str = "", agent: str = "") -> Path:
+    filename = f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{slugify(title)}.md"
+    if scope == "global":
+        target = root / "rules" / "global" / filename
+    elif scope == "agent":
+        if not agent:
+            print("office-system: --agent is required for agent rule", file=sys.stderr)
+            raise SystemExit(2)
+        agent = registered_agent(root, agent)
+        target = root / "rules" / "agents" / f"{agent}.md"
+        section = f"\n\n## {title}\n\n{body.rstrip()}\n"
+        if target.exists():
+            target.write_text(target.read_text(encoding="utf-8") + section, encoding="utf-8")
+            return target
+        write_text(target, f"# Agent Rules: {agent}\n{section}")
+        return target
+    else:
+        if not project:
+            print("office-system: --project is required for project rule", file=sys.stderr)
+            raise SystemExit(2)
+        target = ensure_project(root, project) / "rules" / filename
+    text = f"# {title}\n\n{body.rstrip()}\n"
+    write_text(target, text)
+    return target
+
+
 def add_rule(args: argparse.Namespace) -> int:
     root = system_root()
     body = args.body if args.body is not None else sys.stdin.read()
-    filename = f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{slugify(args.title)}.md"
-    if args.scope == "global":
-        target = root / "rules" / "global" / filename
-    elif args.scope == "agent":
-        if not args.agent:
-            print("office-system: --agent is required for agent rule", file=sys.stderr)
-            return 2
-        agent = registered_agent(root, args.agent)
-        target = root / "rules" / "agents" / f"{agent}.md"
-        body = f"\n\n## {args.title}\n\n{body.rstrip()}\n"
-        if target.exists():
-            target.write_text(target.read_text(encoding="utf-8") + body, encoding="utf-8")
-            print(str(target))
-            return 0
-    else:
-        if not args.project:
-            print("office-system: --project is required for project rule", file=sys.stderr)
-            return 2
-        target = ensure_project(root, args.project) / "rules" / filename
-    text = f"# {args.title}\n\n{body.rstrip()}\n"
-    write_text(target, text)
+    target = write_rule_to_store(root, scope=args.scope, title=args.title, body=body, project=args.project or "", agent=args.agent or "")
     append_log(root, {"event": "rule_add", "scope": args.scope, "target": str(target.relative_to(root))})
     print(str(target))
+    return 0
+
+
+def collect_rule_text(root: Path, project: str = "", agent: str = "") -> str:
+    parts: list[str] = []
+    for path in sorted((root / "rules" / "global").glob("*.md")):
+        parts.append(path.read_text(encoding="utf-8", errors="replace"))
+    if project:
+        for path in sorted((project_path(root, project) / "rules").glob("*.md")):
+            parts.append(path.read_text(encoding="utf-8", errors="replace"))
+    if agent:
+        path = root / "rules" / "agents" / f"{safe_component(agent, 'agent id')}.md"
+        if path.exists():
+            parts.append(path.read_text(encoding="utf-8", errors="replace"))
+    return "\n\n".join(parts).lower()
+
+
+def rule_target_files(root: Path, scope: str, project: str = "", agent: str = "") -> list[Path]:
+    if scope == "global":
+        return sorted((root / "rules" / "global").glob("*.md"))
+    if scope == "project" and project:
+        return sorted((project_path(root, project) / "rules").glob("*.md"))
+    if scope == "agent" and agent:
+        path = root / "rules" / "agents" / f"{safe_component(agent, 'agent id')}.md"
+        return [path] if path.exists() else []
+    return []
+
+
+def rule_conflict_domains(text: str) -> list[str]:
+    text = text.lower()
+    domains = {
+        "external_delivery": ["customer", "external", "publish", "send", "客户", "外部", "发布", "发送"],
+        "data_boundary": ["data", "privacy", "export", "secret", "数据", "隐私", "导出", "机密"],
+        "evidence_standard": ["evidence", "citation", "source", "proof", "证据", "引用", "来源"],
+        "memory_promotion": ["memory", "knowledge", "global rule", "记忆", "知识", "全局规则"],
+        "regulated_work": ["legal", "medical", "tax", "investment", "法律", "医疗", "税务", "投资"],
+        "agent_style": ["style", "tone", "voice", "风格", "语气"],
+    }
+    return [name for name, terms in domains.items() if any(term in text for term in terms)]
+
+
+def has_negative_modal(text: str) -> bool:
+    text = text.lower()
+    return any(term in text for term in ["must not", "never", "forbid", "forbidden", "do not", "禁止", "不得", "不能", "不要"])
+
+
+def has_positive_modal(text: str) -> bool:
+    text = text.lower()
+    return any(term in text for term in ["must", "always", "require", "required", "should", "必须", "总是", "需要", "应该"])
+
+
+def rule_governance_report(
+    root: Path,
+    *,
+    title: str,
+    body: str,
+    scope: str,
+    project: str = "",
+    agent: str = "",
+    source: str = "",
+    created_by: str = "",
+    scope_confidence: str = "",
+) -> dict[str, Any]:
+    text = f"{title}\n{body}".strip()
+    normalized = text.lower()
+    new_domains = set(rule_conflict_domains(text))
+    conflicts: list[dict[str, Any]] = []
+    duplicates: list[dict[str, Any]] = []
+    for path in rule_target_files(root, scope, project, agent):
+        existing = path.read_text(encoding="utf-8", errors="replace")
+        existing_lower = existing.lower()
+        rel = str(path.relative_to(root))
+        if slugify(title) in path.stem or title.lower() in existing_lower:
+            duplicates.append({"path": rel, "reason": "same or very similar rule title already exists"})
+        existing_domains = set(rule_conflict_domains(existing))
+        shared_domains = sorted(new_domains & existing_domains)
+        if shared_domains and has_negative_modal(normalized) != has_negative_modal(existing_lower) and (has_positive_modal(normalized) or has_positive_modal(existing_lower)):
+            conflicts.append({"path": rel, "reason": "opposite modal language in same rule domain", "domains": shared_domains})
+    requirements = ["human_confirmation", "scope_confirmation", "provenance_recorded"]
+    if scope_confidence in {"", "low"}:
+        requirements.append("explicit_scope_confirmation")
+    if conflicts:
+        requirements.append("conflict_override_with_reason")
+    return {
+        "version": "1.0.0",
+        "kind": "digital-office-rule-governance-report",
+        "status": "blocked_by_conflict" if conflicts else "ready_for_confirmation",
+        "scope": scope,
+        "scope_confidence": scope_confidence,
+        "project_id": project,
+        "agent_id": agent,
+        "body_hash": canonical_hash(body),
+        "title_hash": canonical_hash(title),
+        "domains": sorted(new_domains),
+        "duplicates": duplicates,
+        "conflicts": conflicts,
+        "promotion_requirements": requirements,
+        "provenance": {
+            "source": safe_claim(source, "rule source", required=False),
+            "created_by": safe_claim(created_by, "created by", required=False),
+            "captured_at": now_iso(),
+        },
+    }
+
+
+def rule_elicitation_topics() -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "human_judgment",
+            "keywords": ["approval", "human", "judgment", "confirm", "批准", "人工", "确认"],
+            "prompt": "Ask which actions should stop for human judgment before an Agent continues.",
+        },
+        {
+            "id": "evidence_standard",
+            "keywords": ["evidence", "citation", "source", "proof", "证据", "引用", "来源"],
+            "prompt": "Ask what evidence, citations, or source quality are required before delivery.",
+        },
+        {
+            "id": "role_boundary",
+            "keywords": ["role", "handoff", "owner", "agent boundary", "角色", "交接", "边界"],
+            "prompt": "Ask which Agent owns the decision and where handoff to another Agent is required.",
+        },
+        {
+            "id": "quality_bar",
+            "keywords": ["quality", "acceptance", "test", "review", "质量", "验收", "测试"],
+            "prompt": "Ask how the user judges this work as production-ready rather than merely drafted.",
+        },
+        {
+            "id": "data_boundary",
+            "keywords": ["data", "privacy", "secret", "export", "数据", "隐私", "机密", "导出"],
+            "prompt": "Ask what data can be used, shared, stored, exported, or promoted to knowledge.",
+        },
+        {
+            "id": "agent_specific_style",
+            "keywords": ["style", "tone", "designer", "writer", "lawyer", "coder", "风格", "语气", "设计", "写作", "律师", "工程"],
+            "prompt": "Ask whether the preference belongs to one specialist Agent instead of every Agent.",
+        },
+    ]
+
+
+def rule_elicit(args: argparse.Namespace) -> int:
+    root = system_root()
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    existing = collect_rule_text(root, project, agent)
+    context = (args.context or "").lower()
+    prompts = []
+    for topic in rule_elicitation_topics():
+        covered = any(str(keyword).lower() in existing for keyword in topic["keywords"])
+        relevant = not context or any(str(keyword).lower() in context for keyword in topic["keywords"])
+        if not covered and relevant:
+            prompts.append(
+                {
+                    "topic": topic["id"],
+                    "prompt": topic["prompt"],
+                    "capture_hint": "If the user gives a durable preference or constraint, call rule-suggest instead of silently remembering it.",
+                }
+            )
+        if len(prompts) >= args.limit:
+            break
+    if not prompts:
+        prompts.append(
+            {
+                "topic": "open_rule_gap",
+                "prompt": "Ask whether this collaboration revealed any durable rule about approval, evidence, role boundaries, quality, or data handling.",
+                "capture_hint": "Create a rule proposal only after the user states the rule in their own words.",
+            }
+        )
+    payload = {
+        "version": "1.0.0",
+        "kind": "digital-office-rule-elicitation",
+        "project_id": project,
+        "agent_id": agent,
+        "conversation_prompts": prompts,
+        "next_action": "rule-suggest --title <title> --body <user-stated-rule>",
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def infer_rule_scope(root: Path, *, title: str, body: str, project: str = "", agent: str = "") -> dict[str, Any]:
+    text = f"{title}\n{body}".lower()
+    registry = read_json(root / "agents.registry.json")
+    agents = registry.get("agents", {})
+    aliases = registry.get("aliases", {})
+    global_terms = [
+        "all agents",
+        "every agent",
+        "company",
+        "global",
+        "security",
+        "approval",
+        "data sharing",
+        "memory",
+        "knowledge promotion",
+        "所有agent",
+        "全部agent",
+        "全局",
+        "公司",
+        "安全",
+        "审批",
+        "记忆",
+        "知识沉淀",
+    ]
+    project_terms = ["this project", "client", "project", "delivery", "这个项目", "客户", "本项目", "交付"]
+    agent_terms = ["only this agent", "writer", "designer", "lawyer", "coder", "researcher", "只针对", "写作", "设计", "律师", "工程", "研究"]
+    matched_agent = agent
+    if not matched_agent:
+        for name in sorted(agents.keys(), key=len, reverse=True):
+            if name.lower() in text:
+                matched_agent = name
+                break
+    if not matched_agent:
+        for alias, name in aliases.items():
+            if str(alias).lower() in text:
+                matched_agent = str(name)
+                break
+    if matched_agent:
+        return {
+            "scope": "agent",
+            "confidence": "high" if agent else "medium",
+            "agent_id": registered_agent(root, matched_agent),
+            "project_id": project,
+            "reasons": ["agent was explicitly supplied or mentioned"],
+            "scope_options": ["agent", "project", "global"],
+        }
+    if any(term in text for term in global_terms):
+        return {
+            "scope": "global",
+            "confidence": "medium",
+            "agent_id": "",
+            "project_id": "",
+            "reasons": ["rule affects all Agents, safety, approvals, memory, or company knowledge"],
+            "scope_options": ["global", "project", "agent"],
+        }
+    if project and any(term in text for term in project_terms):
+        return {
+            "scope": "project",
+            "confidence": "medium",
+            "agent_id": "",
+            "project_id": project,
+            "reasons": ["rule appears tied to this project, client, or delivery context"],
+            "scope_options": ["project", "agent", "global"],
+        }
+    if any(term in text for term in agent_terms):
+        return {
+            "scope": "agent",
+            "confidence": "low",
+            "agent_id": "",
+            "project_id": project,
+            "reasons": ["rule sounds role-specific but no concrete Agent was identified"],
+            "scope_options": ["agent", "project", "global"],
+        }
+    return {
+        "scope": "project" if project else "global",
+        "confidence": "low",
+        "agent_id": "",
+        "project_id": project,
+        "reasons": ["scope is not explicit; human confirmation is required"],
+        "scope_options": ["project", "global", "agent"] if project else ["global", "agent"],
+    }
+
+
+def rule_suggest(args: argparse.Namespace) -> int:
+    root = system_root()
+    body = args.body if args.body is not None else sys.stdin.read()
+    if not body.strip():
+        print("office-system: rule-suggest requires --body or stdin", file=sys.stderr)
+        return 2
+    project = safe_component(args.project, "project id") if args.project else ""
+    agent = registered_agent(root, args.agent) if args.agent else ""
+    scope = infer_rule_scope(root, title=args.title, body=body, project=project, agent=agent)
+    proposal_id = safe_component(args.proposal_id, "rule proposal id") if args.proposal_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}-{slugify(args.title)}"
+    if rule_proposal_path(root, proposal_id).exists():
+        print(f"office-system: rule proposal already exists: {proposal_id}", file=sys.stderr)
+        return 2
+    governance = rule_governance_report(
+        root,
+        title=args.title,
+        body=body.strip(),
+        scope=scope["scope"],
+        project=scope.get("project_id", ""),
+        agent=scope.get("agent_id", ""),
+        source=args.source or "",
+        created_by=args.created_by or "",
+        scope_confidence=scope["confidence"],
+    )
+    proposal = {
+        "version": "1.0.0",
+        "kind": "digital-office-rule-proposal",
+        "proposal_id": proposal_id,
+        "status": "pending_user_confirmation",
+        "title": safe_claim(args.title, "rule title"),
+        "body": body.strip(),
+        "proposed_scope": scope["scope"],
+        "scope_confidence": scope["confidence"],
+        "scope_reasons": scope["reasons"],
+        "scope_options": scope["scope_options"],
+        "project_id": scope.get("project_id", ""),
+        "agent_id": scope.get("agent_id", ""),
+        "source": safe_claim(args.source, "rule source", required=False),
+        "created_by": safe_claim(args.created_by, "created by", required=False),
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "requires_user_confirmation": True,
+        "governance": governance,
+        "applied_rule_path": "",
+        "decisions": [],
+    }
+    write_json(rule_proposal_path(root, proposal_id), proposal)
+    append_audit_event(root, "rule_proposal_created", actor_id=args.created_by or "", actor_role=args.role or "", project_id=project, agent_id=proposal.get("agent_id", ""), resource_type="rule_proposal", resource_id=proposal_id, outcome="pending_user_confirmation", reason=args.source or "")
+    print(json.dumps(proposal, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def rule_proposal_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    records = []
+    for proposal in read_records(root / "rule-proposals", "digital-office-rule-proposal"):
+        if args.status and proposal.get("status") != args.status:
+            continue
+        if args.scope and proposal.get("proposed_scope") != args.scope:
+            continue
+        if args.project and proposal.get("project_id") != args.project:
+            continue
+        if args.agent and proposal.get("agent_id") != args.agent:
+            continue
+        records.append(proposal)
+        if len(records) >= args.limit:
+            break
+    print(json.dumps({"rule_proposals": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def rule_proposal_decision(args: argparse.Namespace) -> int:
+    root = system_root()
+    if args.decision == "approve" and not args.confirmed:
+        print("office-system: approving a rule proposal requires --confirmed", file=sys.stderr)
+        return 2
+    proposal = load_rule_proposal(root, args.proposal_id)
+    if proposal.get("status") not in {"pending_user_confirmation", "needs_tuning", "approved"}:
+        print("office-system: rule proposal is not open", file=sys.stderr)
+        return 2
+    scope = args.scope or str(proposal.get("proposed_scope", "global"))
+    if scope not in {"global", "project", "agent"}:
+        print(f"office-system: invalid rule scope: {scope}", file=sys.stderr)
+        return 2
+    project = safe_component(args.project, "project id") if args.project else str(proposal.get("project_id", ""))
+    agent = registered_agent(root, args.agent) if args.agent else str(proposal.get("agent_id", ""))
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=args.tenant,
+        deployment_id=args.deployment,
+        user_id=args.decided_by,
+        user_role=args.role,
+        action="rule.manage",
+        resource_type="rule_proposal",
+        resource_id=args.proposal_id,
+        project_id=project if scope == "project" else "",
+        agent_id=agent if scope == "agent" else "",
+        reason=args.message or "",
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    status = RULE_PROPOSAL_DECISION_TO_STATUS[args.decision]
+    proposal["status"] = status
+    proposal["updated_at"] = now_iso()
+    proposal.setdefault("decisions", []).append({"time": proposal["updated_at"], "decision": args.decision, "decided_by": args.decided_by, "role": args.role, "message": args.message or "", "scope": scope, "project_id": project, "agent_id": agent})
+    applied_path = ""
+    if args.decision == "approve":
+        governance = rule_governance_report(
+            root,
+            title=args.title or proposal["title"],
+            body=args.body or proposal["body"],
+            scope=scope,
+            project=project,
+            agent=agent,
+            source=str(proposal.get("source", "")),
+            created_by=str(proposal.get("created_by", "")),
+            scope_confidence=str(proposal.get("scope_confidence", "")),
+        )
+        proposal["governance"] = governance
+        if governance.get("conflicts") and not args.override_conflicts:
+            proposal["status"] = "pending_user_confirmation"
+            proposal.setdefault("blockers", [])
+            if "rule_conflict_requires_override" not in proposal["blockers"]:
+                proposal["blockers"].append("rule_conflict_requires_override")
+            write_json(rule_proposal_path(root, args.proposal_id), proposal)
+            print(json.dumps({"status": "blocked", "reason": "rule_conflict_requires_override", "governance": governance, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+            return 2
+        target = write_rule_to_store(root, scope=scope, title=args.title or proposal["title"], body=args.body or proposal["body"], project=project, agent=agent)
+        applied_path = str(target.relative_to(root))
+        proposal["status"] = "applied"
+        proposal["applied_rule_path"] = applied_path
+        proposal["applied_scope"] = scope
+        proposal["applied_project_id"] = project
+        proposal["applied_agent_id"] = agent
+    write_json(rule_proposal_path(root, args.proposal_id), proposal)
+    append_audit_event(root, "rule_proposal_decision", actor_id=args.decided_by, actor_role=args.role, tenant_id=args.tenant, deployment_id=args.deployment, project_id=project, agent_id=agent, resource_type="rule_proposal", resource_id=args.proposal_id, outcome=proposal["status"], reason=args.message or "", extra={"applied_rule_path": applied_path, "scope": scope})
+    print(json.dumps({"rule_proposal": proposal, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -1364,7 +1868,7 @@ def create_project(args: argparse.Namespace) -> int:
 
 
 def run_record_path(root: Path, run_id: str) -> Path:
-    return root / "runs" / safe_component(run_id, "run id") / "run.json"
+    return run_dir(root, run_id) / "run.json"
 
 
 def load_run_record(root: Path, run_id: str) -> dict[str, Any]:
@@ -1384,6 +1888,66 @@ def read_run_records(root: Path) -> list[dict[str, Any]]:
             continue
     records.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
     return records
+
+
+def append_run_ledger_event(
+    root: Path,
+    run_id: str,
+    event_type: str,
+    *,
+    stage: str = "",
+    action: str = "",
+    agent_id: str = "",
+    actor_id: str = "",
+    actor_role: str = "",
+    input_payload: Any | None = None,
+    output_payload: Any | None = None,
+    artifact_refs: list[str] | None = None,
+    checkpoint_id: str = "",
+    handoff_id: str = "",
+    model: str = "",
+    provider: str = "",
+    parameters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    run_id = safe_component(run_id, "run id")
+    path = run_ledger_path(root, run_id)
+    previous = read_last_jsonl(path)
+    input_hash = canonical_hash(input_payload) if input_payload is not None else ""
+    output_hash = canonical_hash(output_payload) if output_payload is not None else ""
+    event = {
+        "version": "1.0.0",
+        "kind": "digital-office-run-ledger-event",
+        "event_id": f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+        "time": now_iso(),
+        "run_id": run_id,
+        "stage": safe_component(stage, "loop stage") if stage else "",
+        "event": safe_component(event_type, "ledger event"),
+        "action": safe_claim(action, "ledger action", required=False),
+        "agent_id": registered_agent(root, agent_id) if agent_id else "",
+        "actor": {
+            "user_id": safe_claim(actor_id, "ledger actor", required=False),
+            "role": safe_component(actor_role, "ledger actor role") if actor_role else "",
+        },
+        "model": safe_claim(model, "ledger model", required=False),
+        "provider": safe_claim(provider, "ledger provider", required=False),
+        "parameters_hash": canonical_hash(parameters or {}),
+        "input_hash": input_hash,
+        "output_hash": output_hash,
+        "input": input_payload if input_payload is not None else {},
+        "output": output_payload if output_payload is not None else {},
+        "artifact_refs": [safe_claim(item, "artifact ref") for item in (artifact_refs or [])],
+        "checkpoint_id": safe_component(checkpoint_id, "checkpoint id") if checkpoint_id else "",
+        "handoff_id": safe_component(handoff_id, "handoff id") if handoff_id else "",
+        "previous_event_hash": (previous or {}).get("event_hash", ""),
+    }
+    event["event_hash"] = canonical_hash({key: value for key, value in event.items() if key != "event_hash"})
+    append_jsonl(path, event)
+    append_log(root, {"event": "run_ledger_event", "run_id": run_id, "ledger_event": event_type, "event_id": event["event_id"]})
+    return event
+
+
+def list_run_ledger(root: Path, run_id: str, limit: int | None = None) -> list[dict[str, Any]]:
+    return read_jsonl(run_ledger_path(root, run_id), limit=limit)
 
 
 def find_run_by_idempotency(root: Path, key: str | None) -> dict[str, Any] | None:
@@ -1432,6 +1996,354 @@ def route_task(root: Path, task: str, requested_agent: str, workflow: str | None
     except json.JSONDecodeError:
         print("office-system: router returned invalid JSON", file=sys.stderr)
         raise SystemExit(1)
+
+
+def judgment_policy(root: Path) -> dict[str, Any]:
+    path = root / "judgment.policy.json"
+    if path.exists():
+        return read_json(path)
+    return {
+        "version": "0.0.0",
+        "kind": "digital-office-judgment-policy",
+        "thresholds": {
+            "pause_risk_score": 0.65,
+            "route_low_confidence_values": ["low", "ambiguous"],
+            "agent_pause_decisions": ["pause", "escalate", "abort"],
+        },
+        "default_options": [
+            {"id": "approve_with_scope", "label": "Approve with explicit scope"},
+            {"id": "request_more_evidence", "label": "Request more evidence"},
+            {"id": "reject_or_stop", "label": "Reject or stop this action"},
+        ],
+        "hard_block_actions": [],
+        "categories": [],
+    }
+
+
+def parse_json_value(value: str | None, path: str | None, label: str, *, required: bool = False) -> dict[str, Any]:
+    if path:
+        data = read_json(Path(path).expanduser())
+    elif value:
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError as exc:
+            print(f"office-system: invalid {label} JSON: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+    elif required:
+        text = sys.stdin.read().strip()
+        if not text:
+            print(f"office-system: {label} JSON is required", file=sys.stderr)
+            raise SystemExit(2)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            print(f"office-system: invalid {label} JSON: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+    else:
+        return {}
+    if not isinstance(data, dict):
+        print(f"office-system: {label} JSON must be an object", file=sys.stderr)
+        raise SystemExit(2)
+    return data
+
+
+def keyword_hit(text: str, keyword: str) -> bool:
+    return bool(keyword) and keyword.lower() in text.lower()
+
+
+def normalize_actions(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [safe_component(str(item), "judgment action") for item in value if str(item).strip()]
+    return [safe_component(item.strip(), "judgment action") for item in str(value).split(",") if item.strip()]
+
+
+def risk_label(score: float) -> str:
+    if score >= 0.85:
+        return "critical"
+    if score >= 0.65:
+        return "high"
+    if score >= 0.4:
+        return "medium"
+    return "low"
+
+
+def evaluate_judgment(
+    root: Path,
+    *,
+    task: str,
+    stage: str = "perceive",
+    agent_id: str = "",
+    workflow_run_id: str = "",
+    task_id: str = "",
+    action: str = "",
+    route: dict[str, Any] | None = None,
+    signal: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    policy = judgment_policy(root)
+    thresholds = policy.get("thresholds", {})
+    pause_threshold = float(thresholds.get("pause_risk_score", 0.65))
+    route_pause_values = {str(item) for item in thresholds.get("route_low_confidence_values", ["low", "ambiguous"])}
+    agent_pause_values = {str(item) for item in thresholds.get("agent_pause_decisions", ["pause", "escalate", "abort"])}
+    route = route or {}
+    signal = signal or {}
+    text = "\n".join(
+        [
+            task or "",
+            str(signal.get("reason", "")),
+            str(signal.get("summary", "")),
+            str(route.get("routing_reason", "")),
+            str(route.get("workflow_reason", "")),
+        ]
+    )
+    triggers: list[dict[str, Any]] = []
+    blocked_actions: set[str] = set()
+    required_roles: list[str] = []
+    evidence_refs: list[str] = []
+    options = list(policy.get("default_options", []))
+    risk_score = 0.0
+
+    for category in policy.get("categories", []):
+        if not isinstance(category, dict):
+            continue
+        matched = [str(keyword) for keyword in category.get("keywords", []) if keyword_hit(text, str(keyword))]
+        if not matched:
+            continue
+        category_score = float(category.get("risk_score", 0.0))
+        risk_score = max(risk_score, category_score)
+        blocked_actions.update(str(item) for item in category.get("blocked_actions", []))
+        role = str(category.get("required_human_role", "project_manager"))
+        if role and role not in required_roles:
+            required_roles.append(role)
+        triggers.append(
+            {
+                "type": "policy_category",
+                "category": str(category.get("id", "unknown")),
+                "risk_score": category_score,
+                "matched_keywords": matched[:8],
+                "required_human_role": role,
+            }
+        )
+
+    route_confidence = str(route.get("confidence", ""))
+    if route.get("fallback") or route.get("clarification_required") or route_confidence in route_pause_values:
+        risk_score = max(risk_score, 0.72)
+        if "workflow_continue" not in blocked_actions:
+            blocked_actions.add("workflow_continue")
+        if "project_manager" not in required_roles:
+            required_roles.append("project_manager")
+        triggers.append(
+            {
+                "type": "route_uncertainty",
+                "risk_score": 0.72,
+                "confidence": route_confidence,
+                "fallback": bool(route.get("fallback")),
+                "clarification_required": bool(route.get("clarification_required")),
+            }
+        )
+
+    for item in normalize_actions(action):
+        if item in set(str(entry) for entry in policy.get("hard_block_actions", [])):
+            risk_score = max(risk_score, 0.9)
+            blocked_actions.add(item)
+            if "project_manager" not in required_roles:
+                required_roles.append("project_manager")
+            triggers.append({"type": "hard_block_action", "action": item, "risk_score": 0.9})
+
+    agent_decision = str(signal.get("decision", "")).strip().lower()
+    if agent_decision in agent_pause_values:
+        score = float(signal.get("risk_score", 0.8) or 0.8)
+        risk_score = max(risk_score, score)
+        blocked_actions.update(str(item) for item in signal.get("blocked_actions", []) if str(item).strip())
+        evidence_refs.extend(str(item) for item in signal.get("evidence_refs", []) if str(item).strip())
+        role = str(signal.get("required_human_role", "project_manager"))
+        if role and role not in required_roles:
+            required_roles.append(role)
+        if isinstance(signal.get("options"), list) and signal["options"]:
+            options = signal["options"]
+        triggers.append(
+            {
+                "type": "agent_stop_signal",
+                "decision": agent_decision,
+                "risk_score": score,
+                "reason": str(signal.get("reason", "")),
+            }
+        )
+
+    decision = "pause" if risk_score >= pause_threshold or bool(blocked_actions) else "continue"
+    return {
+        "version": "1.0.0",
+        "kind": "digital-office-judgment-evaluation",
+        "decision": decision,
+        "risk_score": round(risk_score, 3),
+        "risk_label": risk_label(risk_score),
+        "stage": safe_component(stage, "loop stage") if stage else "perceive",
+        "agent_id": registered_agent(root, agent_id) if agent_id else str(route.get("agent", "")),
+        "workflow_run_id": safe_claim(workflow_run_id, "workflow run id", required=False),
+        "task_id": safe_claim(task_id, "task id", required=False),
+        "task_sha256": hashlib.sha256((task or "").encode("utf-8")).hexdigest(),
+        "route_confidence": route_confidence,
+        "triggers": triggers,
+        "blocked_actions": sorted(blocked_actions),
+        "required_human_role": required_roles[0] if required_roles else "project_manager",
+        "required_human_roles": required_roles,
+        "evidence_refs": evidence_refs,
+        "options": options,
+        "recommended_option": "request_more_evidence" if risk_score >= pause_threshold else "approve_with_scope",
+        "created_at": now_iso(),
+    }
+
+
+def open_judgment_cases(root: Path, run: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    if run is not None:
+        for case_id in run.get("judgment_cases", []) or []:
+            try:
+                case = load_judgment_case(root, str(case_id))
+            except SystemExit:
+                continue
+            if case.get("status") in JUDGMENT_BLOCKING_STATUSES:
+                records.append(case)
+        return records
+    for case in read_records(root / "judgments", "digital-office-judgment-case"):
+        if case.get("status") in JUDGMENT_BLOCKING_STATUSES:
+            records.append(case)
+    return records
+
+
+def stage_artifact_satisfies(required: str, artifacts: list[Any]) -> bool:
+    for item in artifacts:
+        if isinstance(item, dict):
+            value = str(item.get("artifact_id") or item.get("artifact") or item.get("path") or "")
+        else:
+            value = str(item)
+        if value == required or value.startswith(f"{required}:") or value.startswith(f"{required}="):
+            return True
+    return False
+
+
+def stage_gate_status(stage_state: dict[str, Any], gate_id: str) -> str:
+    for gate in stage_state.get("gates", []) or []:
+        if str(gate.get("gate")) == gate_id:
+            return str(gate.get("status", "pending"))
+    return "missing"
+
+
+def loop_completion_blockers(root: Path, run: dict[str, Any], *, require_all_stages: bool = True) -> list[str]:
+    blockers: list[str] = []
+    open_cases = open_judgment_cases(root, run)
+    if open_cases:
+        blockers.append("human_judgment_pending")
+    if not require_all_stages:
+        return blockers
+    stages = run.get("stages", {}) or {}
+    for stage in LOOP_STAGES:
+        state = stages.get(stage, {})
+        if state.get("status") != "completed":
+            blockers.append(f"stage_{stage}_not_completed")
+            continue
+        for artifact in state.get("required_artifacts", []) or []:
+            if not stage_artifact_satisfies(str(artifact), state.get("artifacts", []) or []):
+                blockers.append(f"stage_{stage}_missing_artifact_{artifact}")
+        for gate in state.get("gates", []) or []:
+            gate_name = str(gate.get("gate", ""))
+            gate_status = str(gate.get("status", "pending"))
+            if gate_status not in PASSING_GATE_STATUSES:
+                blockers.append(f"stage_{stage}_gate_{gate_name}_not_passed")
+    return blockers
+
+
+def status_for_current_stage(run: dict[str, Any]) -> str:
+    return LOOP_STATUS_BY_STAGE.get(str(run.get("current_stage", "perceive")), "created")
+
+
+def create_judgment_case(
+    root: Path,
+    evaluation: dict[str, Any],
+    *,
+    task: str,
+    reason: str = "",
+    created_by: str = "",
+    created_by_role: str = "",
+    case_id: str | None = None,
+) -> dict[str, Any]:
+    case_id = safe_component(case_id, "judgment case id") if case_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    if judgment_path(root, case_id).exists():
+        print(f"office-system: judgment case already exists: {case_id}", file=sys.stderr)
+        raise SystemExit(2)
+    run_id = evaluation.get("workflow_run_id", "")
+    task_id = evaluation.get("task_id", "")
+    case = {
+        "version": "1.0.0",
+        "kind": "digital-office-judgment-case",
+        "case_id": case_id,
+        "status": "pending",
+        "decision": evaluation.get("decision", "pause"),
+        "stage": evaluation.get("stage", "perceive"),
+        "agent_id": evaluation.get("agent_id", ""),
+        "workflow_run_id": run_id,
+        "task_id": task_id,
+        "risk_score": evaluation.get("risk_score", 0.0),
+        "risk_label": evaluation.get("risk_label", "low"),
+        "required_human_role": evaluation.get("required_human_role", "project_manager"),
+        "blocked_actions": evaluation.get("blocked_actions", []),
+        "triggers": evaluation.get("triggers", []),
+        "evidence_refs": evaluation.get("evidence_refs", []),
+        "options": evaluation.get("options", []),
+        "recommended_option": evaluation.get("recommended_option", ""),
+        "reason": reason or "; ".join(str(item.get("type", "")) for item in evaluation.get("triggers", [])) or "Agent requested human judgment",
+        "task_sha256": hashlib.sha256((task or "").encode("utf-8")).hexdigest(),
+        "context_snapshot_hash": hashlib.sha256(json.dumps(evaluation, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest(),
+        "created_by": safe_claim(created_by, "created by", required=False),
+        "created_by_role": safe_component(created_by_role, "created by role") if created_by_role else "",
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "decisions": [],
+    }
+    write_json(judgment_path(root, case_id), case)
+    if run_id:
+        run = load_run_record(root, str(run_id))
+        cases = run.setdefault("judgment_cases", [])
+        if case_id not in cases:
+            cases.append(case_id)
+        run["status"] = "waiting_human_judgment"
+        run.setdefault("blockers", [])
+        if "human_judgment_pending" not in run["blockers"]:
+            run["blockers"].append("human_judgment_pending")
+        run["updated_at"] = now_iso()
+        run.setdefault("events", []).append({"time": run["updated_at"], "event": "judgment_case_opened", "case_id": case_id, "risk_score": case["risk_score"]})
+        write_json(run_record_path(root, str(run_id)), run)
+    if task_id:
+        update_task_status(root, str(task_id), "waiting_human_judgment", message=f"waiting for judgment {case_id}", actor_id=created_by, actor_role=created_by_role)
+    append_audit_event(
+        root,
+        "judgment_case_opened",
+        actor_id=created_by,
+        actor_role=created_by_role,
+        resource_type="judgment",
+        resource_id=case_id,
+        workflow_run_id=str(run_id or ""),
+        task_id=str(task_id or ""),
+        agent_id=str(case.get("agent_id", "")),
+        outcome="pending",
+        reason=case["reason"],
+        extra={"risk_score": case["risk_score"], "blocked_actions": case["blocked_actions"]},
+    )
+    if run_id:
+        append_run_ledger_event(
+            root,
+            str(run_id),
+            "human_judgment_opened",
+            stage=str(case.get("stage", "")),
+            action="judgment.open",
+            agent_id=str(case.get("agent_id", "")),
+            actor_id=created_by,
+            actor_role=created_by_role,
+            input_payload={"evaluation": evaluation, "task_sha256": case["task_sha256"]},
+            output_payload={"case_id": case_id, "status": case["status"], "blocked_actions": case["blocked_actions"]},
+        )
+    return case
 
 
 def task_title(body: str) -> str:
@@ -1858,6 +2770,15 @@ def workflow_start(args: argparse.Namespace) -> int:
         ensure_project(root, project)
     route = route_task(root, body, args.agent, args.workflow)
     agent = registered_agent(root, str(route.get("agent", ""))) if route.get("agent") else ""
+    judgment_eval = evaluate_judgment(
+        root,
+        task=body,
+        stage="perceive",
+        agent_id=agent,
+        action="workflow.start",
+        route=route,
+    )
+    judgment_required = judgment_eval["decision"] == "pause"
     run_id = safe_component(args.run_id, "run id") if args.run_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     task_id = safe_component(args.task_id, "task id") if args.task_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     if run_record_path(root, run_id).exists():
@@ -1886,8 +2807,8 @@ def workflow_start(args: argparse.Namespace) -> int:
         return 2
 
     needs_clarification = bool(route.get("fallback") or route.get("clarification_required"))
-    run_status = "blocked" if needs_clarification else "created"
-    task_status = "blocked" if needs_clarification else "queued"
+    run_status = "waiting_human_judgment" if judgment_required else ("blocked" if needs_clarification else "created")
+    task_status = "waiting_human_judgment" if judgment_required else ("blocked" if needs_clarification else "queued")
     initial_revision = initial_canvas_revision(root, route=route, body=body, agent_id=agent, workflow=route.get("workflow", ""), created_by=args.user)
     run = {
         "version": "1.0.0",
@@ -1907,12 +2828,14 @@ def workflow_start(args: argparse.Namespace) -> int:
         "task_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
         "tasks": [task_id],
         "approvals": [],
+        "judgment_cases": [],
+        "judgment_evaluation": judgment_eval,
         "route": route,
         "active_revision_id": initial_revision["revision_id"],
         "revisions": [initial_revision],
         "canvas": initial_revision["canvas"],
         "authorization": auth,
-        "blockers": ["clarification_required"] if needs_clarification else [],
+        "blockers": ["human_judgment_pending"] if judgment_required else (["clarification_required"] if needs_clarification else []),
         "idempotency_key": args.idempotency_key or "",
         "created_at": now_iso(),
         "updated_at": now_iso(),
@@ -1935,6 +2858,50 @@ def workflow_start(args: argparse.Namespace) -> int:
         idempotency_key=args.idempotency_key or "",
     )
     write_json(run_record_path(root, run_id), run)
+    append_run_ledger_event(
+        root,
+        run_id,
+        "workflow_started",
+        stage="perceive",
+        action="workflow.start",
+        agent_id=agent,
+        actor_id=args.user,
+        actor_role=args.role,
+        input_payload={
+            "task": body,
+            "title": args.title or task["title"],
+            "project_id": project,
+            "requested_agent": args.agent or "",
+            "requested_workflow": args.workflow or "",
+            "idempotency_key": args.idempotency_key or "",
+        },
+        output_payload={
+            "run_id": run_id,
+            "task_id": task_id,
+            "status": run_status,
+            "task_status": task_status,
+            "workflow": run["workflow"],
+            "route": route,
+            "judgment_required": judgment_required,
+            "clarification_required": needs_clarification,
+        },
+        artifact_refs=[
+            str(run_record_path(root, run_id).relative_to(root)),
+            str(task_path(root, task_id).relative_to(root)),
+        ],
+    )
+    judgment_case = None
+    if judgment_required:
+        judgment_eval["workflow_run_id"] = run_id
+        judgment_eval["task_id"] = task_id
+        judgment_case = create_judgment_case(
+            root,
+            judgment_eval,
+            task=body,
+            reason="workflow-start requires human judgment before dispatch",
+            created_by=args.user,
+            created_by_role=args.role,
+        )
     event = append_audit_event(
         root,
         "workflow_started",
@@ -1948,19 +2915,19 @@ def workflow_start(args: argparse.Namespace) -> int:
         resource_id=run_id,
         workflow_run_id=run_id,
         task_id=task_id,
-        outcome="blocked" if needs_clarification else "created",
-        reason="clarification required" if needs_clarification else args.reason or "",
+        outcome="waiting_human_judgment" if judgment_required else ("blocked" if needs_clarification else "created"),
+        reason="human judgment required" if judgment_required else ("clarification required" if needs_clarification else args.reason or ""),
         extra={"workflow": run["workflow"], "route_confidence": route.get("confidence")},
     )
     emit_notification(
         root,
         user_id=args.user,
-        title="Workflow started" if not needs_clarification else "Workflow needs clarification",
+        title="Workflow needs human judgment" if judgment_required else ("Workflow started" if not needs_clarification else "Workflow needs clarification"),
         body=task["title"],
         topic="workflow",
         resource_type="workflow_run",
         resource_id=run_id,
-        severity="warning" if needs_clarification else "info",
+        severity="warning" if judgment_required or needs_clarification else "info",
     )
     print(
         json.dumps(
@@ -1970,9 +2937,11 @@ def workflow_start(args: argparse.Namespace) -> int:
                 "status": run_status,
                 "task_status": task_status,
                 "route": route,
+                "judgment": judgment_eval,
+                "judgment_case": judgment_case,
                 "authorization": auth,
                 "audit_event_id": event["event_id"],
-                "next_actions": ["workflow-status", "task-status", "approval-create"],
+                "next_actions": ["judgment-list", "judgment-decision", "workflow-status"] if judgment_required else ["workflow-status", "task-status", "approval-create"],
             },
             ensure_ascii=False,
             indent=2,
@@ -2022,8 +2991,17 @@ def sync_run_status_from_tasks(root: Path, run_id: str) -> dict[str, Any] | None
     next_status = ""
     event_name = ""
     if statuses == {"completed"}:
-        next_status = "completed"
-        event_name = "workflow_completed"
+        blockers = loop_completion_blockers(root, run, require_all_stages=True)
+        if blockers:
+            next_status = "blocked"
+            event_name = "workflow_blocked_by_completion_contract"
+            run.setdefault("blockers", [])
+            for blocker in blockers:
+                if blocker not in run["blockers"]:
+                    run["blockers"].append(blocker)
+        else:
+            next_status = "completed"
+            event_name = "workflow_completed"
     elif "failed" in statuses:
         next_status = "blocked"
         event_name = "workflow_blocked_by_task_failure"
@@ -2033,6 +3011,9 @@ def sync_run_status_from_tasks(root: Path, run_id: str) -> dict[str, Any] | None
     elif statuses == {"cancelled"}:
         next_status = "cancelled"
         event_name = "workflow_cancelled_by_tasks"
+    elif "waiting_human_judgment" in statuses:
+        next_status = "waiting_human_judgment"
+        event_name = "workflow_waiting_for_human_judgment"
     elif "waiting_approval" in statuses:
         next_status = "waiting_user_confirmation"
         event_name = "workflow_waiting_for_task_approval"
@@ -2118,6 +3099,10 @@ def workflow_resume(args: argparse.Namespace) -> int:
     if run.get("status") == "completed":
         print("office-system: completed workflow cannot be resumed", file=sys.stderr)
         return 2
+    open_cases = open_judgment_cases(root, run)
+    if open_cases:
+        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
     run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
     run["updated_at"] = now_iso()
     run.setdefault("blockers", [])
@@ -2155,6 +3140,10 @@ def workflow_retry(args: argparse.Namespace) -> int:
     stage = args.stage or run.get("current_stage") or "perceive"
     if stage not in LOOP_STAGES:
         print(f"office-system: invalid retry stage: {stage}", file=sys.stderr)
+        return 2
+    open_cases = open_judgment_cases(root, run)
+    if open_cases:
+        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
     retry = {
         "time": now_iso(),
@@ -2206,6 +3195,8 @@ def agent_invoke(args: argparse.Namespace) -> int:
         print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
     route = {"agent": agent, "workflow": "direct_agent", "steps": [agent], "confidence": "direct", "routing_reason": "explicit_agent_invocation", "display_name": registry["agents"][agent].get("display_name", agent)}
+    judgment_eval = evaluate_judgment(root, task=body, stage="execute", agent_id=agent, workflow_run_id=run_id, action="agent.delegate", route=route)
+    judgment_required = judgment_eval["decision"] == "pause"
     initial_revision = initial_canvas_revision(root, route=route, body=body, agent_id=agent, workflow="direct_agent", created_by=args.user)
     run = {
         "version": "1.0.0",
@@ -2213,7 +3204,7 @@ def agent_invoke(args: argparse.Namespace) -> int:
         "run_id": run_id,
         "run_type": "workflow_run",
         "invocation_mode": "direct_agent",
-        "status": "created",
+        "status": "waiting_human_judgment" if judgment_required else "created",
         "current_stage": "execute",
         "project_id": project,
         "agent_id": agent,
@@ -2226,24 +3217,59 @@ def agent_invoke(args: argparse.Namespace) -> int:
         "task_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
         "tasks": [task_id],
         "approvals": [],
+        "judgment_cases": [],
+        "judgment_evaluation": judgment_eval,
         "route": route,
         "active_revision_id": initial_revision["revision_id"],
         "revisions": [initial_revision],
         "canvas": initial_revision["canvas"],
         "authorization": auth,
-        "blockers": [],
+        "blockers": ["human_judgment_pending"] if judgment_required else [],
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "stages": loop_stage_records(root),
-        "events": [{"time": now_iso(), "event": "agent_invoked", "agent_id": agent, "status": "created"}],
+        "events": [{"time": now_iso(), "event": "agent_invoked", "agent_id": agent, "status": "waiting_human_judgment" if judgment_required else "created"}],
     }
-    task = create_task_record(root, task_id=task_id, title=args.title or task_title(body), body=body, status="queued", priority=args.priority, project_id=project, agent_id=agent, workflow_run_id=run_id, assigned_user=args.user, requested_by=args.user, route=route, idempotency_key="")
+    task = create_task_record(root, task_id=task_id, title=args.title or task_title(body), body=body, status="waiting_human_judgment" if judgment_required else "queued", priority=args.priority, project_id=project, agent_id=agent, workflow_run_id=run_id, assigned_user=args.user, requested_by=args.user, route=route, idempotency_key="")
     task["invocation_mode"] = "direct_agent"
     write_json(task_path(root, task_id), task)
     write_json(run_record_path(root, run_id), run)
+    append_run_ledger_event(
+        root,
+        run_id,
+        "agent_invoked",
+        stage="execute",
+        action="agent.delegate",
+        agent_id=agent,
+        actor_id=args.user,
+        actor_role=args.role,
+        input_payload={
+            "task": body,
+            "title": args.title or task["title"],
+            "project_id": project,
+            "agent_id": agent,
+            "reason": args.reason or "direct GUI @Agent invocation",
+        },
+        output_payload={
+            "run_id": run_id,
+            "task_id": task_id,
+            "status": run["status"],
+            "task_status": task["status"],
+            "route": route,
+            "judgment_required": judgment_required,
+        },
+        artifact_refs=[
+            str(run_record_path(root, run_id).relative_to(root)),
+            str(task_path(root, task_id).relative_to(root)),
+        ],
+    )
+    judgment_case = None
+    if judgment_required:
+        judgment_eval["task_id"] = task_id
+        judgment_case = create_judgment_case(root, judgment_eval, task=body, reason="direct Agent invocation requires human judgment before dispatch", created_by=args.user, created_by_role=args.role)
     event = append_audit_event(root, "agent_invoked", actor_id=args.user, actor_role=args.role, tenant_id=args.tenant, deployment_id=args.deployment, project_id=project, agent_id=agent, resource_type="agent", resource_id=agent, workflow_run_id=run_id, task_id=task_id, outcome="created", reason=args.reason or "direct GUI @Agent invocation")
-    emit_notification(root, user_id=args.user, title="Agent task queued", body=task["title"], topic="agent", resource_type="workflow_run", resource_id=run_id, severity="info")
-    print(json.dumps({"status": "created", "invocation_mode": "direct_agent", "agent_id": agent, "project_id": project, "requested_by": args.user, "workflow_run_id": run_id, "task_id": task_id, "active_revision_id": initial_revision["revision_id"], "authorization": auth, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    emit_notification(root, user_id=args.user, title="Agent task needs human judgment" if judgment_required else "Agent task queued", body=task["title"], topic="agent", resource_type="workflow_run", resource_id=run_id, severity="warning" if judgment_required else "info")
+    print(json.dumps({"status": run["status"], "invocation_mode": "direct_agent", "agent_id": agent, "project_id": project, "requested_by": args.user, "workflow_run_id": run_id, "task_id": task_id, "active_revision_id": initial_revision["revision_id"], "authorization": auth, "audit_event_id": event["event_id"], "judgment": judgment_eval, "judgment_case": judgment_case}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -2473,6 +3499,9 @@ def task_update(args: argparse.Namespace) -> int:
     if not auth["allowed"]:
         print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
+    if args.status == "completed" and run and open_judgment_cases(root, run):
+        print("office-system: task cannot be completed while human judgment is pending", file=sys.stderr)
+        return 2
     if args.status:
         task = update_task_status(root, args.task_id, args.status, message=args.summary or "", actor_id=args.updated_by or "", actor_role=args.role or "")
     if args.assigned_agent:
@@ -2487,6 +3516,195 @@ def task_update(args: argparse.Namespace) -> int:
         sync_run_status_from_tasks(root, task["workflow_run_id"])
     append_audit_event(root, "task_updated", actor_id=args.updated_by or "", actor_role=args.role or "", project_id=task.get("project_id", ""), agent_id=task.get("assigned_agent", ""), resource_type="task", resource_id=args.task_id, workflow_run_id=task.get("workflow_run_id", ""), task_id=args.task_id, outcome=task.get("status", "updated"), reason=args.summary or "")
     print(json.dumps(task, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def judgment_evaluate(args: argparse.Namespace) -> int:
+    root = system_root()
+    task = args.task if args.task is not None else sys.stdin.read()
+    route = parse_json_value(args.route_json, args.route_file, "route", required=False)
+    signal = parse_json_value(args.signal_json, args.signal_file, "agent signal", required=False)
+    evaluation = evaluate_judgment(
+        root,
+        task=task.strip(),
+        stage=args.stage,
+        agent_id=args.agent or "",
+        workflow_run_id=args.workflow_run or "",
+        task_id=args.task_id or "",
+        action=args.action or "",
+        route=route,
+        signal=signal,
+    )
+    case = None
+    if args.create_case and evaluation["decision"] == "pause":
+        case = create_judgment_case(
+            root,
+            evaluation,
+            task=task.strip(),
+            reason=args.reason or "judgment-evaluate created a blocking case",
+            created_by=args.created_by or "",
+            created_by_role=args.role or "",
+            case_id=args.case_id,
+        )
+    print(json.dumps({"evaluation": evaluation, "case": case}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def judgment_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    records = []
+    for case in read_records(root / "judgments", "digital-office-judgment-case"):
+        if args.status and case.get("status") != args.status:
+            continue
+        if args.workflow_run and case.get("workflow_run_id") != args.workflow_run:
+            continue
+        if args.required_human_role and case.get("required_human_role") != args.required_human_role:
+            continue
+        records.append(case)
+        if len(records) >= args.limit:
+            break
+    print(json.dumps({"judgments": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def judgment_decision(args: argparse.Namespace) -> int:
+    root = system_root()
+    if args.decision in {"approve", "reject", "cancel"} and not args.confirmed:
+        print("office-system: judgment decision requires --confirmed", file=sys.stderr)
+        return 2
+    case = load_judgment_case(root, args.case_id)
+    if case.get("status") not in JUDGMENT_BLOCKING_STATUSES:
+        print("office-system: judgment case is not pending", file=sys.stderr)
+        return 2
+    required_role = str(case.get("required_human_role", "project_manager"))
+    if args.role not in TENANT_ADMIN_ROLES and args.role != required_role:
+        print(f"office-system: judgment requires role {required_role}", file=sys.stderr)
+        return 2
+    action = "regulated_output.approve" if required_role == "professional_reviewer" else "approval.decide"
+    auth = compute_authorization_decision(
+        root,
+        tenant_id=args.tenant,
+        deployment_id=args.deployment,
+        user_id=args.decided_by,
+        user_role=args.role,
+        action=action,
+        resource_type="judgment",
+        resource_id=args.case_id,
+        project_id=args.project or "",
+        agent_id=str(case.get("agent_id", "")),
+        workflow_run_id=str(case.get("workflow_run_id", "")),
+        reason=args.message or "",
+    )
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    status = JUDGMENT_DECISION_TO_STATUS[args.decision]
+    case["status"] = status
+    case["updated_at"] = now_iso()
+    if args.scope_note:
+        case["scope_note"] = safe_claim(args.scope_note, "scope note")
+    case.setdefault("decisions", []).append(
+        {
+            "time": case["updated_at"],
+            "decision": args.decision,
+            "status": status,
+            "decided_by": safe_claim(args.decided_by, "decided by"),
+            "role": safe_component(args.role, "role"),
+            "message": args.message or "",
+            "scope_note": args.scope_note or "",
+        }
+    )
+    write_json(judgment_path(root, args.case_id), case)
+
+    run_id = str(case.get("workflow_run_id", ""))
+    task_id = str(case.get("task_id", ""))
+    if run_id:
+        run = load_run_record(root, run_id)
+        run["updated_at"] = now_iso()
+        run.setdefault("events", []).append({"time": run["updated_at"], "event": "judgment_decision", "case_id": args.case_id, "status": status})
+        if status == "approved":
+            remaining = open_judgment_cases(root, run)
+            if not remaining:
+                run["blockers"] = [item for item in run.get("blockers", []) if item != "human_judgment_pending"]
+                run["status"] = status_for_current_stage(run)
+        elif status == "needs_evidence":
+            run["status"] = "waiting_human_judgment"
+            run.setdefault("blockers", [])
+            if "human_judgment_pending" not in run["blockers"]:
+                run["blockers"].append("human_judgment_pending")
+        else:
+            run["status"] = "blocked" if status == "rejected" else run.get("status", "blocked")
+            run.setdefault("blockers", [])
+            blocker = f"judgment_{status}"
+            if blocker not in run["blockers"]:
+                run["blockers"].append(blocker)
+        write_json(run_record_path(root, run_id), run)
+    if task_id:
+        if status == "approved":
+            task = load_task(root, task_id)
+            if task.get("status") == "waiting_human_judgment":
+                update_task_status(root, task_id, "queued", message=args.message or f"judgment {status}", actor_id=args.decided_by, actor_role=args.role)
+        elif status in {"rejected", "cancelled"}:
+            update_task_status(root, task_id, "blocked", message=args.message or f"judgment {status}", actor_id=args.decided_by, actor_role=args.role)
+        elif status == "needs_evidence":
+            update_task_status(root, task_id, "waiting_human_judgment", message=args.message or "more evidence requested", actor_id=args.decided_by, actor_role=args.role)
+    event = append_audit_event(
+        root,
+        "judgment_decision",
+        actor_id=args.decided_by,
+        actor_role=args.role,
+        tenant_id=args.tenant,
+        deployment_id=args.deployment,
+        project_id=args.project or "",
+        agent_id=str(case.get("agent_id", "")),
+        resource_type="judgment",
+        resource_id=args.case_id,
+        workflow_run_id=run_id,
+        task_id=task_id,
+        outcome=status,
+        reason=args.message or "",
+        extra={"decision": args.decision, "required_human_role": required_role},
+    )
+    if run_id:
+        append_run_ledger_event(
+            root,
+            run_id,
+            "human_judgment_decision",
+            stage=str(case.get("stage", "")),
+            action=f"judgment.{args.decision}",
+            agent_id=str(case.get("agent_id", "")),
+            actor_id=args.decided_by,
+            actor_role=args.role,
+            input_payload={"case_id": args.case_id, "decision": args.decision, "message": args.message or "", "scope_note": args.scope_note or ""},
+            output_payload={"case_status": status, "run_status": load_run_record(root, run_id).get("status", "")},
+        )
+    emit_notification(root, user_id="", title=f"Judgment {status}", body=case.get("reason", ""), topic="judgment", resource_type="judgment", resource_id=args.case_id, severity="info" if status == "approved" else "warning")
+    print(json.dumps({"judgment": case, "authorization": auth, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def judgment_resume(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    auth = authorize_workflow_mutation(root, run, args.requested_by, args.role, "workflow.resume")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    remaining = open_judgment_cases(root, run)
+    if remaining:
+        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": remaining}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    run["blockers"] = [item for item in run.get("blockers", []) if item != "human_judgment_pending"]
+    run["status"] = status_for_current_stage(run)
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "judgment_resume", "requested_by": args.requested_by, "reason": args.reason or ""})
+    write_json(run_record_path(root, args.run_id), run)
+    for task_id in linked_tasks(root, run):
+        task = load_task(root, task_id)
+        if task.get("status") == "waiting_human_judgment":
+            update_task_status(root, task_id, "queued", message=args.reason or "judgment resume", actor_id=args.requested_by, actor_role=args.role)
+    append_audit_event(root, "judgment_resume", actor_id=args.requested_by, actor_role=args.role, project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome=run["status"], reason=args.reason or "")
+    print(json.dumps({"run_id": args.run_id, "status": run["status"], "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -2621,13 +3839,19 @@ def approval_decision(args: argparse.Namespace) -> int:
         approval["status"] = status
         approval["updated_at"] = now_iso()
         approval["decisions"].append({"time": approval["updated_at"], "decision": args.decision, "decided_by": args.decided_by, "role": args.role, "message": args.message or ""})
-        write_json(approval_path_value, approval)
+        write_json_unlocked(approval_path_value, approval)
         if approval.get("task_id"):
             update_task_status(root, approval["task_id"], "queued" if status == "approved" else "blocked", message=args.message or f"approval {status}", actor_id=args.decided_by, actor_role=args.role)
         if approval.get("workflow_run_id"):
             run = load_run_record(root, approval["workflow_run_id"])
             if status == "approved":
-                run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+                if open_judgment_cases(root, run):
+                    run["status"] = "waiting_human_judgment"
+                    run.setdefault("blockers", [])
+                    if "human_judgment_pending" not in run["blockers"]:
+                        run["blockers"].append("human_judgment_pending")
+                else:
+                    run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
             else:
                 run["status"] = "blocked"
                 run.setdefault("blockers", []).append(f"approval_{status}")
@@ -3371,6 +4595,17 @@ def read_jsonl(path: Path, limit: int | None = None) -> list[dict[str, Any]]:
     return rows[-limit:] if limit else rows
 
 
+def count_jsonl_records(path: Path) -> int:
+    if not path.exists():
+        return 0
+    count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                count += 1
+    return count
+
+
 def approved_methodology_summaries(root: Path, consent: dict[str, Any]) -> list[dict[str, Any]]:
     allowed = (
         consent.get("industry_experience_sharing", {}).get("enabled", False)
@@ -3423,6 +4658,7 @@ def telemetry_payload(root: Path, consent: dict[str, Any]) -> dict[str, Any]:
         "agents_registry": (root / "agents.registry.json").exists(),
         "knowledge_registry": (root / "knowledge.registry.json").exists(),
         "rules_registry": (root / "rules" / "rules.registry.json").exists(),
+        "judgment_policy": (root / "judgment.policy.json").exists(),
         "multimodal_pipeline": (root / "multimodal.pipeline.json").exists(),
         "rag_pipeline": (root / "rag.pipeline.json").exists(),
         "tesseract": bool(shutil.which("tesseract")),
@@ -4324,11 +5560,13 @@ def loop_start(args: argparse.Namespace) -> int:
         ensure_project(root, project)
     run_id = safe_component(args.run_id, "run id") if args.run_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     task = args.task if args.task is not None else sys.stdin.read()
+    judgment_eval = evaluate_judgment(root, task=task.strip(), stage="perceive", agent_id=agent, workflow_run_id=run_id, action="loop.start")
+    judgment_required = judgment_eval["decision"] == "pause"
     run = {
         "version": "1.0.0",
         "kind": "digital-office-ai-native-loop-run",
         "run_id": run_id,
-        "status": "created",
+        "status": "waiting_human_judgment" if judgment_required else "created",
         "current_stage": "perceive",
         "project_id": project,
         "agent_id": agent,
@@ -4354,6 +5592,10 @@ def loop_start(args: argparse.Namespace) -> int:
             for stage in LOOP_STAGES
         },
         "hard_rules": manifest.get("hard_rules", []),
+        "judgment_cases": [],
+        "judgment_evaluation": judgment_eval,
+        "blockers": ["human_judgment_pending"] if judgment_required else [],
+        "events": [{"time": now_iso(), "event": "loop_start", "status": "waiting_human_judgment" if judgment_required else "created"}],
     }
     if args.dry_run:
         print(json.dumps(run, ensure_ascii=False, indent=2, sort_keys=True))
@@ -4363,8 +5605,22 @@ def loop_start(args: argparse.Namespace) -> int:
         print(f"office-system: loop run already exists: {run_id}", file=sys.stderr)
         return 2
     write_json(target, run)
+    judgment_case = None
+    if judgment_required:
+        judgment_case = create_judgment_case(root, judgment_eval, task=task.strip(), reason="loop-start requires human judgment before execution", created_by=args.requested_by or "", created_by_role="")
+    append_run_ledger_event(
+        root,
+        run_id,
+        "loop_start",
+        stage="perceive",
+        action="loop.start",
+        agent_id=agent,
+        actor_id=args.requested_by or "",
+        input_payload={"task": task.strip(), "project_id": project, "workflow": run["workflow"]},
+        output_payload={"status": run["status"], "judgment": judgment_eval, "judgment_case_id": (judgment_case or {}).get("case_id", "")},
+    )
     append_log(root, {"event": "loop_start", "run_id": run_id, "project": project, "agent": agent})
-    print(json.dumps({"run_id": run_id, "path": str(target.relative_to(root)), "status": "created"}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"run_id": run_id, "path": str(target.relative_to(root)), "status": run["status"], "judgment": judgment_eval, "judgment_case": judgment_case}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -4377,7 +5633,23 @@ def loop_stage(args: argparse.Namespace) -> int:
         print(f"office-system: loop run not found: {run_id}", file=sys.stderr)
         return 2
     run = read_json(target)
+    open_cases = open_judgment_cases(root, run)
+    if open_cases:
+        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+        return 2
+    current_index = LOOP_STAGES.index(stage)
+    for previous in LOOP_STAGES[:current_index]:
+        if run.get("stages", {}).get(previous, {}).get("status") != "completed":
+            print(f"office-system: cannot update {stage} before {previous} is completed", file=sys.stderr)
+            return 2
     stage_state = run.setdefault("stages", {}).setdefault(stage, {"artifacts": [], "notes": [], "gates": []})
+    prior_status = str(stage_state.get("status", "pending"))
+    if args.status == "started" and prior_status not in {"pending", "blocked", "failed", "started"}:
+        print(f"office-system: cannot start {stage} from status {prior_status}", file=sys.stderr)
+        return 2
+    if args.status == "completed" and prior_status != "started":
+        print(f"office-system: cannot complete {stage} before it is started", file=sys.stderr)
+        return 2
     stage_state["status"] = args.status
     if args.summary:
         stage_state.setdefault("notes", []).append({"time": now_iso(), "summary": args.summary})
@@ -4385,19 +5657,52 @@ def loop_stage(args: argparse.Namespace) -> int:
     if body:
         stage_state.setdefault("notes", []).append({"time": now_iso(), "body": body})
     for artifact in args.artifact or []:
-        stage_state.setdefault("artifacts", []).append(safe_claim(artifact, "artifact"))
+        artifact_value = safe_claim(artifact, "artifact")
+        artifact_id = ""
+        if ":" in artifact_value:
+            artifact_id = artifact_value.split(":", 1)[0]
+        elif "=" in artifact_value:
+            artifact_id = artifact_value.split("=", 1)[0]
+        stage_state.setdefault("artifacts", []).append({"artifact": artifact_value, "artifact_id": artifact_id or artifact_value, "time": now_iso()})
     for gate in args.gate or []:
         if ":" not in gate:
             print("office-system: --gate must be gate_id:status", file=sys.stderr)
             return 2
         gate_id, gate_status = gate.split(":", 1)
+        gate_id = safe_claim(gate_id, "gate id")
+        gate_status = safe_component(gate_status, "gate status")
+        updated = False
+        for item in stage_state.setdefault("gates", []):
+            if str(item.get("gate")) == gate_id:
+                item["status"] = gate_status
+                item["updated_at"] = now_iso()
+                updated = True
+                break
+        if not updated:
+            print(f"office-system: unknown gate for {stage}: {gate_id}", file=sys.stderr)
+            return 2
         stage_state.setdefault("gate_updates", []).append(
             {
                 "time": now_iso(),
-                "gate": safe_claim(gate_id, "gate id"),
-                "status": safe_claim(gate_status, "gate status"),
+                "gate": gate_id,
+                "status": gate_status,
             }
         )
+    if args.status == "completed":
+        missing_artifacts = [
+            str(item)
+            for item in stage_state.get("required_artifacts", []) or []
+            if not stage_artifact_satisfies(str(item), stage_state.get("artifacts", []) or [])
+        ]
+        incomplete_gates = [
+            str(item.get("gate", ""))
+            for item in stage_state.get("gates", []) or []
+            if str(item.get("status", "pending")) not in PASSING_GATE_STATUSES
+        ]
+        if missing_artifacts or incomplete_gates:
+            stage_state["status"] = prior_status
+            print(json.dumps({"status": "blocked", "stage": stage, "missing_artifacts": missing_artifacts, "incomplete_gates": incomplete_gates}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
     if args.status == "started":
         run["status"] = LOOP_STATUS_BY_STAGE[stage]
         run["current_stage"] = stage
@@ -4405,15 +5710,32 @@ def loop_stage(args: argparse.Namespace) -> int:
         run["status"] = "blocked"
         run["current_stage"] = stage
     elif args.status == "completed":
-        current_index = LOOP_STAGES.index(stage)
         next_stage = LOOP_STAGES[current_index + 1] if current_index + 1 < len(LOOP_STAGES) else None
         run["current_stage"] = next_stage or stage
         if next_stage:
             run["status"] = LOOP_STATUS_BY_STAGE[next_stage]
         else:
-            run["status"] = "completed"
+            blockers = loop_completion_blockers(root, run, require_all_stages=True)
+            run["status"] = "completed" if not blockers else "blocked"
+            if blockers:
+                run.setdefault("blockers", [])
+                for blocker in blockers:
+                    if blocker not in run["blockers"]:
+                        run["blockers"].append(blocker)
     run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "loop_stage", "stage": stage, "status": args.status})
     write_json(target, run)
+    append_run_ledger_event(
+        root,
+        run_id,
+        "loop_stage",
+        stage=stage,
+        action=f"loop.stage.{args.status}",
+        agent_id=str(run.get("agent_id", "")),
+        input_payload={"stage": stage, "status": args.status, "artifacts": args.artifact or [], "gates": args.gate or []},
+        output_payload={"run_status": run["status"], "current_stage": run.get("current_stage", "")},
+        artifact_refs=[str(item) for item in (args.artifact or [])],
+    )
     append_log(root, {"event": "loop_stage", "run_id": run_id, "stage": stage, "status": args.status})
     print(json.dumps({"run_id": run_id, "stage": stage, "status": args.status, "run_status": run["status"]}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
@@ -4427,6 +5749,411 @@ def loop_status(args: argparse.Namespace) -> int:
         return 2
     print(json.dumps(read_json(target), ensure_ascii=False, indent=2, sort_keys=True))
     return 0
+
+
+def run_ledger_add(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    input_payload = parse_json_value(args.input_json, args.input_file, "ledger input", required=False)
+    output_payload = parse_json_value(args.output_json, args.output_file, "ledger output", required=False)
+    parameters = parse_json_value(args.parameters_json, args.parameters_file, "ledger parameters", required=False)
+    event = append_run_ledger_event(
+        root,
+        args.run_id,
+        args.event,
+        stage=args.stage or str(run.get("current_stage", "")),
+        action=args.action or "",
+        agent_id=args.agent or str(run.get("agent_id", "")),
+        actor_id=args.actor or "",
+        actor_role=args.role or "",
+        input_payload=input_payload,
+        output_payload=output_payload,
+        artifact_refs=args.artifact or [],
+        checkpoint_id=args.checkpoint_id or "",
+        handoff_id=args.handoff_id or "",
+        model=args.model or "",
+        provider=args.provider or "",
+        parameters=parameters,
+    )
+    print(json.dumps(event, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def run_ledger_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    load_run_record(root, args.run_id)
+    rows = list_run_ledger(root, args.run_id, limit=args.limit)
+    print(json.dumps({"run_id": args.run_id, "events": rows}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def checkpoint_create(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    stage = args.stage or str(run.get("current_stage", "perceive"))
+    if stage not in LOOP_STAGES:
+        print(f"office-system: invalid checkpoint stage: {stage}", file=sys.stderr)
+        return 2
+    if args.requires_human and not args.create_judgment:
+        print("office-system: --requires-human checkpoints must also pass --create-judgment", file=sys.stderr)
+        return 2
+    if args.create_judgment and not args.requires_human:
+        print("office-system: --create-judgment is only valid with --requires-human", file=sys.stderr)
+        return 2
+    state = parse_json_value(args.state_json, args.state_file, "checkpoint state", required=False) or {
+        "run_status": run.get("status", ""),
+        "current_stage": run.get("current_stage", ""),
+        "blockers": run.get("blockers", []),
+    }
+    checkpoint_id = safe_component(args.checkpoint_id, "checkpoint id") if args.checkpoint_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}-{stage}"
+    if checkpoint_path(root, args.run_id, checkpoint_id).exists():
+        print(f"office-system: checkpoint already exists: {checkpoint_id}", file=sys.stderr)
+        return 2
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-run-checkpoint",
+        "checkpoint_id": checkpoint_id,
+        "run_id": safe_component(args.run_id, "run id"),
+        "stage": stage,
+        "label": safe_claim(args.label, "checkpoint label", required=False),
+        "status": "requires_human_judgment" if args.requires_human else "ready_to_resume",
+        "resume_cursor": safe_claim(args.resume_cursor, "resume cursor", required=False),
+        "state": state,
+        "state_hash": canonical_hash(state),
+        "artifacts": [safe_claim(item, "checkpoint artifact") for item in (args.artifact or [])],
+        "requires_human": bool(args.requires_human),
+        "created_at": now_iso(),
+    }
+    judgment_case = None
+    if args.requires_human and args.create_judgment:
+        evaluation = evaluate_judgment(
+            root,
+            task=args.reason or record["label"] or f"Checkpoint {checkpoint_id} requires human judgment",
+            stage=stage,
+            agent_id=str(run.get("agent_id", "")),
+            workflow_run_id=args.run_id,
+            action="workflow_continue",
+            signal={"decision": "pause", "risk_score": 0.74, "reason": args.reason or "checkpoint requires human judgment"},
+        )
+        judgment_case = create_judgment_case(root, evaluation, task=args.reason or record["label"] or checkpoint_id, reason=args.reason or "checkpoint requires human judgment", created_by=args.created_by or "", created_by_role=args.role or "")
+        record["judgment_case_id"] = judgment_case["case_id"]
+    write_json(checkpoint_path(root, args.run_id, checkpoint_id), record)
+    run = load_run_record(root, args.run_id)
+    run.setdefault("checkpoints", []).append({"checkpoint_id": checkpoint_id, "stage": stage, "path": str(checkpoint_path(root, args.run_id, checkpoint_id).relative_to(root)), "state_hash": record["state_hash"], "created_at": record["created_at"]})
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "checkpoint_created", "checkpoint_id": checkpoint_id, "stage": stage})
+    write_json(run_record_path(root, args.run_id), run)
+    append_run_ledger_event(
+        root,
+        args.run_id,
+        "checkpoint_created",
+        stage=stage,
+        action="checkpoint.create",
+        agent_id=str(run.get("agent_id", "")),
+        actor_id=args.created_by or "",
+        actor_role=args.role or "",
+        input_payload={"label": record["label"], "resume_cursor": record["resume_cursor"], "requires_human": args.requires_human},
+        output_payload={"checkpoint_id": checkpoint_id, "state_hash": record["state_hash"], "judgment_case_id": (judgment_case or {}).get("case_id", "")},
+        artifact_refs=record["artifacts"],
+        checkpoint_id=checkpoint_id,
+    )
+    print(json.dumps({"checkpoint": record, "judgment_case": judgment_case}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def checkpoint_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    load_run_record(root, args.run_id)
+    records = read_records(checkpoint_dir(root, args.run_id), "digital-office-run-checkpoint")
+    print(json.dumps({"run_id": args.run_id, "checkpoints": records[: args.limit]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def handoff_create(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    from_agent = registered_agent(root, args.from_agent)
+    to_agent = registered_agent(root, args.to_agent)
+    if from_agent == to_agent:
+        print("office-system: handoff requires different source and target agents", file=sys.stderr)
+        return 2
+    input_schema = parse_json_value(args.input_schema_json, args.input_schema_file, "handoff input schema", required=False)
+    context = parse_json_value(args.context_json, args.context_file, "handoff context", required=False)
+    acceptance = [safe_claim(item, "acceptance criterion") for item in (args.acceptance_criterion or [])]
+    if not acceptance:
+        print("office-system: handoff requires at least one --acceptance-criterion", file=sys.stderr)
+        return 2
+    handoff_id = safe_component(args.handoff_id, "handoff id") if args.handoff_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}-{from_agent}-to-{to_agent}"
+    if handoff_path(root, args.run_id, handoff_id).exists():
+        print(f"office-system: handoff already exists: {handoff_id}", file=sys.stderr)
+        return 2
+    envelope = {
+        "version": "1.0.0",
+        "kind": "digital-office-typed-handoff",
+        "handoff_id": handoff_id,
+        "run_id": safe_component(args.run_id, "run id"),
+        "from_agent": from_agent,
+        "to_agent": to_agent,
+        "stage": safe_component(args.stage, "loop stage") if args.stage else str(run.get("current_stage", "")),
+        "reason": safe_claim(args.reason, "handoff reason"),
+        "input_schema": input_schema,
+        "input_schema_hash": canonical_hash(input_schema),
+        "context": context,
+        "context_hash": canonical_hash(context),
+        "artifacts": [safe_claim(item, "handoff artifact") for item in (args.artifact or [])],
+        "acceptance_criteria": acceptance,
+        "status": "pending_acceptance",
+        "created_by": safe_claim(args.created_by, "created by", required=False),
+        "created_at": now_iso(),
+    }
+    envelope["handoff_contract_hash"] = canonical_hash({key: value for key, value in envelope.items() if key != "handoff_contract_hash"})
+    write_json(handoff_path(root, args.run_id, handoff_id), envelope)
+    run.setdefault("handoffs", []).append({"handoff_id": handoff_id, "from_agent": from_agent, "to_agent": to_agent, "path": str(handoff_path(root, args.run_id, handoff_id).relative_to(root)), "contract_hash": envelope["handoff_contract_hash"], "created_at": envelope["created_at"]})
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "handoff_created", "handoff_id": handoff_id, "from_agent": from_agent, "to_agent": to_agent})
+    write_json(run_record_path(root, args.run_id), run)
+    append_run_ledger_event(
+        root,
+        args.run_id,
+        "handoff_created",
+        stage=envelope["stage"],
+        action="handoff.create",
+        agent_id=from_agent,
+        actor_id=args.created_by or "",
+        actor_role=args.role or "",
+        input_payload={"to_agent": to_agent, "reason": envelope["reason"], "input_schema": input_schema, "context": context},
+        output_payload={"handoff_id": handoff_id, "contract_hash": envelope["handoff_contract_hash"], "acceptance_criteria": acceptance},
+        artifact_refs=envelope["artifacts"],
+        handoff_id=handoff_id,
+    )
+    print(json.dumps(envelope, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def handoff_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    load_run_record(root, args.run_id)
+    records = read_records(handoff_dir(root, args.run_id), "digital-office-typed-handoff")
+    if args.agent:
+        agent = registered_agent(root, args.agent)
+        records = [item for item in records if item.get("from_agent") == agent or item.get("to_agent") == agent]
+    print(json.dumps({"run_id": args.run_id, "handoffs": records[: args.limit]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def coordination_policy(root: Path) -> dict[str, Any]:
+    path = root / "coordination.policy.json"
+    if path.exists():
+        return read_json(path)
+    return {
+        "version": "0.0.0",
+        "kind": "digital-office-coordination-policy",
+        "max_parallel_agents": 3,
+        "high_risk_modes": ["human_gated", "secretary_centralized"],
+    }
+
+
+def infer_task_risk(task: str, supplied: str = "") -> str:
+    if supplied:
+        return supplied
+    text = task.lower()
+    critical_terms = ["delete", "overwrite", "deploy", "publish", "payment", "export customer data", "删除", "覆盖", "部署", "发布", "付款", "导出客户数据"]
+    high_terms = ["legal", "medical", "tax", "investment", "contract", "法律", "医疗", "税务", "投资", "合同"]
+    if any(term in text for term in critical_terms):
+        return "critical"
+    if any(term in text for term in high_terms):
+        return "high"
+    return "medium" if len(task) > 240 else "low"
+
+
+def build_coordination_plan(
+    root: Path,
+    *,
+    task: str,
+    candidate_agents: list[str],
+    complexity: str = "",
+    risk: str = "",
+    parallelizable: bool = False,
+    sequential: bool = False,
+    run_id: str = "",
+) -> dict[str, Any]:
+    policy = coordination_policy(root)
+    agents = [registered_agent(root, item) for item in candidate_agents if item]
+    inferred_risk = infer_task_risk(task, risk)
+    text = task.lower()
+    if not complexity:
+        complexity = "high" if len(task) > 400 else "medium" if len(task) > 160 else "low"
+    if any(term in text for term in ["parallel", "independent", "in parallel", "并行", "分别", "多个方向"]):
+        parallelizable = True
+    if not parallelizable and any(term in text for term in ["then", "after", "approval", "handoff", "依次", "之后", "审批", "交接"]):
+        sequential = True
+    if inferred_risk in {"high", "critical"}:
+        mode = "human_gated"
+        stop_required = True
+        reason = "High-risk or regulated work requires secretary mediation and human judgment before execution."
+    elif parallelizable and len(agents) > 1 and not sequential:
+        mode = "parallel_expert_dag"
+        stop_required = False
+        reason = "Task has independent workstreams and multiple candidate specialists."
+    elif sequential or len(agents) > 1:
+        mode = "sequential_specialist_chain"
+        stop_required = False
+        reason = "Task contains ordered dependencies or specialist handoffs."
+    elif len(agents) == 1:
+        mode = "single_agent"
+        stop_required = False
+        reason = "One specialist is sufficient and risk is not high."
+    else:
+        mode = "secretary_centralized"
+        stop_required = False
+        reason = "No concrete specialist set was supplied; secretary should coordinate intake and routing."
+    max_parallel = int(policy.get("max_parallel_agents", 3))
+    return {
+        "version": "1.0.0",
+        "kind": "digital-office-coordination-plan",
+        "task_hash": canonical_hash(task),
+        "run_id": safe_component(run_id, "run id") if run_id else "",
+        "mode": mode,
+        "risk": inferred_risk,
+        "complexity": complexity,
+        "candidate_agents": agents,
+        "max_parallel_agents": max_parallel if mode == "parallel_expert_dag" else 1,
+        "stop_required_before_execution": stop_required,
+        "required_gates": ["human_judgment_closed", "typed_handoff_contracts", "checkpoint_before_resume"] if stop_required else ["typed_handoff_contracts", "checkpoint_before_resume"],
+        "reason": reason,
+        "drift_controls": [
+            "run_ledger_hash_chain",
+            "checkpoint_resume_cursor",
+            "typed_handoff_contract_hash",
+            "deterministic_eval_before_completion",
+        ],
+        "created_at": now_iso(),
+    }
+
+
+def coordination_plan(args: argparse.Namespace) -> int:
+    root = system_root()
+    task = args.task if args.task is not None else sys.stdin.read()
+    agents = args.agent or []
+    plan = build_coordination_plan(
+        root,
+        task=task.strip(),
+        candidate_agents=agents,
+        complexity=args.complexity or "",
+        risk=args.risk or "",
+        parallelizable=args.parallelizable,
+        sequential=args.sequential,
+        run_id=args.run_id or "",
+    )
+    if args.run_id:
+        load_run_record(root, args.run_id)
+        append_run_ledger_event(
+            root,
+            args.run_id,
+            "coordination_plan_created",
+            action="coordination.plan",
+            input_payload={"task": task.strip(), "candidate_agents": agents, "risk": args.risk or "", "complexity": args.complexity or ""},
+            output_payload=plan,
+        )
+    print(json.dumps(plan, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def eval_suite_path(root: Path, suite: str) -> Path:
+    candidate = Path(suite).expanduser()
+    if candidate.exists():
+        return candidate
+    if not candidate.suffix:
+        candidate = candidate.with_suffix(".json")
+    path = root / "evals" / candidate.name
+    if path.exists():
+        return path
+    print(f"office-system: eval suite not found: {suite}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def grade_eval_case(root: Path, case: dict[str, Any]) -> dict[str, Any]:
+    case_type = str(case.get("type", ""))
+    case_id = str(case.get("id", "unnamed"))
+    failures: list[str] = []
+    observed: dict[str, Any] = {}
+    if case_type == "judgment":
+        observed = evaluate_judgment(
+            root,
+            task=str(case.get("task", "")),
+            stage=str(case.get("stage", "perceive")),
+            action=str(case.get("action", "")),
+            route=case.get("route") if isinstance(case.get("route"), dict) else {},
+            signal=case.get("signal") if isinstance(case.get("signal"), dict) else {},
+        )
+        if "expect_decision" in case and observed.get("decision") != case["expect_decision"]:
+            failures.append(f"decision expected {case['expect_decision']!r}, got {observed.get('decision')!r}")
+        for action in case.get("expect_blocked_actions", []) or []:
+            if action not in observed.get("blocked_actions", []):
+                failures.append(f"blocked action missing: {action}")
+    elif case_type == "coordination":
+        observed = build_coordination_plan(
+            root,
+            task=str(case.get("task", "")),
+            candidate_agents=[str(item) for item in case.get("candidate_agents", [])],
+            complexity=str(case.get("complexity", "")),
+            risk=str(case.get("risk", "")),
+            parallelizable=bool(case.get("parallelizable", False)),
+            sequential=bool(case.get("sequential", False)),
+        )
+        if "expect_mode" in case and observed.get("mode") != case["expect_mode"]:
+            failures.append(f"mode expected {case['expect_mode']!r}, got {observed.get('mode')!r}")
+        if "expect_stop_required" in case and observed.get("stop_required_before_execution") is not bool(case["expect_stop_required"]):
+            failures.append("stop_required_before_execution mismatch")
+    elif case_type == "rule_scope":
+        observed = infer_rule_scope(root, title=str(case.get("title", "")), body=str(case.get("body", "")), project=str(case.get("project_id", "")), agent=str(case.get("agent_id", "")))
+        if "expect_scope" in case and observed.get("scope") != case["expect_scope"]:
+            failures.append(f"scope expected {case['expect_scope']!r}, got {observed.get('scope')!r}")
+    else:
+        failures.append(f"unknown eval case type: {case_type}")
+    return {
+        "case_id": case_id,
+        "type": case_type,
+        "language": case.get("language", ""),
+        "status": "pass" if not failures else "fail",
+        "failures": failures,
+        "observed": observed,
+    }
+
+
+def eval_run(args: argparse.Namespace) -> int:
+    root = system_root()
+    path = eval_suite_path(root, args.suite)
+    suite = read_json(path)
+    cases = suite.get("cases", [])
+    if not isinstance(cases, list):
+        print("office-system: eval suite cases must be a list", file=sys.stderr)
+        return 2
+    if not cases:
+        print("office-system: eval suite must include at least one case", file=sys.stderr)
+        return 2
+    if any(not isinstance(case, dict) for case in cases):
+        print("office-system: every eval suite case must be an object", file=sys.stderr)
+        return 2
+    results = [grade_eval_case(root, case) for case in cases]
+    passed = sum(1 for item in results if item["status"] == "pass")
+    report = {
+        "version": "1.0.0",
+        "kind": "digital-office-eval-report",
+        "suite_id": suite.get("suite_id", path.stem),
+        "suite_path": str(path.relative_to(root) if path.is_relative_to(root) else path),
+        "status": "success" if passed == len(results) else "error",
+        "passed": passed,
+        "total": len(results),
+        "results": results,
+        "generated_at": now_iso(),
+    }
+    if not args.no_write:
+        report_path = root / "evals" / "reports" / f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{slugify(str(report['suite_id']))}.json"
+        write_json(report_path, report)
+        report["report_path"] = str(report_path.relative_to(root))
+    print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if report["status"] == "success" else 1
 
 
 def iteration_proposal_id(title: str) -> str:
@@ -4604,11 +6331,17 @@ def health_checks(root: Path) -> dict[str, Any]:
         "settings_dir": (root / "settings").exists(),
         "user_preferences_configured": onboarding_preferences_path(root).exists(),
         "rules_registry": (root / "rules" / "rules.registry.json").exists(),
+        "judgment_policy": (root / "judgment.policy.json").exists(),
+        "coordination_policy": (root / "coordination.policy.json").exists(),
         "multimodal_pipeline": (root / "multimodal.pipeline.json").exists(),
         "rag_pipeline": (root / "rag.pipeline.json").exists(),
         "workflow_runs_dir": (root / "runs").exists(),
+        "evals_dir": (root / "evals").exists(),
+        "eval_reports_dir": (root / "evals" / "reports").exists(),
         "task_inbox_dir": (root / "tasks").exists(),
         "approval_center_dir": (root / "approvals").exists(),
+        "judgment_cases_dir": (root / "judgments").exists(),
+        "rule_proposals_dir": (root / "rule-proposals").exists(),
         "notifications_dir": (root / "notifications").exists(),
         "audit_logs_dir": (root / "logs").exists(),
         "knowledge_spaces_dir": (root / "knowledge" / "spaces").exists(),
@@ -4635,6 +6368,10 @@ def required_health_keys() -> tuple[str, ...]:
         "workflow_runs_dir",
         "task_inbox_dir",
         "approval_center_dir",
+        "judgment_policy",
+        "coordination_policy",
+        "evals_dir",
+        "eval_reports_dir",
         "notifications_dir",
         "audit_logs_dir",
         "knowledge_spaces_dir",
@@ -4688,13 +6425,13 @@ def detailed_health(root: Path) -> dict[str, Any]:
                 if index_path.exists() and any(index_path.iterdir()):
                     components['rag_index'] = {'status': 'ok'}
                 else:
-                    components['rag_index'] = {'status': 'not_indexed'}
+                    components['rag_index'] = {'status': 'not_indexed', 'optional': True}
             else:
-                components['rag_index'] = {'status': 'not_indexed'}
+                components['rag_index'] = {'status': 'not_indexed', 'optional': True}
         except (json.JSONDecodeError, OSError):
             components['rag_index'] = {'status': 'degraded'}
     else:
-        components['rag_index'] = {'status': 'not_found'}
+        components['rag_index'] = {'status': 'not_found', 'optional': True}
 
     # agents
     agents_reg = root / 'agents.registry.json'
@@ -4729,10 +6466,12 @@ def detailed_health(root: Path) -> dict[str, Any]:
     any_degraded = any(
         c.get('status') not in ('ok', 'low')
         for c in components.values()
+        if not c.get('optional')
     )
     any_down = any(
         c.get('status') in ('not_found',)
         for c in components.values()
+        if not c.get('optional')
     )
     required = required_health_keys()
     all_required_ok = all(checks.get(k) for k in required)
@@ -4747,6 +6486,7 @@ def detailed_health(root: Path) -> dict[str, Any]:
     return {
         'status': overall,
         'timestamp': now_iso(),
+        'checks': checks,
         'components': components,
     }
 def status_counts(records: list[dict[str, Any]], field: str = "status") -> dict[str, int]:
@@ -4812,8 +6552,14 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
         {"id": "workflow_runtime_controls", "status": "ready", "commands": ["workflow-control", "workflow-node-context"]},
+        {"id": "runtime_replay_and_checkpoints", "status": "ready", "commands": ["run-ledger-add", "run-ledger-list", "checkpoint-create", "checkpoint-list"]},
+        {"id": "typed_agent_handoffs", "status": "ready", "commands": ["handoff-create", "handoff-list"]},
+        {"id": "coordination_policy", "status": "ready", "commands": ["coordination-plan"]},
+        {"id": "agent_eval_harness", "status": "ready", "commands": ["eval-run"]},
         {"id": "task_inbox", "status": "ready", "commands": ["task-list", "task-status", "task-update"]},
         {"id": "approval_center", "status": "ready", "commands": ["approval-create", "approval-list", "approval-decision"]},
+        {"id": "human_judgment_gates", "status": "ready", "commands": ["judgment-evaluate", "judgment-list", "judgment-decision", "judgment-resume"]},
+        {"id": "collaborative_rule_intake", "status": "ready", "commands": ["rule-elicit", "rule-suggest", "rule-proposal-list", "rule-proposal-decision"]},
         {"id": "notification_center", "status": "ready", "commands": ["notification-list", "notification-mark-read"]},
         {"id": "audit_events", "status": "ready", "commands": ["audit-events"]},
         {"id": "project_knowledge", "status": "ready", "commands": ["knowledge-add", "knowledge-add-text", "rag-index", "rag-search"]},
@@ -4847,6 +6593,16 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
         for approval in read_records(root / "approvals", "digital-office-approval")
         if (not project or approval.get("project_id") == project) and (not user or approval.get("requested_by") in {"", user})
     ]
+    judgments = [
+        case
+        for case in read_records(root / "judgments", "digital-office-judgment-case")
+        if not project or case.get("project_id") in {"", project}
+    ]
+    rule_proposals = [
+        proposal
+        for proposal in read_records(root / "rule-proposals", "digital-office-rule-proposal")
+        if not project or proposal.get("project_id") in {"", project}
+    ]
     notifications = [
         notification
         for notification in read_records(root / "notifications", "digital-office-notification")
@@ -4861,6 +6617,15 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
     active_workflows = [run for run in runs if run.get("status") not in {"completed", "cancelled", "stopped"}]
     draft_revision_count = sum(1 for run in runs for revision in run.get("revisions", []) if revision.get("status") == "draft")
     knowledge_spaces = knowledge_space_summaries(root, user=user, role=role, limit=limit)
+    recent_run_runtime = [
+        {
+            "run_id": run.get("run_id", ""),
+            "ledger_events": count_jsonl_records(run_ledger_path(root, str(run.get("run_id", "")))) if run.get("run_id") else 0,
+            "checkpoints": len(run.get("checkpoints", []) or []),
+            "handoffs": len(run.get("handoffs", []) or []),
+        }
+        for run in runs[:limit]
+    ]
     payload = {
         "kind": "digital-office-gui-state",
         "version": "1.0.0",
@@ -4894,6 +6659,16 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
             "by_status": status_counts(approvals),
             "recent": compact_records(approvals, ["approval_id", "title", "status", "approver_role", "project_id", "workflow_run_id", "task_id", "updated_at"], limit),
         },
+        "judgments": {
+            "count": len(judgments),
+            "by_status": status_counts(judgments),
+            "recent": compact_records(judgments, ["case_id", "status", "risk_label", "required_human_role", "workflow_run_id", "task_id", "updated_at"], limit),
+        },
+        "rule_proposals": {
+            "count": len(rule_proposals),
+            "by_status": status_counts(rule_proposals),
+            "recent": compact_records(rule_proposals, ["proposal_id", "title", "status", "proposed_scope", "scope_confidence", "project_id", "agent_id", "updated_at"], limit),
+        },
         "notifications": {
             "count": len(notifications),
             "unread": sum(1 for item in notifications if item.get("status") == "unread"),
@@ -4906,6 +6681,11 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
             "spaces": {"count": len(knowledge_spaces), "items": knowledge_spaces},
             "rag_index_configured": (root / "rag.pipeline.json").exists(),
         },
+        "runtime_replay": {
+            "coordination_policy": (root / "coordination.policy.json").exists(),
+            "eval_suites": [path.stem for path in sorted((root / "evals").glob("*.json"))[:limit]],
+            "recent_runs": recent_run_runtime,
+        },
         "workbench": {
             "command": "workbench-state",
             "entry_points": ["owner_global", "project_lead", "member", "approver", "admin", "viewer"],
@@ -4915,6 +6695,8 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
             "Show settings status and prompt for configuration when settings.configured is false.",
             "Surface pending approvals, unread notifications, blocked workflows, and waiting tasks on the home screen.",
             "Use agent-invoke for explicit @Agent dispatch and keep every dispatch linked to a workflow run and task.",
+            "Show open judgment cases before workflow actions; resume only after judgment-decision closes the case.",
+            "Use rule-elicit during collaboration and rule-suggest when the user states a durable operating rule.",
             "Use workflow draft revisions for canvas edits; activate only after validation and explicit confirmation.",
             "Resolve knowledge folders through knowledge-scope-resolve before running Agent nodes.",
             "Route all mutating actions through the matching command and require explicit GUI confirmation where commands expose --confirmed.",
@@ -5300,6 +7082,49 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--body")
     p.set_defaults(func=add_rule)
 
+    p = sub.add_parser("rule-elicit")
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--context")
+    p.add_argument("--limit", type=int, default=4)
+    p.set_defaults(func=rule_elicit)
+
+    p = sub.add_parser("rule-suggest")
+    p.add_argument("--title", required=True)
+    p.add_argument("--body")
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--source")
+    p.add_argument("--created-by")
+    p.add_argument("--role")
+    p.add_argument("--proposal-id")
+    p.set_defaults(func=rule_suggest)
+
+    p = sub.add_parser("rule-proposal-list")
+    p.add_argument("--status", choices=sorted(RULE_PROPOSAL_STATUSES))
+    p.add_argument("--scope", choices=["global", "project", "agent"])
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=rule_proposal_list)
+
+    p = sub.add_parser("rule-proposal-decision")
+    p.add_argument("--proposal-id", required=True)
+    p.add_argument("--decision", choices=["approve", "tune", "reject"], required=True)
+    p.add_argument("--tenant", default="local")
+    p.add_argument("--deployment", default="local")
+    p.add_argument("--decided-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--scope", choices=["global", "project", "agent"])
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--title")
+    p.add_argument("--body")
+    p.add_argument("--message")
+    p.add_argument("--confirmed", action="store_true")
+    p.add_argument("--override-conflicts", action="store_true")
+    p.set_defaults(func=rule_proposal_decision)
+
     p = sub.add_parser("context")
     p.add_argument("--project")
     p.add_argument("--agent")
@@ -5525,6 +7350,51 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", required=True)
     p.set_defaults(func=task_update)
 
+    p = sub.add_parser("judgment-evaluate")
+    p.add_argument("--task")
+    p.add_argument("--stage", choices=LOOP_STAGES, default="perceive")
+    p.add_argument("--agent")
+    p.add_argument("--workflow-run")
+    p.add_argument("--task-id")
+    p.add_argument("--action")
+    p.add_argument("--route-json")
+    p.add_argument("--route-file")
+    p.add_argument("--signal-json")
+    p.add_argument("--signal-file")
+    p.add_argument("--create-case", action="store_true")
+    p.add_argument("--case-id")
+    p.add_argument("--reason")
+    p.add_argument("--created-by")
+    p.add_argument("--role")
+    p.set_defaults(func=judgment_evaluate)
+
+    p = sub.add_parser("judgment-list")
+    p.add_argument("--status", choices=sorted(JUDGMENT_STATUSES))
+    p.add_argument("--workflow-run")
+    p.add_argument("--required-human-role")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=judgment_list)
+
+    p = sub.add_parser("judgment-decision")
+    p.add_argument("--case-id", required=True)
+    p.add_argument("--decision", choices=["approve", "reject", "request_evidence", "revise_scope", "cancel"], required=True)
+    p.add_argument("--tenant", default="local")
+    p.add_argument("--deployment", default="local")
+    p.add_argument("--decided-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--project")
+    p.add_argument("--message")
+    p.add_argument("--scope-note")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=judgment_decision)
+
+    p = sub.add_parser("judgment-resume")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.set_defaults(func=judgment_resume)
+
     p = sub.add_parser("approval-create")
     p.add_argument("--tenant", required=True)
     p.add_argument("--deployment", required=True)
@@ -5603,6 +7473,91 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("loop-status")
     p.add_argument("--run-id", required=True)
     p.set_defaults(func=loop_status)
+
+    p = sub.add_parser("run-ledger-add")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--event", required=True)
+    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--action")
+    p.add_argument("--agent")
+    p.add_argument("--actor")
+    p.add_argument("--role")
+    p.add_argument("--input-json")
+    p.add_argument("--input-file")
+    p.add_argument("--output-json")
+    p.add_argument("--output-file")
+    p.add_argument("--parameters-json")
+    p.add_argument("--parameters-file")
+    p.add_argument("--artifact", action="append")
+    p.add_argument("--checkpoint-id")
+    p.add_argument("--handoff-id")
+    p.add_argument("--model")
+    p.add_argument("--provider")
+    p.set_defaults(func=run_ledger_add)
+
+    p = sub.add_parser("run-ledger-list")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=run_ledger_list)
+
+    p = sub.add_parser("checkpoint-create")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--checkpoint-id")
+    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--label")
+    p.add_argument("--resume-cursor")
+    p.add_argument("--state-json")
+    p.add_argument("--state-file")
+    p.add_argument("--artifact", action="append")
+    p.add_argument("--requires-human", action="store_true")
+    p.add_argument("--create-judgment", action="store_true")
+    p.add_argument("--reason")
+    p.add_argument("--created-by")
+    p.add_argument("--role")
+    p.set_defaults(func=checkpoint_create)
+
+    p = sub.add_parser("checkpoint-list")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=checkpoint_list)
+
+    p = sub.add_parser("handoff-create")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--handoff-id")
+    p.add_argument("--from-agent", required=True)
+    p.add_argument("--to-agent", required=True)
+    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--reason", required=True)
+    p.add_argument("--input-schema-json")
+    p.add_argument("--input-schema-file")
+    p.add_argument("--context-json")
+    p.add_argument("--context-file")
+    p.add_argument("--artifact", action="append")
+    p.add_argument("--acceptance-criterion", action="append")
+    p.add_argument("--created-by")
+    p.add_argument("--role")
+    p.set_defaults(func=handoff_create)
+
+    p = sub.add_parser("handoff-list")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--agent")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=handoff_list)
+
+    p = sub.add_parser("coordination-plan")
+    p.add_argument("--task")
+    p.add_argument("--run-id")
+    p.add_argument("--agent", action="append")
+    p.add_argument("--complexity", choices=["low", "medium", "high"])
+    p.add_argument("--risk", choices=["low", "medium", "high", "critical"])
+    p.add_argument("--parallelizable", action="store_true")
+    p.add_argument("--sequential", action="store_true")
+    p.set_defaults(func=coordination_plan)
+
+    p = sub.add_parser("eval-run")
+    p.add_argument("--suite", required=True)
+    p.add_argument("--no-write", action="store_true")
+    p.set_defaults(func=eval_run)
 
     p = sub.add_parser("iteration-proposal-create")
     p.add_argument("--title", required=True)

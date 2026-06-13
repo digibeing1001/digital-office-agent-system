@@ -27,10 +27,10 @@
       "cwd": "hermes_home",
       "path": "README.md",
       "patterns": [
-        "GUI 化准备更新",
+        "GUI Readiness Update",
         "gui-state",
         "settings-update",
-        "默认秘书人设改为中性基线"
+        "default secretary persona"
       ]
     },
     {

@@ -117,6 +117,25 @@ Approval center:
 ~/.hermes/agent-system/bin/office-system approval-decision --approval-id <approval_id> --decision approve --decided-by <user_id> --role <role> --confirmed
 ```
 
+Human judgment gates:
+
+These gates are not ordinary approval buttons. They are runtime stops raised by
+Agent self-checks or deterministic policy checks before the system continues
+high-risk, ambiguous, externally visible, or evidence-sensitive work.
+
+```bash
+~/.hermes/agent-system/bin/office-system judgment-evaluate --task "<task>" --stage plan --agent <agent_id>
+~/.hermes/agent-system/bin/office-system judgment-list --status pending
+~/.hermes/agent-system/bin/office-system judgment-decision --case-id <case_id> --decision approve --decided-by <user_id> --role <required_role> --confirmed
+~/.hermes/agent-system/bin/office-system judgment-resume --run-id <run_id> --requested-by <user_id> --role <role>
+```
+
+- `workflow-start`, `agent-invoke`, and `loop-start` evaluate judgment policy before dispatch.
+- Open judgment cases put the workflow and linked tasks into `waiting_human_judgment`.
+- `workflow-resume`, `workflow-retry`, `task-update --status completed`, and `loop-stage` must not bypass an open judgment case.
+- The GUI should show the risk, triggers, blocked actions, evidence references, recommended option, and required human role before rendering decision buttons.
+- A human decision writes a `digital-office-judgment-case` record plus an audit event; Agent-generated stop signals cannot delete or approve their own cases.
+
 Authorization, audit, and notifications:
 
 ```bash
@@ -131,6 +150,26 @@ Authorization, audit, and notifications:
 - Low-confidence or fallback routes become blocked workflow runs assigned to the secretary for clarification instead of being silently dispatched.
 - Approval approve/reject actions and workflow cancel actions require explicit `--confirmed`.
 - Audit events are append-only JSONL records with a lightweight hash chain through `previous_event_hash` and `event_hash`.
+
+Runtime replay, checkpoints, coordination, and typed handoff:
+
+These commands are production control-plane commands, not hidden debug tools. The GUI may present them in an orchestration or workbench surface so operators can understand why a run chose a topology, where it can resume, and what each Agent received from the previous Agent.
+
+```bash
+~/.hermes/agent-system/bin/office-system coordination-plan --task "<task>" --agent researcher --agent writer --parallelizable
+~/.hermes/agent-system/bin/office-system run-ledger-list --run-id <run_id>
+~/.hermes/agent-system/bin/office-system checkpoint-create --run-id <run_id> --stage plan --label "<label>" --resume-cursor plan:ready
+~/.hermes/agent-system/bin/office-system checkpoint-list --run-id <run_id>
+~/.hermes/agent-system/bin/office-system handoff-create --run-id <run_id> --from-agent researcher --to-agent writer --reason "<reason>" --acceptance-criterion "<criterion>"
+~/.hermes/agent-system/bin/office-system handoff-list --run-id <run_id>
+~/.hermes/agent-system/bin/office-system eval-run --suite runtime-replay-and-multilingual --no-write
+```
+
+- `coordination-plan` chooses one of the modes defined in `coordination.policy.json`; high-risk modes require human judgment before execution.
+- `run-ledger-list` exposes the hash-chained run trace. The GUI should show event, stage, action, artifact refs, checkpoint id, handoff id, and hashes.
+- `checkpoint-create` stores a resumable state snapshot. Use `--requires-human --create-judgment` when the checkpoint itself should stop the workflow for human decision.
+- `handoff-create` is required for cross-Agent transfer of responsibility. It stores the source Agent, target Agent, schema hash, context hash, artifacts, and acceptance criteria.
+- `eval-run` returns a deterministic pass/fail report and should be shown before production delivery claims.
 
 Direct `@Agent` invocation:
 
@@ -265,6 +304,25 @@ Rules:
 ~/.hermes/agent-system/bin/office-system rule-add --scope agent --agent <agent_id> --title "<title>" --body "<rule>"
 ~/.hermes/agent-system/bin/office-system rule-add --scope project --project <project_id> --title "<title>" --body "<rule>"
 ```
+
+Collaborative rule intake:
+
+Users will not know every production rule at onboarding time. The GUI should
+let Agents ask focused questions during collaboration and turn user-stated
+preferences into reviewable rule proposals.
+
+```bash
+~/.hermes/agent-system/bin/office-system rule-elicit --project <project_id> --agent <agent_id> --context "<current collaboration context>"
+~/.hermes/agent-system/bin/office-system rule-suggest --title "<rule title>" --body "<rule in user's words>" --project <project_id> --agent <agent_id> --source conversation --created-by <user_id>
+~/.hermes/agent-system/bin/office-system rule-proposal-list --status pending_user_confirmation
+~/.hermes/agent-system/bin/office-system rule-proposal-decision --proposal-id <proposal_id> --decision approve --decided-by <user_id> --role project_manager --scope global|project|agent --confirmed
+```
+
+- `rule-elicit` returns conversational prompts for missing production-rule areas such as human judgment, evidence standards, role boundaries, quality bars, and data boundaries.
+- `rule-suggest` creates a pending proposal, not an active rule. It infers whether the rule belongs to global, project, or Agent scope and exposes alternatives when confidence is low.
+- `rule-proposal-decision --decision approve --confirmed` is the only path that writes the rule into the active rule store.
+- Scope classification is advisory. The human can override the proposed scope before approval.
+- Agent-specific rules belong under `rules/agents/<agent>.md`; project/client rules belong under `projects/<project_id>/rules`; company-wide safety, approval, memory, and knowledge-promotion rules belong under `rules/global`.
 
 Methodology promotion:
 

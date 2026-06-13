@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "task_id": "multilingual-agent-eval-production",
+  "description": "Verify deterministic multilingual evals for human judgment, coordination policy, and conversational rule scope inference.",
+  "roles": [
+    "secretary",
+    "project_manager"
+  ],
+  "workflow": "agent_eval_harness",
+  "gates": [
+    {
+      "id": "runtime_eval_suite_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/evals/runtime-replay-and-multilingual.json"
+    },
+    {
+      "id": "runtime_eval_suite_passes",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 120,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; \"$tmp/agent-system/bin/office-system\" eval-run --suite runtime-replay-and-multilingual --no-write > \"$tmp/eval.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"status\"] == \"success\"; assert data[\"passed\"] == data[\"total\"] and data[\"total\"] >= 6' \"$tmp/eval.json\""
+      ]
+    }
+  ]
+}
