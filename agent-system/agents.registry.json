@@ -1170,6 +1170,410 @@
         "brainstorming",
         "writing-plans"
       ]
+    },
+    "legal": {
+      "decision": {
+        "avoid_when": [
+          "the user asks for litigation representation, court filing, or final legal opinion without professional human review",
+          "the request can be handled directly by a non-legal specialist without legal risk",
+          "the task requires jurisdiction-specific legal advice but no source documents or jurisdiction are provided"
+        ],
+        "primary_outputs": [
+          "legal intake summary",
+          "risk triage memo",
+          "specialist routing plan",
+          "legal department synthesis draft",
+          "human review checklist"
+        ],
+        "use_when": [
+          "the user asks the enterprise legal department to review, triage, or coordinate a legal or compliance matter",
+          "the task needs legal-risk framing before another specialist proceeds",
+          "multiple legal capability lanes must be synthesized into one business-facing recommendation draft"
+        ]
+      },
+      "display_name": "Digital Office Legal Department",
+      "fallbacks": [
+        {
+          "model": "MiniMax-M3",
+          "provider": "minimax-cn"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "model": "MiniMax-M3",
+      "orchestration_roles": [
+        "legal_intake",
+        "legal_synthesis"
+      ],
+      "portable_role": "enterprise-legal-department-lead",
+      "profile": "office-legal",
+      "provider": "minimax-cn",
+      "routing": {
+        "default_workflow": "legal_triage",
+        "keywords": [
+          {
+            "term": "legal",
+            "weight": 8
+          },
+          {
+            "term": "law",
+            "weight": 5
+          },
+          {
+            "term": "legal department",
+            "weight": 12
+          },
+          {
+            "term": "in-house legal",
+            "weight": 10
+          },
+          {
+            "term": "compliance",
+            "weight": 5
+          },
+          {
+            "term": "legal review",
+            "weight": 10
+          },
+          {
+            "term": "legal risk",
+            "weight": 10
+          },
+          {
+            "term": "法务",
+            "weight": 12
+          },
+          {
+            "term": "法务部",
+            "weight": 12
+          },
+          {
+            "term": "法律",
+            "weight": 8
+          },
+          {
+            "term": "法律风险",
+            "weight": 10
+          },
+          {
+            "term": "合规",
+            "weight": 7
+          },
+          {
+            "term": "审法务",
+            "weight": 10
+          },
+          {
+            "term": "法务审查",
+            "weight": 12
+          },
+          {
+            "term": "企业法务",
+            "weight": 12
+          }
+        ],
+        "priority": 96
+      },
+      "skills": [
+        "legal-department-workflows"
+      ]
+    },
+    "legal-contracts": {
+      "decision": {
+        "avoid_when": [
+          "the request is primarily privacy, data, employment, IP, or regulatory without a contract artifact",
+          "the user requests final legal conclusions instead of an internal review draft",
+          "no contract, clause, negotiation history, or review objective is available"
+        ],
+        "primary_outputs": [
+          "contract review issue list",
+          "clause risk matrix",
+          "redline instruction draft",
+          "business-readable fallback positions",
+          "escalation items for human legal review"
+        ],
+        "use_when": [
+          "the task concerns supplier, customer, SaaS, NDA, procurement, service, or partnership contracts",
+          "the user needs contract risk triage, clause review, negotiation positions, or signed-contract playbook deviations",
+          "corporate transaction materials need structured diligence or disclosure support"
+        ]
+      },
+      "display_name": "Digital Office Contract Review Specialist",
+      "fallbacks": [
+        {
+          "model": "MiniMax-M3",
+          "provider": "minimax-cn"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "model": "MiniMax-M3",
+      "orchestration_roles": [
+        "legal_contracts"
+      ],
+      "portable_role": "enterprise-contract-review-specialist",
+      "profile": "office-legal-contracts",
+      "provider": "minimax-cn",
+      "routing": {
+        "default_workflow": "legal_contract_review",
+        "keywords": [
+          {
+            "term": "contract",
+            "weight": 8
+          },
+          {
+            "term": "agreement",
+            "weight": 7
+          },
+          {
+            "term": "NDA",
+            "weight": 8
+          },
+          {
+            "term": "MSA",
+            "weight": 8
+          },
+          {
+            "term": "SaaS agreement",
+            "weight": 9
+          },
+          {
+            "term": "supplier agreement",
+            "weight": 9
+          },
+          {
+            "term": "vendor agreement",
+            "weight": 9
+          },
+          {
+            "term": "procurement",
+            "weight": 6
+          },
+          {
+            "term": "terms",
+            "weight": 4
+          },
+          {
+            "term": "redline",
+            "weight": 6
+          },
+          {
+            "term": "合同",
+            "weight": 10
+          },
+          {
+            "term": "协议",
+            "weight": 8
+          },
+          {
+            "term": "保密协议",
+            "weight": 9
+          },
+          {
+            "term": "采购合同",
+            "weight": 9
+          },
+          {
+            "term": "供应商合同",
+            "weight": 10
+          },
+          {
+            "term": "服务协议",
+            "weight": 8
+          },
+          {
+            "term": "SaaS合同",
+            "weight": 9
+          },
+          {
+            "term": "条款",
+            "weight": 6
+          },
+          {
+            "term": "违约",
+            "weight": 6
+          },
+          {
+            "term": "履约",
+            "weight": 6
+          },
+          {
+            "term": "修订",
+            "weight": 5
+          },
+          {
+            "term": "红线",
+            "weight": 5
+          }
+        ],
+        "priority": 92
+      },
+      "skills": [
+        "legal-department-workflows"
+      ]
+    },
+    "legal-compliance": {
+      "decision": {
+        "avoid_when": [
+          "the task is only ordinary product planning without legal or compliance risk",
+          "the task is purely contract clause negotiation better handled by legal-contracts",
+          "the user asks for external legal opinion without professional human review"
+        ],
+        "primary_outputs": [
+          "compliance triage memo",
+          "privacy or data risk checklist",
+          "product launch legal review draft",
+          "employment/IP/regulatory issue matrix",
+          "required evidence and human approval list"
+        ],
+        "use_when": [
+          "the task involves privacy, data protection, AI governance, product launch, marketing claims, employment, IP, or regulatory change",
+          "the user needs an internal compliance review draft before business action",
+          "the task needs legal-risk classification and source-backed review questions"
+        ]
+      },
+      "display_name": "Digital Office Compliance and Product Legal Specialist",
+      "fallbacks": [
+        {
+          "model": "MiniMax-M3",
+          "provider": "minimax-cn"
+        }
+      ],
+      "memory_policy": "keymemory",
+      "model": "MiniMax-M3",
+      "orchestration_roles": [
+        "legal_compliance"
+      ],
+      "portable_role": "enterprise-compliance-and-product-legal-specialist",
+      "profile": "office-legal-compliance",
+      "provider": "minimax-cn",
+      "routing": {
+        "default_workflow": "legal_product_compliance_review",
+        "keywords": [
+          {
+            "term": "privacy",
+            "weight": 8
+          },
+          {
+            "term": "personal information",
+            "weight": 8
+          },
+          {
+            "term": "data compliance",
+            "weight": 8
+          },
+          {
+            "term": "data protection",
+            "weight": 8
+          },
+          {
+            "term": "PIPL",
+            "weight": 8
+          },
+          {
+            "term": "DPA",
+            "weight": 6
+          },
+          {
+            "term": "PIA",
+            "weight": 6
+          },
+          {
+            "term": "product launch",
+            "weight": 8
+          },
+          {
+            "term": "marketing claims",
+            "weight": 7
+          },
+          {
+            "term": "advertising law",
+            "weight": 7
+          },
+          {
+            "term": "employment",
+            "weight": 7
+          },
+          {
+            "term": "IP",
+            "weight": 6
+          },
+          {
+            "term": "intellectual property",
+            "weight": 7
+          },
+          {
+            "term": "open source compliance",
+            "weight": 7
+          },
+          {
+            "term": "regulatory",
+            "weight": 7
+          },
+          {
+            "term": "AI governance",
+            "weight": 8
+          },
+          {
+            "term": "隐私",
+            "weight": 9
+          },
+          {
+            "term": "个人信息",
+            "weight": 9
+          },
+          {
+            "term": "数据合规",
+            "weight": 9
+          },
+          {
+            "term": "个保法",
+            "weight": 9
+          },
+          {
+            "term": "产品上线",
+            "weight": 8
+          },
+          {
+            "term": "营销宣传",
+            "weight": 7
+          },
+          {
+            "term": "广告法",
+            "weight": 7
+          },
+          {
+            "term": "劳动用工",
+            "weight": 8
+          },
+          {
+            "term": "劳动合同",
+            "weight": 7
+          },
+          {
+            "term": "知识产权",
+            "weight": 8
+          },
+          {
+            "term": "开源合规",
+            "weight": 7
+          },
+          {
+            "term": "监管",
+            "weight": 7
+          },
+          {
+            "term": "AI治理",
+            "weight": 8
+          },
+          {
+            "term": "算法备案",
+            "weight": 7
+          }
+        ],
+        "priority": 90
+      },
+      "skills": [
+        "legal-department-workflows"
+      ]
     }
   },
   "aliases": {
@@ -1238,6 +1642,30 @@
       "description": "Final delivery validation, artifact packaging, user-facing summary, and unresolved assumption reporting.",
       "preferred_agents": [
         "secretary"
+      ]
+    },
+    "legal_intake": {
+      "description": "Enterprise legal department intake, jurisdiction/source scoping, matter classification, and approval-boundary setup.",
+      "preferred_agents": [
+        "legal"
+      ]
+    },
+    "legal_contracts": {
+      "description": "Supplier, customer, SaaS, NDA, procurement, services, corporate contract, and diligence review drafts.",
+      "preferred_agents": [
+        "legal-contracts"
+      ]
+    },
+    "legal_compliance": {
+      "description": "Privacy, data, product launch, marketing claims, AI governance, employment, IP, and regulatory compliance triage.",
+      "preferred_agents": [
+        "legal-compliance"
+      ]
+    },
+    "legal_synthesis": {
+      "description": "Legal department synthesis, business-facing risk framing, unresolved assumptions, and human review gates.",
+      "preferred_agents": [
+        "legal"
       ]
     }
   },
@@ -1382,6 +1810,106 @@
       ],
       "expect_workflow": "ppt_production",
       "prompt": "Make a slide deck for tomorrow's product review"
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_contract_review",
+      "expect_steps": [
+        "legal",
+        "legal-contracts",
+        "legal"
+      ],
+      "prompt": "请法务部审查这份供应商合同，重点看责任限制、解除和赔偿条款"
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_privacy_data_review",
+      "expect_steps": [
+        "legal",
+        "legal-compliance",
+        "legal"
+      ],
+      "prompt": "请法务评估这个新功能的个人信息和数据合规风险"
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_product_compliance_review",
+      "expect_steps": [
+        "legal",
+        "legal-compliance",
+        "legal"
+      ],
+      "prompt": "产品上线前请法务做营销宣传和AI治理合规审查"
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_employment_ip_review",
+      "expect_steps": [
+        "legal",
+        "legal-compliance",
+        "legal"
+      ],
+      "prompt": "请企业法务评估劳动合同解除和开源合规风险"
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_dispute_triage",
+      "expect_steps": [
+        "legal",
+        "legal-contracts",
+        "legal"
+      ],
+      "prompt": "收到律师函了，请法务部做争议分流和应对清单"
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_contract_review",
+      "expect_steps": [
+        "legal",
+        "legal-contracts",
+        "legal"
+      ],
+      "prompt": "Please ask the legal department to review this supplier contract, especially limitation of liability, termination, and indemnity."
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_privacy_data_review",
+      "expect_steps": [
+        "legal",
+        "legal-compliance",
+        "legal"
+      ],
+      "prompt": "Ask legal to assess personal information and data compliance risk for this new feature."
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_product_compliance_review",
+      "expect_steps": [
+        "legal",
+        "legal-compliance",
+        "legal"
+      ],
+      "prompt": "Before product launch, ask legal to review marketing claims and AI governance compliance."
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_employment_ip_review",
+      "expect_steps": [
+        "legal",
+        "legal-compliance",
+        "legal"
+      ],
+      "prompt": "Ask enterprise legal to evaluate employment termination and open source compliance risk."
+    },
+    {
+      "expect": "legal",
+      "expect_workflow": "legal_dispute_triage",
+      "expect_steps": [
+        "legal",
+        "legal-contracts",
+        "legal"
+      ],
+      "prompt": "We received a demand letter; ask legal to triage the dispute and prepare response options."
     }
   ],
   "routing_policy": {
@@ -1753,6 +2281,382 @@
       "priority": 80,
       "reason": "Presentation requests need secretary intake, narrative writing, deck design, and secretary delivery validation.",
       "workflow": "ppt_production"
+    },
+    {
+      "match_all": [
+        [
+          {
+            "term": "legal",
+            "weight": 7
+          },
+          {
+            "term": "legal department",
+            "weight": 10
+          },
+          {
+            "term": "法务",
+            "weight": 10
+          },
+          {
+            "term": "法务部",
+            "weight": 10
+          },
+          {
+            "term": "法律",
+            "weight": 7
+          },
+          {
+            "term": "企业法务",
+            "weight": 10
+          }
+        ],
+        [
+          {
+            "term": "contract",
+            "weight": 8
+          },
+          {
+            "term": "agreement",
+            "weight": 7
+          },
+          {
+            "term": "NDA",
+            "weight": 7
+          },
+          {
+            "term": "supplier agreement",
+            "weight": 8
+          },
+          {
+            "term": "合同",
+            "weight": 10
+          },
+          {
+            "term": "协议",
+            "weight": 8
+          },
+          {
+            "term": "保密协议",
+            "weight": 8
+          },
+          {
+            "term": "供应商合同",
+            "weight": 9
+          }
+        ]
+      ],
+      "minimum_score": 14,
+      "primary_role": "legal_synthesis",
+      "priority": 120,
+      "reason": "Contract matters should enter the enterprise legal department workflow, with contract specialist review and legal lead synthesis.",
+      "workflow": "legal_contract_review"
+    },
+    {
+      "match_all": [
+        [
+          {
+            "term": "legal",
+            "weight": 6
+          },
+          {
+            "term": "compliance",
+            "weight": 7
+          },
+          {
+            "term": "法务",
+            "weight": 8
+          },
+          {
+            "term": "合规",
+            "weight": 8
+          },
+          {
+            "term": "法律",
+            "weight": 6
+          }
+        ],
+        [
+          {
+            "term": "privacy",
+            "weight": 8
+          },
+          {
+            "term": "personal information",
+            "weight": 8
+          },
+          {
+            "term": "data compliance",
+            "weight": 8
+          },
+          {
+            "term": "data protection",
+            "weight": 8
+          },
+          {
+            "term": "PIPL",
+            "weight": 8
+          },
+          {
+            "term": "个人信息",
+            "weight": 9
+          },
+          {
+            "term": "隐私",
+            "weight": 9
+          },
+          {
+            "term": "数据合规",
+            "weight": 9
+          },
+          {
+            "term": "个保法",
+            "weight": 9
+          }
+        ]
+      ],
+      "minimum_score": 14,
+      "primary_role": "legal_synthesis",
+      "priority": 116,
+      "reason": "Privacy and data matters need compliance specialist review and legal department synthesis before business reliance.",
+      "workflow": "legal_privacy_data_review"
+    },
+    {
+      "match_all": [
+        [
+          {
+            "term": "legal",
+            "weight": 6
+          },
+          {
+            "term": "compliance",
+            "weight": 7
+          },
+          {
+            "term": "法务",
+            "weight": 8
+          },
+          {
+            "term": "合规",
+            "weight": 8
+          },
+          {
+            "term": "法律",
+            "weight": 6
+          }
+        ],
+        [
+          {
+            "term": "product launch",
+            "weight": 8
+          },
+          {
+            "term": "marketing claims",
+            "weight": 7
+          },
+          {
+            "term": "AI governance",
+            "weight": 8
+          },
+          {
+            "term": "regulatory",
+            "weight": 7
+          },
+          {
+            "term": "产品上线",
+            "weight": 9
+          },
+          {
+            "term": "营销宣传",
+            "weight": 8
+          },
+          {
+            "term": "广告法",
+            "weight": 7
+          },
+          {
+            "term": "AI治理",
+            "weight": 8
+          },
+          {
+            "term": "监管",
+            "weight": 7
+          }
+        ]
+      ],
+      "minimum_score": 14,
+      "primary_role": "legal_synthesis",
+      "priority": 114,
+      "reason": "Product, marketing, AI, and regulatory requests need compliance review plus legal lead synthesis.",
+      "workflow": "legal_product_compliance_review"
+    },
+    {
+      "match_all": [
+        [
+          {
+            "term": "legal",
+            "weight": 6
+          },
+          {
+            "term": "legal department",
+            "weight": 9
+          },
+          {
+            "term": "法务",
+            "weight": 9
+          },
+          {
+            "term": "法务部",
+            "weight": 9
+          },
+          {
+            "term": "法律",
+            "weight": 6
+          }
+        ],
+        [
+          {
+            "term": "employment",
+            "weight": 7
+          },
+          {
+            "term": "labor",
+            "weight": 6
+          },
+          {
+            "term": "IP",
+            "weight": 6
+          },
+          {
+            "term": "intellectual property",
+            "weight": 7
+          },
+          {
+            "term": "open source compliance",
+            "weight": 7
+          },
+          {
+            "term": "劳动",
+            "weight": 8
+          },
+          {
+            "term": "劳动合同",
+            "weight": 8
+          },
+          {
+            "term": "知识产权",
+            "weight": 8
+          },
+          {
+            "term": "开源合规",
+            "weight": 7
+          }
+        ]
+      ],
+      "minimum_score": 13,
+      "primary_role": "legal_synthesis",
+      "priority": 112,
+      "reason": "Employment, IP, and open-source matters enter the compliance lane with legal lead synthesis.",
+      "workflow": "legal_employment_ip_review"
+    },
+    {
+      "match_all": [
+        [
+          {
+            "term": "legal",
+            "weight": 6
+          },
+          {
+            "term": "legal department",
+            "weight": 9
+          },
+          {
+            "term": "法务",
+            "weight": 9
+          },
+          {
+            "term": "法务部",
+            "weight": 9
+          },
+          {
+            "term": "法律",
+            "weight": 6
+          }
+        ],
+        [
+          {
+            "term": "demand letter",
+            "weight": 7
+          },
+          {
+            "term": "dispute",
+            "weight": 7
+          },
+          {
+            "term": "litigation",
+            "weight": 7
+          },
+          {
+            "term": "arbitration",
+            "weight": 7
+          },
+          {
+            "term": "律师函",
+            "weight": 8
+          },
+          {
+            "term": "争议",
+            "weight": 8
+          },
+          {
+            "term": "诉讼",
+            "weight": 8
+          },
+          {
+            "term": "仲裁",
+            "weight": 8
+          },
+          {
+            "term": "纠纷",
+            "weight": 8
+          }
+        ]
+      ],
+      "minimum_score": 13,
+      "primary_role": "legal_synthesis",
+      "priority": 110,
+      "reason": "Dispute matters should be triaged internally and prepared for human/external counsel review when needed.",
+      "workflow": "legal_dispute_triage"
+    },
+    {
+      "match_all": [
+        [
+          {
+            "term": "legal department",
+            "weight": 10
+          },
+          {
+            "term": "in-house legal",
+            "weight": 9
+          },
+          {
+            "term": "法务部",
+            "weight": 10
+          },
+          {
+            "term": "企业法务",
+            "weight": 10
+          },
+          {
+            "term": "法务",
+            "weight": 9
+          }
+        ]
+      ],
+      "minimum_score": 9,
+      "primary_role": "legal_synthesis",
+      "priority": 80,
+      "reason": "Generic legal department requests start with legal intake before any specialist lane is selected.",
+      "workflow": "legal_triage"
     }
   ],
   "workflows": {
@@ -1804,6 +2708,58 @@
       "label": "Single specialist",
       "steps": [
         "{primary_agent}"
+      ]
+    },
+    "legal_triage": {
+      "handoff_contract": "Legal department lead clarifies jurisdiction, business objective, source materials, risk tolerance, and whether specialist review or human professional review is required. Output is an internal triage draft, not legal advice.",
+      "label": "Enterprise legal intake and triage",
+      "steps": [
+        "@role:legal_intake"
+      ]
+    },
+    "legal_contract_review": {
+      "handoff_contract": "Legal lead scopes the contract matter and review objectives. Contract specialist reviews clauses, source materials, risk positions, and proposed fallbacks. Legal lead synthesizes a business-facing review draft, unresolved assumptions, and human review gates.",
+      "label": "Enterprise contract review",
+      "steps": [
+        "@role:legal_intake",
+        "@role:legal_contracts",
+        "@role:legal_synthesis"
+      ]
+    },
+    "legal_product_compliance_review": {
+      "handoff_contract": "Legal lead scopes product, marketing, AI, or regulatory compliance questions. Compliance specialist runs source-backed issue triage and control checks. Legal lead synthesizes launch/blocker recommendations for human approval.",
+      "label": "Product and compliance legal review",
+      "steps": [
+        "@role:legal_intake",
+        "@role:legal_compliance",
+        "@role:legal_synthesis"
+      ]
+    },
+    "legal_privacy_data_review": {
+      "handoff_contract": "Legal lead scopes data flows, roles, jurisdiction, and artifacts. Compliance specialist reviews privacy, data processing, PIA/DPA, and data-rights risks. Legal lead delivers an internal review draft and required human/legal approval points.",
+      "label": "Privacy and data legal review",
+      "steps": [
+        "@role:legal_intake",
+        "@role:legal_compliance",
+        "@role:legal_synthesis"
+      ]
+    },
+    "legal_employment_ip_review": {
+      "handoff_contract": "Legal lead scopes employment, IP, or open-source issues and required evidence. Compliance specialist builds the issue matrix and source-backed risk flags. Legal lead synthesizes next actions, approvals, and external counsel triggers.",
+      "label": "Employment, IP, and open-source legal review",
+      "steps": [
+        "@role:legal_intake",
+        "@role:legal_compliance",
+        "@role:legal_synthesis"
+      ]
+    },
+    "legal_dispute_triage": {
+      "handoff_contract": "Legal lead scopes the demand, dispute, litigation, or arbitration posture. Contract specialist maps obligations, facts, deadlines, and evidence gaps. Legal lead prepares an internal dispute triage memo and human/external counsel escalation gates.",
+      "label": "Dispute and demand-letter triage",
+      "steps": [
+        "@role:legal_intake",
+        "@role:legal_contracts",
+        "@role:legal_synthesis"
       ]
     }
   }

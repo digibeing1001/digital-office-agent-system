@@ -14,11 +14,12 @@ Digital Law Firm, Digital Accounting Firm, or Digital Media Studio.
 3. tenant identity, roles, seats, and entitlement control
 4. Agent host runtime such as Hermes or OpenClaw
 5. `agent-system` registries and policies
-6. agent profiles and skills
-7. company/project knowledge bases
-8. licensed industry reference layer
-9. KeyMemory relay and semantic memory
-10. local model capabilities for OCR and RAG
+6. department namespaces and workflow packs
+7. agent profiles and skills
+8. company/project knowledge bases
+9. licensed industry reference layer
+10. KeyMemory relay and semantic memory
+11. local model capabilities for OCR and RAG
 
 The GUI should expose projects, digital employees, knowledge, rules, approvals,
 and product updates. It should not expose host runtime internals by default.
@@ -70,6 +71,30 @@ Every workflow run should carry these claims:
 This lets multiple real employees use the same Digital Office later without
 rewriting the Agent runtime.
 
+## Departments
+
+Departments are first-class product concepts, but they are not rigid simulated
+human management hierarchies. A department is a capability namespace, permission
+boundary, knowledge space, workflow bundle, and user-facing mental model.
+
+The runtime should still choose the smallest useful topology:
+
+1. Direct specialist when one capability can handle the task.
+2. Department workflow when a domain task needs several capability lanes.
+3. Department lead synthesis only for intake, conflict resolution, final
+   business-facing summary, escalation, and approval gates.
+
+`agent-system/departments.registry.json` records department metadata, lead
+agents, specialist agents, workflow ids, knowledge scopes, source skill packs,
+and safety policy. It does not replace `agents.registry.json`; it adds an
+organization layer above role and workflow routing.
+
+The first implemented department is `legal`, an enterprise legal department.
+It models in-house legal support rather than a law firm team. Legal outputs are
+internal review drafts, not final legal opinions. External reliance, filings,
+contract signature approval, product launch approval, employment action, demand
+letters, and litigation steps require human professional review.
+
 ## Agent Routing
 
 `agent-system/agents.registry.json` is the canonical agent roster. It defines
@@ -78,6 +103,11 @@ agents, profiles, models, providers, route keywords, workflows, and route tests.
 `scripts/agent-router` is only the executor. It reads the registry, resolves an
 agent or workflow, logs route events without storing raw prompts, and launches
 Hermes with the selected profile/model/provider.
+
+Routing stays role-first. A request may mention a department, but the router
+resolves it into portable orchestration roles and concrete workflow steps. For
+example, a legal contract review resolves to legal intake, contract review, and
+legal synthesis rather than blindly simulating a chain of human managers.
 
 The `secretary` agent id refers to the current host default Agent entrypoint
 after Digital Office injection. It must not be duplicated as a second
@@ -140,6 +170,9 @@ Online knowledge injection rule:
   knowledge, or specialist Agent context according to admin settings
 - provider-sold industry knowledge must be mounted as licensed reference, never
   as readable company/project source files
+- department-specific knowledge spaces may scope company/project/legal or other
+  domain materials to the department and its specialist Agents, but project
+  source files remain the authority for active project facts
 
 ## Rules
 

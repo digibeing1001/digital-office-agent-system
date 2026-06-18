@@ -33,7 +33,7 @@
 
 ### 多 Agent 协作
 
-内置 7 个数字员工角色，通过统一注册表协作：
+内置基础数字员工角色，并支持以“部门 = 能力命名空间 + 权限边界 + 工作流包”的方式扩展：
 
 | 角色 | 职责 |
 |------|------|
@@ -44,8 +44,11 @@
 | **设计师** | 视觉方向、UI 设计、原型 |
 | **工程师** | 编码、调试、测试、部署 |
 | **写手** | 文案、故事线、讲稿、文档 |
+| **企业法务部** | 合同审查、隐私数据、产品合规、用工/IP、争议分流的内部审查草稿与人工审批门槛 |
 
 用户说出需求，秘书自动选择合适的角色组合，管理多 Agent 交接，确保后续角色使用前序产物而不是从头开始。
+
+部门不是模拟人类管理层。部门负责人 Agent 只在 intake、综合、升级和审批门槛处出现；窄任务会直接进入对应能力节点。
 
 ### 工作流引擎
 
@@ -54,6 +57,7 @@
 - **PPT 生产** — intake → writing → design → delivery，从需求澄清到交付完整 deck
 - **Vibe Design** — 设计类任务的生产门禁保障
 - **Vibe Coding** — 编码类任务的 TDD + 质量审查
+- **企业法务部** — legal_intake → legal_contracts/legal_compliance → legal_synthesis，支持合同审查、隐私数据、产品合规、用工/IP、争议分流，所有输出均为人工审查前的内部草稿
 
 所有工作流都在 AI Native Loop 框架内执行，遵循感知 → 规划 → 执行 → 反思 → 迭代的五步闭环。
 
@@ -205,6 +209,7 @@ agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787
 | 文档 | 说明 |
 |------|------|
 | [architecture.md](agent-system/docs/architecture.md) | 总体架构、运行层、知识模型、发布模型 |
+| [legal-department.zh-CN.md](agent-system/docs/legal-department.zh-CN.md) | 企业法务部部门模型、工作流与安全边界 |
 | [host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md) | 宿主注入策略详解 |
 | [ppt-production-workflow.md](agent-system/docs/ppt-production-workflow.md) | PPT 生产工作流与角色边界 |
 | [production-harness.md](agent-system/docs/production-harness.md) | 生产门禁设计 |

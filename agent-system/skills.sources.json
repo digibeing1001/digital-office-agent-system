@@ -197,6 +197,19 @@
       "status": "research_only_until_standard_skill_packaging",
       "type": "git-candidate",
       "use_case": "pre-delivery clarity review for pitch and presentation narratives; not active until it provides a standard SKILL.md package"
+    },
+    {
+      "candidate_for": [
+        "legal",
+        "legal-contracts",
+        "legal-compliance"
+      ],
+      "name": "Legal-Skills-Chinese",
+      "remote": "https://github.com/THUYRan/Legal-Skills-Chinese.git",
+      "status": "reference_only_license_review_required",
+      "type": "git-candidate",
+      "use_case": "PRC statutory-law legal reasoning atomic skills for retrieval, norm validity, element extraction, risk assessment, and document summarization.",
+      "notes": "README and CONTRIBUTING identify CC BY-NC-ND 4.0 terms; do not vendor, modify, redistribute, or use commercially until licensing is cleared."
     }
   ],
   "description": "Portable manifest for updating installed skills from their source repositories or registries.",
@@ -316,6 +329,19 @@
         "secretary",
         "vibe-designer"
       ]
+    },
+    {
+      "branch": "main",
+      "name": "claude-for-legal-zh",
+      "path": "../skills/_imported/claude-for-legal-ZH",
+      "remote": "https://github.com/cslawyer1985/claude-for-legal-zh.git",
+      "type": "git",
+      "used_by": [
+        "legal",
+        "legal-contracts",
+        "legal-compliance"
+      ],
+      "notes": "Apache 2.0 source for China-law-oriented enterprise legal plugins; stage, verify, and approve before production activation."
     }
   ],
   "update_policy": {

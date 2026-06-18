@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-06-18
+
+### 新增
+
+- **企业法务部门架构**
+  - 新增 `agent-system/departments.registry.json`，把“部门”定义为能力命名空间、权限边界、知识空间和工作流包，而不是僵硬复刻人类组织层级。
+  - 新增企业法务部 Agent：`legal`、`legal-contracts`、`legal-compliance`，覆盖法务收口、合同审查、合规与产品法务、综合法务结论整理。
+  - 新增法务工作流：`legal_triage`、`legal_contract_review`、`legal_product_compliance_review`、`legal_privacy_data_review`、`legal_employment_ip_review`、`legal_dispute_triage`。
+  - 新增内部技能 `skills/legal-department-workflows/SKILL.md`，要求法务输出保持为企业内部审查草稿，重大法律判断、外部函件、签署、上线或监管动作必须经过人工专业复核。
+  - 新增 `agent-system/docs/legal-department.zh-CN.md` 和 `agent-system/harness/tasks/legal-department-production.json`，记录法务部门设计、路由、来源库边界和生产验证门禁。
+
+### 变更
+
+- 架构文档新增 Department layer：秘书 Agent 可以把任务派发到部门工作流，但运行时仍按最小必要拓扑选择直接专家、部门流程或负责人综合，不强制模拟多级管理链。
+- `secretary.capabilities.json` 新增法务工作流治理规则：需要引用来源文件或标记法律依据未验证，并在高风险法律场景触发人工复核。
+- 外部法务技能来源登记：
+  - `claude-for-legal-zh`：Apache 2.0，作为可分阶段引入的企业法务技能参考源。
+  - `Legal-Skills-Chinese`：CC BY-NC-ND 4.0，登记为仅参考和许可审查候选，不在未获授权前商用、改编、内置或再分发。
+
 ## 2026-06-10
 
 ### 新增

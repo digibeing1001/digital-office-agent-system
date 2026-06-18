@@ -74,6 +74,9 @@ Router contract:
 - `fallback == true` or `clarification_required == true` means the secretary should clarify, reflect, or ask for confirmation before dispatching.
 - Workflow steps are resolved from portable `orchestration_roles` in `agents.registry.json`; industry packages may remap those roles to different Agent ids without changing the router code.
 - GUI labels should describe the role and workflow to the user, while backend calls use the concrete `agent` and `steps` returned by the router.
+- Department requests should be displayed as department workflows, not as a rigid staff tree. `agent-system/departments.registry.json` describes department labels, lead Agents, specialist Agents, workflow ids, knowledge scopes, source skill packs, and safety policy.
+- A department lead Agent appears only when intake, synthesis, escalation, or approval gates are needed. Narrow work can route directly to the specialist step returned by the workflow.
+- Legal department workflows are internal review drafts. The GUI must show source verification status and human review gates before any user relies on legal output, sends external communications, approves launch, approves signature, or takes regulated action.
 
 Production harness:
 
@@ -85,6 +88,7 @@ Production harness:
 - Product, design, and implementation workflows must show gate status before user-facing delivery.
 - `pm_to_design` must pass product and design gates.
 - `pm_to_design_to_code` must pass product, design, and implementation gates.
+- `legal_*` workflows must pass legal department routing, source-policy, and human-review guardrail gates.
 - The GUI should show failed gates as rework actions, not as raw CLI errors.
 - External high-star skill sources are candidates only. They must be staged, reviewed, adapted, verified, and approved before enterprise use.
 
