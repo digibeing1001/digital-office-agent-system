@@ -200,9 +200,7 @@
     },
     {
       "candidate_for": [
-        "legal",
-        "legal-contracts",
-        "legal-compliance"
+        "legal"
       ],
       "name": "Legal-Skills-Chinese",
       "remote": "https://github.com/THUYRan/Legal-Skills-Chinese.git",
@@ -337,11 +335,9 @@
       "remote": "https://github.com/cslawyer1985/claude-for-legal-zh.git",
       "type": "git",
       "used_by": [
-        "legal",
-        "legal-contracts",
-        "legal-compliance"
+        "legal"
       ],
-      "notes": "Apache 2.0 source for China-law-oriented enterprise legal plugins; stage, verify, and approve before production activation."
+      "notes": "Apache 2.0 source for China-law-oriented enterprise legal plugins; installed locally under skills/_imported and exposed to the Digital Lawyer through digital-lawyer-workflows."
     }
   ],
   "update_policy": {

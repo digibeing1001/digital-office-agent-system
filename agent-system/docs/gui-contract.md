@@ -35,7 +35,7 @@ The GUI should use `gui-state` as the home-screen snapshot instead of stitching 
 ~/.hermes/agent-system/bin/office-system settings-update --work-mode quality --confirmed
 ```
 
-- `gui-state` returns health, configured settings, capabilities, Agents, projects, workflows, tasks, approvals, notifications, knowledge, and recent audit records.
+- `gui-state` returns health, configured settings, capabilities, Agents, digital employees, workflow packs, context contract, local skill installations, projects, workflows, tasks, approvals, notifications, knowledge, and recent audit records.
 - `onboarding-*` is for first-run setup; `settings-*` is for the same preferences after the product is already in use.
 - Settings are partial-update friendly: omitted fields keep the previous value, then fall back to the preset default.
 - Generated files under `agent-system/settings/` are runtime state and must not be committed.
@@ -74,9 +74,12 @@ Router contract:
 - `fallback == true` or `clarification_required == true` means the secretary should clarify, reflect, or ask for confirmation before dispatching.
 - Workflow steps are resolved from portable `orchestration_roles` in `agents.registry.json`; industry packages may remap those roles to different Agent ids without changing the router code.
 - GUI labels should describe the role and workflow to the user, while backend calls use the concrete `agent` and `steps` returned by the router.
-- Department requests should be displayed as department workflows, not as a rigid staff tree. `agent-system/departments.registry.json` describes department labels, lead Agents, specialist Agents, workflow ids, knowledge scopes, source skill packs, and safety policy.
-- A department lead Agent appears only when intake, synthesis, escalation, or approval gates are needed. Narrow work can route directly to the specialist step returned by the workflow.
-- Legal department workflows are internal review drafts. The GUI must show source verification status and human review gates before any user relies on legal output, sends external communications, approves launch, approves signature, or takes regulated action.
+- Business department wording is a UI mental model, not a third Agent layer. The backend contract is `secretary -> digital employee Agent -> Skill staff lanes`.
+- `agent-system/digital-employees.registry.json` describes product-visible digital employees. `agent-system/workflow-packs.registry.json` describes workflow ids, owning Agents, Skill lanes, source packs, and delivery gates.
+- `agent-system/context-envelope.schema.json` is the context handoff contract. Large documents move by artifact refs; decisions, assumptions, open questions, and risk flags must stay structured.
+- `agent-system/skill-installations.registry.json` records locally installed source packs and license-blocked candidates.
+- The legal UI should show one enterprise Digital Lawyer. Contract review, compliance review, privacy review, employment/IP review, dispute triage, and AI governance are internal Skill lanes under that Agent.
+- Digital Lawyer workflows are internal review drafts. The GUI must show source verification status and human review gates before any user relies on legal output, sends external communications, approves launch, approves signature, or takes regulated action.
 
 Production harness:
 
@@ -88,7 +91,7 @@ Production harness:
 - Product, design, and implementation workflows must show gate status before user-facing delivery.
 - `pm_to_design` must pass product and design gates.
 - `pm_to_design_to_code` must pass product, design, and implementation gates.
-- `legal_*` workflows must pass legal department routing, source-policy, and human-review guardrail gates.
+- `legal_*` workflows must pass Digital Lawyer routing, local skill installation, source-policy, and human-review guardrail gates.
 - The GUI should show failed gates as rework actions, not as raw CLI errors.
 - External high-star skill sources are candidates only. They must be staged, reviewed, adapted, verified, and approved before enterprise use.
 

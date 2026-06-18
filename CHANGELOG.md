@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-06-19
+
+### 变更
+
+- **最终确定数字办公室组织结构**
+  - 用户通过秘书 Agent 下达任务。
+  - 秘书把任务交给每一个特定工作的数字员工 Agent。
+  - 数字员工 Agent 可以代表一个业务部门负责人。
+  - 部门下面的“员工”不再是 Agent，而是一个个可编排 Skill。
+
+- **法务从部门多 Agent 改为数字律师**
+  - 删除 `agent-system/departments.registry.json`。
+  - 删除 `legal-contracts`、`legal-compliance` 子 Agent 和对应 profile。
+  - 将法务统一为 `legal` 数字员工，也就是企业内部数字律师。
+  - 法律工作流仍覆盖合同、隐私数据、产品合规、用工/IP、争议分流和 AI 治理，但全部通过数字律师内部 Skill lanes 执行。
+
+- **补齐 UI 设计前置契约**
+  - 新增 `agent-system/digital-employees.registry.json`。
+  - 新增 `agent-system/workflow-packs.registry.json`。
+  - 新增 `agent-system/context-envelope.schema.json`。
+  - 新增 `agent-system/skill-installations.registry.json`。
+  - 新增 `agent-system/docs/ui-design-readiness.zh-CN.md`。
+
+- **本地安装法律 Skill source**
+  - 将 `claude-for-legal-zh` 作为 Apache-2.0 source pack 安装到 `skills/_imported/claude-for-legal-ZH`。
+  - 新增 `agent-system/bin/install-skill-sources`，用于验证本地 source pack、技能文件数量和许可证阻断状态。
+  - `Legal-Skills-Chinese` 因 CC BY-NC-ND 4.0 暂不进入商用激活路径，只登记为许可证未清的阻断候选。
+
+- **生产门禁增强**
+  - 新增 `digital-employee-model-production`、`context-envelope-production`、`local-skill-installation-production`、`ui-design-readiness-production` harness 任务。
+  - `harness-check` 开始强制检查数字员工模型、工作流包、上下文信封、本地 Skill source 和旧部门模型清理。
+
 ## 2026-06-18
 
 ### 新增

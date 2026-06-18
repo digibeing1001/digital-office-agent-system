@@ -30,6 +30,10 @@ def main() -> int:
     harness_path = base / "harness" / "production-gates.json"
     tasks_dir = base / "harness" / "tasks"
     registry_path = base / "agents.registry.json"
+    digital_employees_path = base / "digital-employees.registry.json"
+    workflow_packs_path = base / "workflow-packs.registry.json"
+    context_envelope_path = base / "context-envelope.schema.json"
+    skill_installations_path = base / "skill-installations.registry.json"
     secretary_path = base / "secretary.capabilities.json"
     host_injection_path = base / "host-injection.policy.json"
     runner_path = base / "bin" / "harness-runner"
@@ -40,6 +44,11 @@ def main() -> int:
     require(harness_path.exists(), errors, f"missing harness config: {harness_path}")
     require(tasks_dir.exists(), errors, f"missing harness tasks dir: {tasks_dir}")
     require(registry_path.exists(), errors, f"missing agents registry: {registry_path}")
+    require(digital_employees_path.exists(), errors, f"missing digital employees registry: {digital_employees_path}")
+    require(workflow_packs_path.exists(), errors, f"missing workflow packs registry: {workflow_packs_path}")
+    require(context_envelope_path.exists(), errors, f"missing context envelope schema: {context_envelope_path}")
+    require(skill_installations_path.exists(), errors, f"missing skill installations registry: {skill_installations_path}")
+    require(not (base / "departments.registry.json").exists(), errors, "departments registry must not exist; departments are represented by digital employee Agent ownership plus Skills")
     require(secretary_path.exists(), errors, f"missing secretary capabilities: {secretary_path}")
     require(host_injection_path.exists(), errors, f"missing host injection policy: {host_injection_path}")
     require(runner_path.exists(), errors, f"missing harness runner: {runner_path}")
@@ -49,6 +58,10 @@ def main() -> int:
 
     harness = read_json(harness_path) if harness_path.exists() else {}
     registry = read_json(registry_path) if registry_path.exists() else {}
+    digital_employees = read_json(digital_employees_path) if digital_employees_path.exists() else {}
+    workflow_packs = read_json(workflow_packs_path) if workflow_packs_path.exists() else {}
+    context_envelope = read_json(context_envelope_path) if context_envelope_path.exists() else {}
+    skill_installations = read_json(skill_installations_path) if skill_installations_path.exists() else {}
     secretary = read_json(secretary_path) if secretary_path.exists() else {}
     host_injection = read_json(host_injection_path) if host_injection_path.exists() else {}
     loop_manifest = read_json(loop_path) if loop_path.exists() else {}
@@ -76,6 +89,11 @@ def main() -> int:
         "collaborative-rule-intake-production",
         "runtime-replay-production",
         "multilingual-agent-eval-production",
+        "digital-lawyer-production",
+        "digital-employee-model-production",
+        "context-envelope-production",
+        "local-skill-installation-production",
+        "ui-design-readiness-production",
     ):
         require(any(read_json(path).get("task_id") == task_id for path in tasks), errors, f"harness task missing: {task_id}")
     for stage in ("perceive", "plan", "execute", "reflect", "iterate"):
@@ -93,6 +111,22 @@ def main() -> int:
         require(path.exists(), errors, f"missing production harness skill: {skill}")
 
     agents = registry.get("agents", {})
+    require("legal-contracts" not in agents, errors, "legacy legal-contracts Agent must not be registered")
+    require("legal-compliance" not in agents, errors, "legacy legal-compliance Agent must not be registered")
+    require("legal" in agents, errors, "Digital Lawyer Agent must be registered as legal")
+    require(digital_employees.get("model", {}).get("levels") == ["secretary_control_plane", "digital_employee_agents", "skill_staff_lanes"], errors, "digital employee model must use secretary -> Agent -> Skill levels")
+    require("legal" in digital_employees.get("employees", {}), errors, "digital employees registry missing legal")
+    require(workflow_packs.get("packs", {}).get("legal", {}).get("owner_agent") == "legal", errors, "legal workflow pack must be owned by legal Agent")
+    for field in ("goal", "user_intent", "artifact_refs", "decisions", "risk_flags", "state_hash"):
+        require(field in context_envelope.get("required", []), errors, f"context envelope required field missing: {field}")
+    legal_install = skill_installations.get("installations", {}).get("claude-for-legal-zh", {})
+    legal_install_path = base / legal_install.get("install_path", "")
+    require(legal_install.get("status") == "installed_local", errors, "claude-for-legal-zh must be installed locally")
+    require(legal_install_path.exists(), errors, f"missing local legal source pack: {legal_install_path}")
+    require(len(list(legal_install_path.glob("**/SKILL.md"))) >= int(legal_install.get("installed_skill_files", 1)), errors, "local legal source pack does not contain the expected skill files")
+    blocked_legal = skill_installations.get("installations", {}).get("Legal-Skills-Chinese", {})
+    require(blocked_legal.get("status") == "blocked_license", errors, "Legal-Skills-Chinese must remain blocked until license clearance")
+    require(not blocked_legal.get("used_by"), errors, "Legal-Skills-Chinese must not be active for commercial use")
     coder_skills = set(agents.get("coder", {}).get("skills", []))
     designer_skills = set(agents.get("vibe-designer", {}).get("skills", []))
     require("vibe-coding-production-harness" in coder_skills, errors, "coder missing vibe-coding-production-harness")
@@ -139,6 +173,10 @@ def main() -> int:
         "harness_config": harness_path.exists(),
         "harness_runner": runner_path.exists(),
         "harness_tasks": [read_json(path).get("task_id", path.stem) for path in tasks],
+        "digital_employee_model": digital_employees_path.exists(),
+        "workflow_packs": workflow_packs_path.exists(),
+        "context_envelope_schema": context_envelope_path.exists(),
+        "skill_installations": skill_installations_path.exists(),
         "ai_native_loop_manifest": loop_path.exists(),
         "host_injection_policy": host_injection_path.exists(),
         "required_skills": {skill: path.exists() for skill, path in required_skill_paths.items()},

@@ -36,6 +36,7 @@
     "skills": {
       "included": true,
       "source_manifest": "agent-system/skills.sources.json",
+      "installation_manifest": "agent-system/skill-installations.registry.json",
       "install_path": "skills",
       "customer_visible": false
     },

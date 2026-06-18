@@ -1,0 +1,49 @@
+{
+  "version": "1.0.0",
+  "task_id": "context-envelope-production",
+  "description": "Verify structured context handoff requirements before GUI workflow design begins.",
+  "roles": [
+    "intake",
+    "planning",
+    "implementation"
+  ],
+  "workflow": "context_envelope",
+  "gates": [
+    {
+      "id": "context_envelope_schema_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/context-envelope.schema.json"
+    },
+    {
+      "id": "workflow_packs_require_context_envelope",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "python3",
+        "-c",
+        "import json, pathlib; packs=json.loads(pathlib.Path('agent-system/workflow-packs.registry.json').read_text(encoding='utf-8'))['packs']; assert all(pack.get('context_envelope_required') is True for pack in packs.values())"
+      ]
+    },
+    {
+      "id": "schema_has_loss_control_fields",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "python3",
+        "-c",
+        "import json, pathlib; required=set(json.loads(pathlib.Path('agent-system/context-envelope.schema.json').read_text(encoding='utf-8'))['required']); expected={'goal','user_intent','source_refs','artifact_refs','decisions','open_questions','risk_flags','permissions','handoff_reason','state_hash'}; assert expected <= required"
+      ]
+    },
+    {
+      "id": "digital_lawyer_skill_requires_context_envelope",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "skills/digital-lawyer-workflows/SKILL.md",
+      "patterns": [
+        "context envelope",
+        "agent-system/context-envelope.schema.json"
+      ]
+    }
+  ]
+}

@@ -113,6 +113,7 @@ cd "$WORK_DIR/repo"
 bash -n agent-system/tests/smoke.sh
 bash -n agent-system/tests/web-pwa-smoke.sh
 python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
+python3 -m py_compile agent-system/bin/install-skill-sources
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   json_files="$(git ls-files "*.json")"
 else
@@ -134,6 +135,10 @@ critical_files = [
     "agent-system/ai-native-loop.manifest.json",
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
+    "agent-system/digital-employees.registry.json",
+    "agent-system/workflow-packs.registry.json",
+    "agent-system/context-envelope.schema.json",
+    "agent-system/skill-installations.registry.json",
     "agent-system/coordination.policy.json",
     "agent-system/evals/runtime-replay-and-multilingual.json",
     "agent-system/host-injection.policy.json",
@@ -145,6 +150,8 @@ critical_files = [
     "agent-system/secretary.capabilities.json",
     "agent-system/bin/office-system.py",
     "agent-system/docs/gui-contract.md",
+    "agent-system/docs/digital-lawyer.zh-CN.md",
+    "agent-system/docs/ui-design-readiness.zh-CN.md",
     "agent-system/web/app/index.html",
     "agent-system/web/app/manifest.webmanifest",
     "agent-system/web/app/service-worker.js",
@@ -192,6 +199,15 @@ json_assert agent-system/harness/tasks/human-judgment-gate-production.json 'data
 json_assert agent-system/harness/tasks/collaborative-rule-intake-production.json 'data["task_id"] == "collaborative-rule-intake-production"'
 json_assert agent-system/harness/tasks/runtime-replay-production.json 'data["task_id"] == "runtime-replay-production"'
 json_assert agent-system/harness/tasks/multilingual-agent-eval-production.json 'data["task_id"] == "multilingual-agent-eval-production"'
+json_assert agent-system/harness/tasks/digital-lawyer-production.json 'data["task_id"] == "digital-lawyer-production"'
+json_assert agent-system/harness/tasks/digital-employee-model-production.json 'data["task_id"] == "digital-employee-model-production"'
+json_assert agent-system/harness/tasks/context-envelope-production.json 'data["task_id"] == "context-envelope-production"'
+json_assert agent-system/harness/tasks/local-skill-installation-production.json 'data["task_id"] == "local-skill-installation-production"'
+json_assert agent-system/harness/tasks/ui-design-readiness-production.json 'data["task_id"] == "ui-design-readiness-production"'
+json_assert agent-system/digital-employees.registry.json 'data["model"]["levels"] == ["secretary_control_plane", "digital_employee_agents", "skill_staff_lanes"] and data["employees"]["legal"]["agent_id"] == "legal"'
+json_assert agent-system/workflow-packs.registry.json 'data["packs"]["legal"]["owner_agent"] == "legal" and data["packs"]["legal"]["context_envelope_required"] is True'
+json_assert agent-system/skill-installations.registry.json 'data["installations"]["claude-for-legal-zh"]["status"] == "installed_local" and data["installations"]["Legal-Skills-Chinese"]["status"] == "blocked_license"'
+json_assert agent-system/context-envelope.schema.json '"state_hash" in data["required"] and "artifact_refs" in data["required"] and "risk_flags" in data["required"]'
 json_assert agent-system/judgment.policy.json '"regulated_professional_domain" in [item["id"] for item in data["categories"]]'
 json_assert agent-system/coordination.policy.json '"parallel_expert_dag" in data["modes"] and "human_gated" in data["modes"]'
 json_assert agent-system/evals/runtime-replay-and-multilingual.json 'len(data["cases"]) >= 6'
@@ -201,6 +217,8 @@ json_assert agent-system/ai-native-loop.manifest.json '"silent self-iteration" i
 json_assert agent-system/ai-native-loop.manifest.json '"run_ledger" in data["stages"]["execute"]["required_artifacts"]'
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
 test -f skills/vibe-design-production-harness/SKILL.md || fail "missing vibe design harness skill"
+test -f skills/digital-lawyer-workflows/SKILL.md || fail "missing digital lawyer workflow skill"
+test -f skills/_imported/claude-for-legal-ZH/.agents/skills/chinese-legal-commercial/SKILL.md || fail "missing local claude-for-legal-ZH source skill"
 
 if [ "$SOURCE_MODE" = "repo" ]; then
   ./install.sh "$WORK_DIR/hermes" >/dev/null
@@ -212,6 +230,7 @@ ROUTER="$HOME_DIR/scripts/agent-router"
 OFFICE="$HOME_DIR/agent-system/bin/office-system"
 
 "$ROUTER" --health >/dev/null
+"$HOME_DIR/agent-system/bin/install-skill-sources" >/dev/null
 "$OFFICE" health >/dev/null
 "$HOME_DIR/agent-system/bin/harness-check" >/dev/null
 "$HOME_DIR/agent-system/bin/harness-runner" --task all --no-write >/dev/null

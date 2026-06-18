@@ -1,0 +1,57 @@
+{
+  "version": "1.0.0",
+  "task_id": "local-skill-installation-production",
+  "description": "Verify Agent-enhancing external legal skills are installed locally or explicitly blocked by license.",
+  "roles": [
+    "intake",
+    "legal"
+  ],
+  "workflow": "local_skill_installation",
+  "gates": [
+    {
+      "id": "skill_installation_registry_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/skill-installations.registry.json"
+    },
+    {
+      "id": "install_skill_sources_command_passes",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "agent-system/bin/install-skill-sources"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "claude_for_legal_source_pack_is_local",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "skills/_imported/claude-for-legal-ZH/README.md"
+    },
+    {
+      "id": "claude_for_legal_license_is_local",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "skills/_imported/claude-for-legal-ZH/LICENSE"
+    },
+    {
+      "id": "claude_for_legal_skill_files_are_local",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "skills/_imported/claude-for-legal-ZH/.agents/skills/chinese-legal-commercial/SKILL.md"
+    },
+    {
+      "id": "blocked_noncommercial_source_is_not_active",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/skill-installations.registry.json",
+      "json_path": [
+        "installations",
+        "Legal-Skills-Chinese",
+        "status"
+      ],
+      "equals": "blocked_license"
+    }
+  ]
+}

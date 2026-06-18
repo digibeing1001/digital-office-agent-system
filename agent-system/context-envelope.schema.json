@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://digital-office.local/schemas/context-envelope.schema.json",
+  "title": "Digital Office Context Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "version",
+    "run_id",
+    "task_id",
+    "from",
+    "to",
+    "goal",
+    "user_intent",
+    "current_stage",
+    "constraints",
+    "acceptance_criteria",
+    "source_refs",
+    "artifact_refs",
+    "decisions",
+    "open_questions",
+    "risk_flags",
+    "permissions",
+    "handoff_reason",
+    "state_hash"
+  ],
+  "properties": {
+    "kind": {
+      "const": "digital-office-context-envelope"
+    },
+    "version": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "from": {
+      "$ref": "#/$defs/actor"
+    },
+    "to": {
+      "$ref": "#/$defs/actor"
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_intent": {
+      "type": "string"
+    },
+    "current_stage": {
+      "enum": [
+        "perceive",
+        "plan",
+        "execute",
+        "reflect",
+        "iterate",
+        "delivery"
+      ]
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "source_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ref"
+      }
+    },
+    "artifact_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ref"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/decision"
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk_flags": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/risk"
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant_id",
+        "project_id",
+        "requested_by",
+        "role",
+        "allowed_actions"
+      ],
+      "properties": {
+        "tenant_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "requested_by": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "allowed_actions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "handoff_reason": {
+      "type": "string"
+    },
+    "state_hash": {
+      "type": "string",
+      "minLength": 12
+    }
+  },
+  "$defs": {
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "id"
+      ],
+      "properties": {
+        "type": {
+          "enum": [
+            "secretary",
+            "agent",
+            "skill",
+            "human",
+            "system"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "workflow_pack": {
+          "type": "string"
+        }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref_id",
+        "type",
+        "uri",
+        "authority"
+      ],
+      "properties": {
+        "ref_id": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "project_file",
+            "company_knowledge",
+            "licensed_reference",
+            "runtime_artifact",
+            "memory_relay",
+            "external_link"
+          ]
+        },
+        "uri": {
+          "type": "string"
+        },
+        "authority": {
+          "enum": [
+            "verified",
+            "unverified",
+            "licensed",
+            "draft",
+            "memory_pointer"
+          ]
+        },
+        "sha256": {
+          "type": "string"
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision_id",
+        "summary",
+        "basis_refs"
+      ],
+      "properties": {
+        "decision_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "basis_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "risk_id",
+        "severity",
+        "summary"
+      ],
+      "properties": {
+        "risk_id": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "requires_human_review": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

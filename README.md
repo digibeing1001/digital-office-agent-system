@@ -72,7 +72,7 @@ allowed for local development.
 
 ### 多 Agent 协作
 
-内置基础数字员工角色，并支持以“部门 = 能力命名空间 + 权限边界 + 工作流包”的方式扩展：
+内置基础数字员工角色。每个特定工作的 Agent 既是数字员工，也可以代表对应业务部门负责人；该部门的“员工”不再是子 Agent，而是一个个 Skill：
 
 | 角色 | 职责 |
 |------|------|
@@ -83,7 +83,7 @@ allowed for local development.
 | **设计师** | 视觉方向、UI 设计、原型 |
 | **工程师** | 编码、调试、测试、部署 |
 | **写手** | 文案、故事线、讲稿、文档 |
-| **企业法务部** | 合同审查、隐私数据、产品合规、用工/IP、争议分流的内部审查草稿与人工审批门槛 |
+| **数字律师** | 作为企业法务负责人处理合同审查、隐私数据、产品合规、用工/IP、争议分流，内部由法律 Skill lanes 执行 |
 
 用户说出需求，秘书自动选择合适的角色组合，管理多 Agent 交接，确保后续角色使用前序产物而不是从头开始。
 
@@ -96,7 +96,7 @@ allowed for local development.
 - **PPT 生产** — `intake → writing → design → intake`，从需求澄清到交付完整 deck
 - **Vibe Design** — 设计类任务的产品门禁保障
 - **Vibe Coding** — 编码类任务的 TDD + 质量审查
-- **企业法务部** — `legal_intake → legal_contracts/legal_compliance → legal_synthesis`，支持合同审查、隐私数据、产品合规、用工/IP、争议分流，所有输出均为人工审查前的内部草稿
+- **数字律师** — `legal` 单一 Agent 负责，合同审查、隐私数据、产品合规、用工/IP、争议分流由内部 Skill lanes 执行，所有输出均为人工审查前的内部草稿
 
 所有工作流都在 AI Native Loop 框架内执行，遵循感知 → 规划 → 执行 → 反思 → 迭代的五步闭环。
 
@@ -226,17 +226,19 @@ cd digital-office-agent-system
 │   ├── office-product-manager/
 │   ├── office-researcher/
 │   ├── office-writer/
-│   ├── office-legal/
-│   ├── office-legal-contracts/
-│   └── office-legal-compliance/
+│   └── office-legal/
 ├── skills/                            # 产品技能包
 │   ├── agent-team-staffing/
-│   ├── legal-department-workflows/
+│   ├── digital-lawyer-workflows/
+│   ├── _imported/claude-for-legal-ZH/
 │   ├── vibe-coding-production-harness/
 │   └── vibe-design-production-harness/
 └── agent-system/
     ├── agents.registry.json           # Agent 注册表
-    ├── departments.registry.json      # 部门命名空间与工作流包
+    ├── digital-employees.registry.json # 数字员工可见模型
+    ├── workflow-packs.registry.json   # 工作流包与 Skill lanes
+    ├── context-envelope.schema.json   # 上下文交接契约
+    ├── skill-installations.registry.json # 本地 Skill source 安装状态
     ├── secretary.capabilities.json    # 秘书能力配置
     ├── host-injection.policy.json     # 宿主注入策略
     ├── product.release.manifest.json  # 发布清单
@@ -321,7 +323,8 @@ agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787
 | 文档 | 说明 |
 |------|------|
 | [architecture.md](agent-system/docs/architecture.md) | 总体架构、运行层、知识模型、发布模型 |
-| [legal-department.zh-CN.md](agent-system/docs/legal-department.zh-CN.md) | 企业法务部部门模型、工作流与安全边界 |
+| [digital-lawyer.zh-CN.md](agent-system/docs/digital-lawyer.zh-CN.md) | 数字律师模型、工作流、本地 Skill source 与安全边界 |
+| [ui-design-readiness.zh-CN.md](agent-system/docs/ui-design-readiness.zh-CN.md) | UI 设计前的后端契约和门禁清单 |
 | [host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md) | 宿主注入策略详解 |
 | [ppt-production-workflow.md](agent-system/docs/ppt-production-workflow.md) | PPT 生产工作流与角色边界 |
 | [production-harness.md](agent-system/docs/production-harness.md) | 生产门禁设计 |

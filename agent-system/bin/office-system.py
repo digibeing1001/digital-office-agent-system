@@ -6322,6 +6322,11 @@ def health_checks(root: Path) -> dict[str, Any]:
     return {
         "root": str(root),
         "agents_registry": (root / "agents.registry.json").exists(),
+        "digital_employees_registry": (root / "digital-employees.registry.json").exists(),
+        "workflow_packs_registry": (root / "workflow-packs.registry.json").exists(),
+        "context_envelope_schema": (root / "context-envelope.schema.json").exists(),
+        "skill_installations_registry": (root / "skill-installations.registry.json").exists(),
+        "local_skill_sources": (root.parent / "skills" / "_imported" / "claude-for-legal-ZH").exists(),
         "knowledge_registry": (root / "knowledge.registry.json").exists(),
         "identity_access_registry": (root / "identity.access.registry.json").exists(),
         "industry_solutions_registry": (root / "industry-solutions.registry.json").exists(),
@@ -6362,6 +6367,11 @@ def health_checks(root: Path) -> dict[str, Any]:
 def required_health_keys() -> tuple[str, ...]:
     return (
         "agents_registry",
+        "digital_employees_registry",
+        "workflow_packs_registry",
+        "context_envelope_schema",
+        "skill_installations_registry",
+        "local_skill_sources",
         "ai_native_loop_manifest",
         "onboarding_presets",
         "settings_dir",
@@ -6543,6 +6553,86 @@ def agent_summaries(root: Path) -> list[dict[str, Any]]:
     return agents
 
 
+def digital_employee_summaries(root: Path) -> list[dict[str, Any]]:
+    path = root / "digital-employees.registry.json"
+    if not path.exists():
+        return []
+    registry = read_json(path)
+    employees = []
+    for employee_id, employee in sorted(registry.get("employees", {}).items()):
+        employees.append(
+            {
+                "employee_id": employee_id,
+                "agent_id": employee.get("agent_id", employee_id),
+                "display_name": employee.get("display_name", employee_id),
+                "display_name_zh": employee.get("display_name_zh", ""),
+                "user_visible_role": employee.get("user_visible_role", ""),
+                "represents_department_owner": bool(employee.get("represents_department_owner", False)),
+                "workflow_packs": employee.get("workflow_packs", []),
+                "skill_staff": employee.get("skill_staff", []),
+            }
+        )
+    return employees
+
+
+def workflow_pack_summaries(root: Path) -> list[dict[str, Any]]:
+    path = root / "workflow-packs.registry.json"
+    if not path.exists():
+        return []
+    registry = read_json(path)
+    packs = []
+    for pack_id, pack in sorted(registry.get("packs", {}).items()):
+        packs.append(
+            {
+                "pack_id": pack_id,
+                "owner_agent": pack.get("owner_agent", ""),
+                "workflows": pack.get("workflows", []),
+                "skill_lanes": pack.get("skill_lanes", []),
+                "context_envelope_required": bool(pack.get("context_envelope_required", False)),
+            }
+        )
+    return packs
+
+
+def context_contract_summary(root: Path) -> dict[str, Any]:
+    path = root / "context-envelope.schema.json"
+    if not path.exists():
+        return {"configured": False, "required": []}
+    schema = read_json(path)
+    return {
+        "configured": True,
+        "schema": "context-envelope.schema.json",
+        "required": schema.get("required", []),
+        "actor_types": schema.get("$defs", {}).get("actor", {}).get("properties", {}).get("type", {}).get("enum", []),
+    }
+
+
+def skill_installation_summaries(root: Path) -> list[dict[str, Any]]:
+    path = root / "skill-installations.registry.json"
+    if not path.exists():
+        return []
+    registry = read_json(path)
+    items = []
+    for name, cfg in sorted(registry.get("installations", {}).items()):
+        install_path = cfg.get("install_path", "")
+        resolved = root / install_path if install_path else None
+        if install_path and not Path(str(install_path)).is_absolute():
+            resolved = (root / str(install_path)).resolve()
+        skill_files = len(list(resolved.glob("**/SKILL.md"))) if resolved and resolved.exists() else 0
+        items.append(
+            {
+                "name": name,
+                "status": cfg.get("status", ""),
+                "license": cfg.get("license", ""),
+                "used_by": cfg.get("used_by", []),
+                "install_path": install_path,
+                "skill_files": skill_files,
+                "activation": cfg.get("activation", ""),
+            }
+        )
+    return items
+
+
 def gui_capabilities() -> list[dict[str, Any]]:
     return [
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
@@ -6566,6 +6656,10 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "knowledge_spaces", "status": "ready", "commands": ["knowledge-tree", "knowledge-folder-create", "knowledge-item-add", "knowledge-share", "knowledge-scope-resolve", "knowledge-access-check"]},
         {"id": "role_workbenches", "status": "ready", "commands": ["workbench-state"]},
         {"id": "agent_registry", "status": "ready", "commands": ["agent-plugin-report", "agent-plugin-decision", "agent-plugin-activate"]},
+        {"id": "digital_employee_registry", "status": "ready", "commands": ["gui-state"]},
+        {"id": "workflow_packs", "status": "ready", "commands": ["gui-state", "workflow-start"]},
+        {"id": "context_envelope", "status": "ready", "commands": ["handoff-create", "checkpoint-create", "gui-state"]},
+        {"id": "local_skill_installations", "status": "ready", "commands": ["install-skill-sources"]},
         {"id": "product_updates", "status": "ready", "commands": ["iteration-proposal-create", "iteration-proposal-decision", "iteration-proposal-apply"]},
         {"id": "data_sharing", "status": "ready", "commands": ["telemetry-status", "telemetry-export", "telemetry-send"]},
         {"id": "external_knowledge_sources", "status": "ready", "commands": ["knowledge-source-mount", "knowledge-access-log"]},
@@ -6613,6 +6707,10 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
     mounts = read_records(root / "knowledge" / "mounts")
     checks = health_checks(root)
     agents = agent_summaries(root)
+    digital_employees = digital_employee_summaries(root)
+    workflow_packs = workflow_pack_summaries(root)
+    context_contract = context_contract_summary(root)
+    skill_installations = skill_installation_summaries(root)
     projects = project_summaries(root, 1000)
     active_workflows = [run for run in runs if run.get("status") not in {"completed", "cancelled", "stopped"}]
     draft_revision_count = sum(1 for run in runs for revision in run.get("revisions", []) if revision.get("status") == "draft")
@@ -6641,6 +6739,14 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
         },
         "capabilities": gui_capabilities(),
         "agents": {"count": len(agents), "items": agents},
+        "digital_employees": {"count": len(digital_employees), "items": digital_employees},
+        "workflow_packs": {"count": len(workflow_packs), "items": workflow_packs},
+        "context_contract": context_contract,
+        "skill_installations": {
+            "count": len(skill_installations),
+            "by_status": status_counts(skill_installations),
+            "items": skill_installations,
+        },
         "projects": {"count": len(projects), "items": projects[:limit]},
         "workflows": {
             "count": len(runs),

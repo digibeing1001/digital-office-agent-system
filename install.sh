@@ -184,12 +184,14 @@ chmod +x "$INSTALL_ROOT/scripts/agent-router"
 chmod +x "$INSTALL_ROOT/agent-system/bin/office-system"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-check"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-runner"
+chmod +x "$INSTALL_ROOT/agent-system/bin/install-skill-sources"
 chmod +x "$INSTALL_ROOT/agent-system/bin/install-local-models"
 chmod +x "$INSTALL_ROOT/agent-system/bin/update-system"
 chmod +x "$INSTALL_ROOT/agent-system/bin/product-update"
 chmod +x "$INSTALL_ROOT/install.sh"
 
 if [ "$RUN_CHECKS" -eq 1 ]; then
+  "$INSTALL_ROOT/agent-system/bin/install-skill-sources"
   "$INSTALL_ROOT/scripts/agent-router" --health
   "$INSTALL_ROOT/agent-system/bin/office-system" health
   "$INSTALL_ROOT/agent-system/bin/harness-check"
