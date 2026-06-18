@@ -1,0 +1,13 @@
+model:
+  default: MiniMax-M3
+  provider: minimax-cn
+providers: {}
+credential_pool_strategies: {}
+agent:
+  max_turns: 90
+  gateway_timeout: 1800
+  tool_use_enforcement: auto
+skills:
+  roots:
+    - ~/.hermes/skills
+    - ~/.agents/skills

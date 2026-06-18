@@ -1,0 +1,24 @@
+model:
+  default: kimi-k2.6
+  provider: kimi-coding
+providers: {}
+credential_pool_strategies: {}
+agent:
+  max_turns: 90
+  gateway_timeout: 1800
+  tool_use_enforcement: auto
+  # 信源硬规则 v2026-06-12：研究任务必查 Notion + Get笔记
+  # 权威源：KeyMemory long 层 ID b5308f5a-2603-42cb-8dc7-7b7aacf7372b
+  # SOUL.md 同步有镜像节（"信源硬规则 v2026-06-12"）
+  # 未来若 KeyMemory 规则更新，本字段是次要镜像，KeyMemory 为准
+  context_rules:
+    keymemory_refs:
+      - id: b5308f5a-2603-42cb-8dc7-7b7aacf7372b
+        layer: long
+        title: "研究 Agent 信源规则：必须包含 Notion + Get笔记"
+        enforced: true
+        applies_to: ["research", "investigation", "fact_gathering", "调研"]
+skills:
+  roots:
+    - ~/.hermes/skills
+    - ~/.agents/skills
