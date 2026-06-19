@@ -140,16 +140,22 @@ fetch "$BASE_URL/admin" "$WORK_DIR/admin.html"
 request_json POST "$BASE_URL/api/agents" '{"agent_id":"web-smoke-writer","display_name":"Web Smoke Writer","role_description":"Web lifecycle verification","template_agent_id":"writer","keywords":["web smoke"]}' "$WORK_DIR/agent-created.json"
 request_json POST "$BASE_URL/api/agents/web-smoke-writer/status" '{"status":"archived","reason":"web smoke cleanup"}' "$WORK_DIR/agent-archived.json"
 request_json DELETE "$BASE_URL/api/agents/web-smoke-writer?confirmed=true" '' "$WORK_DIR/agent-deleted.json"
+request_json POST "$BASE_URL/api/projects" '{"project_id":"web-smoke-project","name":"Web Smoke Project"}' "$WORK_DIR/project-created.json"
+request_json POST "$BASE_URL/api/knowledge/uploads" '{"scope":"project","project_id":"web-smoke-project","title":"Web Smoke Note","body":"alpha beta gamma","approve":true}' "$WORK_DIR/knowledge-uploaded.json"
 
 json_assert "$WORK_DIR/healthz.json" 'len(data) == 2 and "status" in data and "timestamp" in data and data["status"] == "ok"'
 json_assert "$WORK_DIR/health.json" 'data["status"] == "ok" and data["checks"]["web_index"] is True and data["checks"]["service_worker"] is True'
 json_assert "$WORK_DIR/web-app.json" 'data["pwa"]["installable_shell"] is True and data["api"]["mutation_policy"].startswith("Mutating GUI actions")'
 json_assert "$WORK_DIR/web-app.json" 'any(route["method"] == "POST" and route["path"] == "/api/agents" for route in data["api"]["mutation_routes"])'
+json_assert "$WORK_DIR/web-app.json" 'any(route["method"] == "POST" and route["path"] == "/api/projects" for route in data["api"]["mutation_routes"])'
+json_assert "$WORK_DIR/web-app.json" 'any(route["method"] == "POST" and route["path"] == "/api/knowledge/uploads" for route in data["api"]["mutation_routes"])'
 json_assert "$WORK_DIR/gui-state.json" '"web_ui_pwa" in [item["id"] for item in data["capabilities"]]'
 json_assert "$WORK_DIR/manifest.webmanifest" 'data["display"] == "standalone" and data["start_url"] == "/"'
 json_assert "$WORK_DIR/agent-created.json" 'data["agent_id"] == "web-smoke-writer" and data["status"] == "active"'
 json_assert "$WORK_DIR/agent-archived.json" 'data["agent_id"] == "web-smoke-writer" and data["status"] == "archived"'
 json_assert "$WORK_DIR/agent-deleted.json" 'data["agent_id"] == "web-smoke-writer" and data["status"] == "deleted" and data["history_preserved"] is True'
+json_assert "$WORK_DIR/project-created.json" 'data["status"] == "created" and data["project_id"] == "web-smoke-project"'
+json_assert "$WORK_DIR/knowledge-uploaded.json" 'data["status"] == "uploaded" and data["entry"]["scope"] == "project" and data["entry"]["agent_readable"] is True'
 grep -q "digital-office-shell-v2" "$WORK_DIR/service-worker.js" || fail "service worker cache contract missing"
 grep -q '<div id="root"></div>' "$WORK_DIR/index.html" || fail "user application root not served"
 grep -q '<div id="root"></div>' "$WORK_DIR/admin.html" || fail "admin application route not served"

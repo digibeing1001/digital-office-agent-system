@@ -58,6 +58,8 @@ Browser routes:
 - `GET /manifest.webmanifest`
 - `GET /service-worker.js`
 - `POST /api/workflows`
+- `POST /api/projects`
+- `POST /api/knowledge/uploads`
 - `POST /api/agents`
 - `POST /api/agents/{agent_id}/status`
 - `DELETE /api/agents/{agent_id}?confirmed=true`
@@ -295,6 +297,14 @@ Knowledge:
 ~/.hermes/agent-system/bin/office-system knowledge-source-mount --source-class provider_sold_industry_kb --source-id <pack_id> --tenant <tenant_id> --deployment <deployment_id> --created-by <user_id> --mount-target licensed_project_reference --project <project_id> --entitlement <entitlement_id>
 ~/.hermes/agent-system/bin/office-system knowledge-access-log --tenant <tenant_id> --deployment <deployment_id> --user <user_id> --role <role> --project <project_id> --agent <agent_id> --source-class provider_sold_industry_kb --source-id <pack_id> --mount-id <mount_id> --knowledge-pack <pack_id> --entitlement <entitlement_id> --decision allow
 ```
+
+Browser upload route:
+
+```bash
+POST /api/knowledge/uploads
+```
+
+The Web route accepts text or file content, writes it through the governed knowledge commands, and records an audit event. Project uploads should be the default for normal work because every project folder is the context container for its own conversations, materials, approvals, records, and deliverables.
 
 Knowledge spaces, folders, and ACL:
 

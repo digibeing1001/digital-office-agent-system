@@ -1,4 +1,4 @@
-import type { AgentStatus, CreateAgentInput, GuiState } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, UploadKnowledgeInput } from './types'
 
 const TOKEN_KEY = 'digital-office-web-token'
 
@@ -26,6 +26,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   getState: () => request<GuiState>('/api/gui-state?limit=50'),
+  createProject: (input: CreateProjectInput) =>
+    request<Record<string, unknown>>('/api/projects', { method: 'POST', body: JSON.stringify(input) }),
   createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) =>
     request<Record<string, unknown>>('/api/workflows', { method: 'POST', body: JSON.stringify(input) }),
   createAgent: (input: CreateAgentInput) =>
@@ -42,6 +44,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ decision, message }),
     }),
+  uploadKnowledge: (input: UploadKnowledgeInput) =>
+    request<Record<string, unknown>>('/api/knowledge/uploads', { method: 'POST', body: JSON.stringify(input) }),
   setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
   clearToken: () => localStorage.removeItem(TOKEN_KEY),
 }

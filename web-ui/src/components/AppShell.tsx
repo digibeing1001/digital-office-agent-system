@@ -11,6 +11,7 @@ export interface NavItem {
 interface AppShellProps {
   surface: 'user' | 'admin'
   navItems: NavItem[]
+  bottomNavItems?: NavItem[]
   activePage: string
   onNavigate: (id: string) => void
   health: string
@@ -20,7 +21,7 @@ interface AppShellProps {
   children: ReactNode
 }
 
-export function AppShell({ surface, navItems, activePage, onNavigate, health, unread, demoMode, onToggleDemo, children }: AppShellProps) {
+export function AppShell({ surface, navItems, bottomNavItems = [], activePage, onNavigate, health, unread, demoMode, onToggleDemo, children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const target = surface === 'user' ? '/admin' : '/'
   const targetLabel = surface === 'user' ? '管理中心' : '返回用户端'
@@ -43,6 +44,11 @@ export function AppShell({ surface, navItems, activePage, onNavigate, health, un
         </button>)}
       </nav>
       <div className="sidebar-bottom">
+        {!!bottomNavItems.length && <nav className="bottom-nav" aria-label="项目文件夹">
+          {bottomNavItems.map(({ id, label, icon: Icon }) => <button className={activePage === id ? 'nav-button active project-entry' : 'nav-button project-entry'} key={id} onClick={() => navigate(id)}>
+            <Icon size={18} strokeWidth={1.8} /><span>{label}</span>
+          </button>)}
+        </nav>}
         <div className="service-state"><span className={`status-dot ${health === 'ok' ? 'green' : 'amber'}`} /><span>{health === 'ok' ? '服务正常' : '需要检查'}</span></div>
         <a className="surface-link" href={target}><ShieldCheck size={17} /><span>{targetLabel}</span><ChevronRight size={15} /></a>
       </div>
@@ -51,10 +57,10 @@ export function AppShell({ surface, navItems, activePage, onNavigate, health, un
     <div className="app-frame">
       <header className="app-topbar">
         <button aria-label="打开菜单" className="menu-button icon-button" onClick={() => setMobileOpen(true)}><Menu size={20} /></button>
-        <div className="topbar-title">{navItems.find((item) => item.id === activePage)?.label}</div>
+        <div className="topbar-title">{[...navItems, ...bottomNavItems].find((item) => item.id === activePage)?.label}</div>
         <div className="topbar-actions">
           {surface === 'user' && <button className={demoMode ? 'demo-toggle active' : 'demo-toggle'} onClick={onToggleDemo}>{demoMode ? '退出演示' : '演示模式'}</button>}
-          <button aria-label="通知" className="icon-button notification-button" onClick={() => navigate(surface === 'user' ? 'approvals' : 'audit')}><Bell size={18} />{unread > 0 && <span>{unread}</span>}</button>
+          <button aria-label="通知" className="icon-button notification-button" onClick={() => navigate(surface === 'user' ? 'projects' : 'audit')}><Bell size={18} />{unread > 0 && <span>{unread}</span>}</button>
           <button aria-label="设置" className="icon-button" onClick={() => navigate(surface === 'user' ? 'settings' : 'system')}><Settings size={18} /></button>
           <span className="user-avatar">主</span>
         </div>

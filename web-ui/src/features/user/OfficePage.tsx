@@ -1,119 +1,96 @@
-import { useMemo, useState } from 'react'
-import { ArrowRight, BriefcaseBusiness, CheckCircle2, ChevronRight, FileCheck2, FolderOpen, Send, Sparkles } from 'lucide-react'
-import { displayAgentName, displayAgentRole, formatTime, initials, stageLabels, statusLabels } from '../../lib/presentation'
-import type { AgentSummary, AppActions, GuiState, RuntimeSummary, WorkflowSummary } from '../../types'
+import { ArrowRight, CheckCircle2, FolderKanban, Inbox, Sparkles, UploadCloud } from 'lucide-react'
+import { displayAgentName, formatTime, statusLabels } from '../../lib/presentation'
+import type { AppActions, GuiState } from '../../types'
 import { EmptyState, StatusBadge } from '../../components/ui'
+import { SecretaryPanel } from './SecretaryPanel'
 
-const stageOrder = ['context', 'decide', 'act', 'evaluate']
-
-function agentTone(agentId: string): string {
-  const tones: Record<string, string> = {
-    secretary: 'sage', pm: 'blue', researcher: 'teal', planner: 'slate',
-    'vibe-designer': 'rose', coder: 'indigo', writer: 'gold', legal: 'red',
-  }
-  return tones[agentId] || 'sage'
+function activeProjectCount(state: GuiState | null) {
+  return (state?.projects.items || []).filter((project) => project.status === 'active').length
 }
 
-function DemoWorkflow(): WorkflowSummary {
-  return {
-    run_id: 'demo-contract-review', title: '审查供应商合同并给出修改建议', status: 'acting', project_id: 'demo-procurement',
-    agent_id: 'legal', workflow: 'legal_contract_review', invocation_mode: 'secretary', requested_by: 'demo', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-  }
+function projectName(state: GuiState | null, projectId: string) {
+  return state?.projects.items.find((project) => project.project_id === projectId)?.name || projectId || '未归属项目'
 }
 
-function DemoRuntime(): RuntimeSummary {
-  return { run_id: 'demo-contract-review', current_stage: 'act', cycle_index: 1, pending_handoffs: 0, handoffs: 1, checkpoints: 2, ledger_events: 8, budget_usage: { model_calls: 3, tool_calls: 4 }, budgets: { max_model_calls: 12, max_tool_calls: 20 }, last_control_decision: { decision: 'continue' } }
-}
+export function OfficePage({
+  state,
+  actions,
+  demoMode,
+  onOpenPage,
+}: {
+  state: GuiState | null
+  actions: AppActions
+  demoMode: boolean
+  onOpenPage: (page: string) => void
+}) {
+  const activeRuns = (state?.workflows.recent || []).filter((run) => !['completed', 'cancelled', 'stopped'].includes(run.status))
+  const pendingApprovals = (state?.approvals.recent || []).filter((approval) => approval.status === 'pending')
+  const recentProjects = (state?.projects.items || []).slice(0, 5)
+  const recentDeliverables = (state?.tasks.recent || []).filter((task) => ['completed', 'delivered'].includes(task.status)).slice(0, 4)
 
-export function OfficePage({ state, actions, demoMode, onOpenPage }: { state: GuiState | null; actions: AppActions; demoMode: boolean; onOpenPage: (page: string) => void }) {
-  const [task, setTask] = useState('')
-  const [mode, setMode] = useState<'quality' | 'fast' | 'economy' | 'important'>('quality')
-  const [selectedAgent, setSelectedAgent] = useState('auto')
-  const [submitting, setSubmitting] = useState(false)
-  const employees = (state?.digital_employees.items || []).filter((agent) => (agent.status || 'active') === 'active')
-  const officeAgents = employees.filter((agent) => agent.agent_id !== 'secretary').slice(0, 8)
-  const workflow = demoMode ? DemoWorkflow() : state?.workflows.recent.find((item) => !['completed', 'cancelled', 'stopped'].includes(item.status))
-  const runtime = demoMode ? DemoRuntime() : state?.runtime_replay.recent_runs.find((item) => item.run_id === workflow?.run_id)
-  const pendingApprovals = demoMode ? 1 : Number(state?.approvals.by_status.pending || 0)
-
-  const activeStageIndex = Math.max(0, stageOrder.indexOf(runtime?.current_stage || 'context'))
-  const selectedEmployee = useMemo(() => employees.find((agent) => agent.agent_id === selectedAgent), [employees, selectedAgent])
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const clean = task.trim()
-    if (!clean) return
-    setSubmitting(true)
-    try {
-      await actions.createWorkflow({
-        task: clean,
-        priority: mode === 'important' ? 'urgent' : mode === 'fast' ? 'high' : mode === 'economy' ? 'low' : 'normal',
-        agent_id: selectedAgent === 'auto' ? undefined : selectedAgent,
-      })
-      setTask('')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return <div className="office-page">
-    {demoMode && <div className="demo-banner"><Sparkles size={16} /><span>演示模式：当前展示的是可重复演示的供应商合同审查案例，不会写入真实工作记录。</span></div>}
-    <section className="office-intro">
-      <div><h1>我的办公室</h1><p>把事情告诉秘书，办公室会自己找到合适的人开始工作。</p></div>
-      <button className="text-button" onClick={() => onOpenPage('tasks')}>查看全部任务 <ArrowRight size={16} /></button>
-    </section>
-
-    <div className="office-layout">
-      <section className="office-canvas" aria-label="数字办公室工作区">
-        <div className="office-wall"><span>Digital Office</span><time>{new Intl.DateTimeFormat('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date())}</time></div>
-        <div className="office-floor">
-          {officeAgents.map((agent, index) => <button className={`agent-room room-${index + 1} tone-${agentTone(agent.agent_id)}`} key={agent.agent_id} onClick={() => { setSelectedAgent(agent.agent_id); onOpenPage('employees') }}>
-            <span className="room-sign">{displayAgentName(agent)}</span>
-            <span className="desk-avatar">{initials(displayAgentName(agent))}</span>
-            <span className="desk-status"><span className="status-dot green" />可接任务</span>
-          </button>)}
-          <div className="secretary-area">
-            <span className="secretary-avatar">秘</span>
-            <div><strong>秘书</strong><span>正在安排办公室工作</span></div>
+  return <div className="office-dashboard">
+    {demoMode && <div className="demo-banner"><Sparkles size={16} /><span>演示模式：适合给客户或投资人展示完整工作方式，不会影响真实数据。</span></div>}
+    <section className="dashboard-main">
+      <div className="dashboard-left">
+        <header className="dashboard-hero">
+          <div>
+            <span className="eyebrow">我的办公室</span>
+            <h1>今天先看项目，再让秘书安排工作。</h1>
+            <p>每个项目都有自己的对话、资料、任务过程和交付物。上下文留在项目里，后面继续做就不会散。</p>
           </div>
-          <div className="office-table"><span /><span /><span /></div>
-          <div className="filing-wall"><FolderOpen size={20} /><span>资料库</span></div>
+          <button className="primary-button" onClick={() => onOpenPage('projects')}><FolderKanban size={17} />查看项目</button>
+        </header>
+        <div className="dashboard-metrics">
+          <div><strong>{activeProjectCount(state)}</strong><span>进行中项目</span></div>
+          <div><strong>{activeRuns.length}</strong><span>进行中对话</span></div>
+          <div><strong>{pendingApprovals.length}</strong><span>待确认事项</span></div>
+          <div><strong>{state?.knowledge.company_entries || 0}</strong><span>公司资料</span></div>
         </div>
-      </section>
-
-      <aside className="today-panel">
-        <header><div><span>今天的工作</span><strong>{workflow ? '1 项正在办理' : '办公室已准备好'}</strong></div><BriefcaseBusiness size={20} /></header>
-        {workflow ? <div className="active-work-card">
-          <div className="work-card-title"><StatusBadge tone={workflow.status.includes('waiting') ? 'amber' : 'blue'}>{statusLabels[workflow.status] || '办理中'}</StatusBadge><span>{formatTime(workflow.updated_at)}</span></div>
-          <h2>{workflow.title || '未命名任务'}</h2>
-          <p>{displayAgentName(employees.find((agent) => agent.agent_id === workflow.agent_id))}正在负责这项工作。</p>
-          <div className="stage-track">
-            {stageOrder.map((stage, index) => <div className={index < activeStageIndex ? 'stage done' : index === activeStageIndex ? 'stage active' : 'stage'} key={stage}>
-              <span>{index < activeStageIndex ? <CheckCircle2 size={15} /> : index + 1}</span><em>{stageLabels[stage]}</em>
-            </div>)}
-          </div>
-          {runtime && <div className="handoff-note"><FileCheck2 size={17} /><div><strong>{runtime.handoffs} 次工作交接</strong><span>{runtime.pending_handoffs ? '有交接信息需要补充' : '交接内容已经确认'}</span></div></div>}
-          <button className="secondary-button wide" onClick={() => onOpenPage('tasks')}>查看办理过程 <ChevronRight size={16} /></button>
-        </div> : <EmptyState title="还没有进行中的任务" body="在下方告诉秘书要做什么，办公室会立即开始安排。" />}
-        <button className="approval-summary" onClick={() => onOpenPage('approvals')}><span><strong>{pendingApprovals}</strong> 项待审批</span><ChevronRight size={17} /></button>
-      </aside>
-    </div>
-
-    <form className="task-composer" onSubmit={submit}>
-      <div className="composer-heading"><span className="secretary-mini">秘</span><div><strong>告诉秘书要做什么</strong><span>{selectedEmployee ? `直接交给${displayAgentName(selectedEmployee)}` : '秘书会自动选择合适的数字员工'}</span></div></div>
-      <textarea value={task} onChange={(event) => setTask(event.target.value)} placeholder="例如：帮我审查这份供应商合同，列出高风险条款和需要确认的问题。" rows={3} />
-      <div className="composer-footer">
-        <div className="composer-controls">
-          <select aria-label="选择数字员工" value={selectedAgent} onChange={(event) => setSelectedAgent(event.target.value)}>
-            <option value="auto">由秘书安排</option>
-            {employees.filter((agent) => agent.agent_id !== 'secretary').map((agent) => <option key={agent.agent_id} value={agent.agent_id}>{displayAgentName(agent)}</option>)}
-          </select>
-          <div className="mode-tabs" aria-label="工作方式">
-            {([['quality', '认真做'], ['fast', '快点做'], ['economy', '省着做'], ['important', '重要任务']] as const).map(([value, label]) => <button className={mode === value ? 'active' : ''} key={value} onClick={() => setMode(value)} type="button">{label}</button>)}
-          </div>
+        <div className="dashboard-grid">
+          <section className="plain-card">
+            <header><h2>最近项目</h2><button className="text-button" onClick={() => onOpenPage('projects')}>全部项目 <ArrowRight size={15} /></button></header>
+            <div className="project-card-list">
+              {recentProjects.map((project) => {
+                const knowledge = state?.knowledge.project_entries?.[project.project_id]?.count || 0
+                const active = activeRuns.filter((run) => run.project_id === project.project_id).length
+                return <button key={project.project_id} onClick={() => onOpenPage('projects')}>
+                  <span className="project-icon"><FolderKanban size={17} /></span>
+                  <span><strong>{project.name}</strong><small>{active} 个进行中对话 · {knowledge} 份项目资料</small></span>
+                </button>
+              })}
+              {!recentProjects.length && <EmptyState title="还没有项目" body="把第一件事告诉右侧秘书，秘书会帮你新建项目。" />}
+            </div>
+          </section>
+          <section className="plain-card">
+            <header><h2>需要你确认</h2><button className="text-button" onClick={() => onOpenPage('projects')}>去项目里处理 <ArrowRight size={15} /></button></header>
+            <div className="mini-list">
+              {pendingApprovals.slice(0, 4).map((approval) => <article key={approval.approval_id}><Inbox size={16} /><div><strong>{approval.title}</strong><small>{projectName(state, approval.project_id)} · {formatTime(approval.updated_at)}</small></div></article>)}
+              {!pendingApprovals.length && <EmptyState title="暂无待确认事项" body="需要你拍板的动作会按项目出现在这里。" />}
+            </div>
+          </section>
+          <section className="plain-card">
+            <header><h2>正在进行</h2><button className="text-button" onClick={() => onOpenPage('projects')}>查看项目对话 <ArrowRight size={15} /></button></header>
+            <div className="conversation-list">
+              {activeRuns.slice(0, 5).map((run) => {
+                const agent = state?.digital_employees.items.find((item) => item.agent_id === run.agent_id)
+                return <article key={run.run_id}>
+                  <span className="conversation-mark"><CheckCircle2 size={16} /></span>
+                  <div><strong>{run.title || '未命名对话'}</strong><small>{projectName(state, run.project_id)} · {displayAgentName(agent)} · {statusLabels[run.status] || run.status}</small></div>
+                </article>
+              })}
+              {!activeRuns.length && <EmptyState title="暂无进行中的工作" body="右侧告诉秘书要做什么，秘书会把它放进项目并安排员工。" />}
+            </div>
+          </section>
+          <section className="plain-card">
+            <header><h2>最近交付</h2><button className="text-button" onClick={() => onOpenPage('projects')}>按项目查看 <ArrowRight size={15} /></button></header>
+            <div className="mini-list">
+              {recentDeliverables.map((item) => <article key={item.task_id}><UploadCloud size={16} /><div><strong>{item.title}</strong><small>{projectName(state, item.project_id)} · {formatTime(item.updated_at)}</small></div></article>)}
+              {!recentDeliverables.length && <EmptyState title="暂无交付物" body="工作完成后，结果会自动归到对应项目。" />}
+            </div>
+          </section>
         </div>
-        <button className="primary-button send-button" disabled={!task.trim() || submitting} type="submit"><Send size={17} />{submitting ? '正在安排' : '交给秘书'}</button>
       </div>
-    </form>
+      <SecretaryPanel actions={actions} state={state} />
+    </section>
   </div>
 }

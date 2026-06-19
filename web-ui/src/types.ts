@@ -69,6 +69,47 @@ export interface RuntimeSummary {
   last_control_decision: Record<string, unknown>
 }
 
+export interface ProjectSummary {
+  project_id: string
+  name: string
+  status: string
+  agent_roster: string[]
+  updated_at: string
+}
+
+export interface KnowledgeEntrySummary {
+  entry_id: string
+  title: string
+  kind: string
+  status: string
+  created_at: string
+  source_file: string
+}
+
+export interface EmployeePerformance {
+  agent_id: string
+  run_count: number
+  task_count: number
+  success_count: number
+  issue_count: number
+  active_count: number
+  token_estimate: number
+  model_calls: number
+  tool_calls: number
+  last_active_at: string
+  success_rate: number
+}
+
+export interface EmployeeSuggestion {
+  suggested_agent_id: string
+  display_name: string
+  template_agent_id: string
+  reason: string
+  skills: string[]
+  keywords: string[]
+  priority: 'high' | 'medium' | 'low'
+}
+
 export interface GuiState {
   kind: string
   version: string
@@ -78,18 +119,25 @@ export interface GuiState {
   capabilities: Array<{ id: string; status: string; commands: string[] }>
   agents: { count: number; items: AgentSummary[] }
   digital_employees: { count: number; items: AgentSummary[] }
+  employee_performance: { items: Record<string, EmployeePerformance>; suggestions: EmployeeSuggestion[] }
   workflow_packs: { count: number; items: Array<Record<string, unknown>> }
   skill_installations: {
     count: number
     by_status: Record<string, number>
     items: Array<{ name: string; status: string; license: string; used_by: string[]; skill_files: number }>
   }
-  projects: { count: number; items: Array<{ project_id: string; name: string; status: string; agent_roster: string[]; updated_at: string }> }
+  projects: { count: number; items: ProjectSummary[] }
   workflows: { count: number; active_count: number; by_status: Record<string, number>; recent: WorkflowSummary[] }
   tasks: { count: number; by_status: Record<string, number>; recent: TaskSummary[] }
   approvals: { count: number; by_status: Record<string, number>; recent: ApprovalSummary[] }
   notifications: { count: number; unread: number; recent: Array<Record<string, string>> }
-  knowledge: { company_entries: number; external_mounts: number; spaces: { count: number; items: Array<Record<string, unknown>> }; rag_index_configured: boolean }
+  knowledge: {
+    company_entries: number
+    project_entries: Record<string, { count: number; items: KnowledgeEntrySummary[] }>
+    external_mounts: number
+    spaces: { count: number; items: Array<Record<string, unknown>> }
+    rag_index_configured: boolean
+  }
   runtime_replay: { recent_runs: RuntimeSummary[]; eval_suites: string[] }
   audit: { recent: Array<Record<string, unknown>> }
   loop_runtime: { work_nodes: string[]; controller_decisions: string[]; default_budgets: Record<string, number> }
@@ -105,10 +153,32 @@ export interface CreateAgentInput {
   workflow_packs: string[]
 }
 
+export interface UploadKnowledgeInput {
+  scope: 'company' | 'project'
+  project_id?: string
+  title: string
+  body?: string
+  filename?: string
+  content_base64?: string
+  mime_type?: string
+  kind?: 'text' | 'word' | 'pdf' | 'image' | 'binary'
+  approve?: boolean
+  notes?: string
+}
+
+export interface CreateProjectInput {
+  project_id?: string
+  name: string
+  agent_roster?: string[]
+  methodology_schedule?: 'manual' | 'weekly' | 'monthly' | 'on_project_close'
+}
+
 export interface AppActions {
-  createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) => Promise<void>
-  createAgent: (input: CreateAgentInput) => Promise<void>
-  setAgentStatus: (agentId: string, status: AgentStatus, reason?: string) => Promise<void>
-  deleteAgent: (agentId: string) => Promise<void>
-  decideApproval: (approvalId: string, decision: 'approve' | 'reject') => Promise<void>
+  createProject: (input: CreateProjectInput) => Promise<Record<string, unknown>>
+  createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) => Promise<Record<string, unknown>>
+  createAgent: (input: CreateAgentInput) => Promise<Record<string, unknown>>
+  setAgentStatus: (agentId: string, status: AgentStatus, reason?: string) => Promise<Record<string, unknown>>
+  deleteAgent: (agentId: string) => Promise<Record<string, unknown>>
+  decideApproval: (approvalId: string, decision: 'approve' | 'reject') => Promise<Record<string, unknown>>
+  uploadKnowledge: (input: UploadKnowledgeInput) => Promise<Record<string, unknown>>
 }

@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import copy
 import http.server
 import hashlib
@@ -1936,7 +1938,8 @@ def create_project(args: argparse.Namespace) -> int:
     agents = [registered_agent(root, item.strip()) for item in args.agents.split(",") if item.strip()] if args.agents else []
     target = copy_template_project(root, project_id, args.name, agents, args.methodology_schedule)
     append_log(root, {"event": "project_create", "project": project_id})
-    print(str(target))
+    project = read_json(target / "project.json")
+    print(json.dumps({"status": "created", "project": project, "project_id": project_id, "path": str(target)}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -7296,6 +7299,132 @@ def project_summaries(root: Path, limit: int) -> list[dict[str, Any]]:
     return projects[:limit]
 
 
+def usage_total(value: Any, needle: str) -> int:
+    total = 0
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if needle in str(key).lower() and isinstance(item, (int, float)):
+                total += int(item)
+            total += usage_total(item, needle)
+    elif isinstance(value, list):
+        for item in value:
+            total += usage_total(item, needle)
+    return total
+
+
+def employee_performance_summaries(agents: list[dict[str, Any]], runs: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    success_statuses = {"completed", "delivered", "approved"}
+    issue_statuses = {"failed", "cancelled", "stopped", "blocked", "rejected"}
+    metrics: dict[str, dict[str, Any]] = {}
+
+    def ensure(agent_id: str) -> dict[str, Any]:
+        agent_id = str(agent_id or "unassigned")
+        if agent_id not in metrics:
+            metrics[agent_id] = {
+                "agent_id": agent_id,
+                "run_count": 0,
+                "task_count": 0,
+                "success_count": 0,
+                "issue_count": 0,
+                "active_count": 0,
+                "token_estimate": 0,
+                "model_calls": 0,
+                "tool_calls": 0,
+                "last_active_at": "",
+                "success_rate": 0,
+            }
+        return metrics[agent_id]
+
+    for agent in agents:
+        ensure(str(agent.get("agent_id", "")))
+
+    for run in runs:
+        agent_id = str(run.get("agent_id") or "unassigned")
+        item = ensure(agent_id)
+        status = str(run.get("status", ""))
+        item["run_count"] += 1
+        if status in success_statuses:
+            item["success_count"] += 1
+        elif status in issue_statuses:
+            item["issue_count"] += 1
+        else:
+            item["active_count"] += 1
+        usage = run.get("control", {}).get("usage", {})
+        item["token_estimate"] += usage_total(usage, "token")
+        item["model_calls"] += usage_total(usage, "model_call")
+        item["tool_calls"] += usage_total(usage, "tool_call")
+        updated = str(run.get("updated_at") or run.get("created_at") or "")
+        if updated > str(item.get("last_active_at", "")):
+            item["last_active_at"] = updated
+
+    for task in tasks:
+        agent_id = str(task.get("assigned_agent") or "unassigned")
+        item = ensure(agent_id)
+        item["task_count"] += 1
+        status = str(task.get("status", ""))
+        if status in success_statuses:
+            item["success_count"] += 1
+        elif status in issue_statuses:
+            item["issue_count"] += 1
+        updated = str(task.get("updated_at") or task.get("created_at") or "")
+        if updated > str(item.get("last_active_at", "")):
+            item["last_active_at"] = updated
+
+    for item in metrics.values():
+        total_closed = int(item["success_count"]) + int(item["issue_count"])
+        item["success_rate"] = round((int(item["success_count"]) / total_closed) * 100) if total_closed else 0
+    return metrics
+
+
+def employee_gap_suggestions(agents: list[dict[str, Any]], runs: list[dict[str, Any]], tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    present = {str(agent.get("agent_id", "")) for agent in agents}
+    text = " ".join(str(item.get("title", "")) for item in [*runs, *tasks]).lower()
+    suggestions = [
+        {
+            "suggested_agent_id": "finance",
+            "display_name": "财务助理",
+            "template_agent_id": "planner",
+            "reason": "适合处理预算、报价、发票、付款节点和成本核对。",
+            "skills": ["finance-billing-ops", "cost-tracking"],
+            "keywords": ["预算", "报价", "发票", "付款", "成本"],
+        },
+        {
+            "suggested_agent_id": "sales-ops",
+            "display_name": "销售运营助理",
+            "template_agent_id": "writer",
+            "reason": "适合沉淀客户跟进、商机材料、报价说明和销售话术。",
+            "skills": ["content-strategy", "customer-billing-ops"],
+            "keywords": ["客户", "销售", "商机", "报价", "跟进"],
+        },
+        {
+            "suggested_agent_id": "customer-success",
+            "display_name": "客户成功助理",
+            "template_agent_id": "researcher",
+            "reason": "适合汇总客户问题、服务记录、续约风险和满意度反馈。",
+            "skills": ["carrier-relationship-management", "customer-billing-ops"],
+            "keywords": ["客户问题", "续约", "满意度", "服务"],
+        },
+        {
+            "suggested_agent_id": "operations",
+            "display_name": "运营助理",
+            "template_agent_id": "planner",
+            "reason": "适合把重复流程、排期、物料和跨部门事项标准化。",
+            "skills": ["automation-workflows", "inventory-demand-planning"],
+            "keywords": ["排期", "流程", "运营", "物料"],
+        },
+    ]
+    result = []
+    for suggestion in suggestions:
+        if suggestion["suggested_agent_id"] in present:
+            continue
+        priority = "medium"
+        if any(keyword.lower() in text for keyword in suggestion["keywords"]):
+            priority = "high"
+        result.append({**suggestion, "priority": priority})
+    result.sort(key=lambda item: 0 if item["priority"] == "high" else 1)
+    return result[:4]
+
+
 def custom_agent_dependencies(root: Path, agent_id: str) -> dict[str, list[str]]:
     active_runs = [
         str(run.get("run_id", ""))
@@ -7748,6 +7877,18 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
     loop_runtime = loop_runtime_summary(root)
     skill_installations = skill_installation_summaries(root)
     projects = project_summaries(root, 1000)
+    employee_performance = employee_performance_summaries(digital_employees, runs, tasks)
+    employee_suggestions = employee_gap_suggestions(digital_employees, runs, tasks)
+    project_knowledge_entries: dict[str, dict[str, Any]] = {}
+    for item in projects:
+        project_id = str(item.get("project_id", ""))
+        if not project_id:
+            continue
+        entries = load_entries(root, project_path(root, project_id) / "knowledge" / "entries")
+        project_knowledge_entries[project_id] = {
+            "count": len(entries),
+            "items": compact_records(entries, ["entry_id", "title", "kind", "status", "created_at", "source_file"], min(limit, 12)),
+        }
     active_workflows = [run for run in runs if run.get("status") not in {"completed", "cancelled", "stopped"}]
     draft_revision_count = sum(1 for run in runs for revision in run.get("revisions", []) if revision.get("status") == "draft")
     knowledge_spaces = knowledge_space_summaries(root, user=user, role=role, limit=limit)
@@ -7784,6 +7925,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
         "capabilities": gui_capabilities(),
         "agents": {"count": len(agents), "items": agents},
         "digital_employees": {"count": len(digital_employees), "items": digital_employees},
+        "employee_performance": {"items": employee_performance, "suggestions": employee_suggestions},
         "workflow_packs": {"count": len(workflow_packs), "items": workflow_packs},
         "context_contract": context_contract,
         "loop_runtime": loop_runtime,
@@ -7828,6 +7970,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
         },
         "knowledge": {
             "company_entries": len(company_entries),
+            "project_entries": project_knowledge_entries,
             "external_mounts": len(mounts),
             "spaces": {"count": len(knowledge_spaces), "items": knowledge_spaces},
             "rag_index_configured": (root / "rag.pipeline.json").exists(),
@@ -7900,6 +8043,8 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
             ],
             "mutation_routes": [
                 {"method": "POST", "path": "/api/workflows", "description": "Create a governed workflow through the secretary."},
+                {"method": "POST", "path": "/api/projects", "description": "Create a project folder for task context, knowledge, work records, and deliverables."},
+                {"method": "POST", "path": "/api/knowledge/uploads", "description": "Upload text or files into company or project knowledge."},
                 {"method": "POST", "path": "/api/agents", "description": "Create a template-based custom digital employee."},
                 {"method": "POST", "path": "/api/agents/{agent_id}/status", "description": "Activate, disable, archive, or restore a custom Agent."},
                 {"method": "DELETE", "path": "/api/agents/{agent_id}?confirmed=true", "description": "Permanently remove an archived custom Agent while preserving history."},
@@ -8053,8 +8198,8 @@ def web_serve(args: argparse.Namespace) -> int:
                 length = int(self.headers.get("Content-Length", "0"))
             except ValueError as exc:
                 raise ValueError("Invalid Content-Length header.") from exc
-            if length <= 0 or length > 1_048_576:
-                raise ValueError("Request body must be JSON and no larger than 1 MB.")
+            if length <= 0 or length > 10_485_760:
+                raise ValueError("Request body must be JSON and no larger than 10 MB.")
             try:
                 payload = json.loads(self.rfile.read(length).decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -8067,6 +8212,86 @@ def web_serve(args: argparse.Namespace) -> int:
             code, payload = run_office_json_command(root, command)
             status = success_status if code == 0 else 403 if code == 3 else 409 if code == 4 else 400
             web_json_response(self, status, payload, headers={"Cache-Control": "no-store"})
+
+        def knowledge_upload_response(self, body: dict[str, Any], *, user: str, role: str) -> None:
+            scope = str(body.get("scope", "")).strip()
+            if scope not in {"company", "project"}:
+                web_json_response(self, 400, {"status": "error", "error": "scope must be company or project"})
+                return
+            project_id = str(body.get("project_id", "")).strip()
+            if scope == "project" and not project_id:
+                web_json_response(self, 400, {"status": "error", "error": "project_id is required for project uploads"})
+                return
+            title = str(body.get("title", "")).strip()
+            if not title:
+                web_json_response(self, 400, {"status": "error", "error": "title is required"})
+                return
+            approve = bool(body.get("approve", False))
+            notes = str(body.get("notes", "")).strip() or f"Uploaded from Web by {user}."
+            command: list[str]
+            temporary_file: Path | None = None
+            try:
+                content_base64 = str(body.get("content_base64", "")).strip()
+                text_body = body.get("body")
+                if content_base64:
+                    try:
+                        decoded = base64.b64decode(content_base64, validate=True)
+                    except (binascii.Error, ValueError):
+                        web_json_response(self, 400, {"status": "error", "error": "content_base64 must be valid base64"})
+                        return
+                    if not decoded or len(decoded) > 7_340_032:
+                        web_json_response(self, 400, {"status": "error", "error": "uploaded file must be between 1 byte and 7 MB"})
+                        return
+                    raw_filename = Path(str(body.get("filename") or f"{title}.bin")).name
+                    suffix = Path(raw_filename).suffix.lower()
+                    if not re.fullmatch(r"\.[a-z0-9]{1,12}", suffix):
+                        suffix = ".bin"
+                    safe_filename = f"{slugify(Path(raw_filename).stem or title)[:90]}{suffix}"
+                    upload_dir = root / "tmp" / "web-uploads" / dt.datetime.now().strftime("%Y%m%d")
+                    upload_dir.mkdir(parents=True, exist_ok=True)
+                    temporary_file = upload_dir / f"{uuid.uuid4().hex}-{safe_filename}"
+                    temporary_file.write_bytes(decoded)
+                    command = ["knowledge-add", "--scope", scope, "--file", str(temporary_file), "--title", title, "--notes", notes]
+                    kind = str(body.get("kind", "")).strip()
+                    if kind in {"text", "word", "pdf", "image", "binary"}:
+                        command.extend(["--kind", kind])
+                elif isinstance(text_body, str) and text_body.strip():
+                    command = ["knowledge-add-text", "--scope", scope, "--title", title, "--body", text_body]
+                else:
+                    web_json_response(self, 400, {"status": "error", "error": "body or content_base64 is required"})
+                    return
+                if scope == "project":
+                    command.extend(["--project", project_id])
+                if approve:
+                    command.append("--approve")
+                code, payload = run_office_json_command(root, command)
+                if code == 0:
+                    payload = {
+                        "status": "uploaded",
+                        "entry": payload,
+                        "review_status": payload.get("status", "pending_review"),
+                        "message": "Knowledge was added and is ready for review." if not approve else "Knowledge was approved for agent use.",
+                    }
+                    append_audit_event(
+                        root,
+                        "knowledge_uploaded_from_web",
+                        actor_id=user,
+                        actor_role=role,
+                        project_id=project_id,
+                        resource_type="knowledge_entry",
+                        resource_id=str(payload.get("entry", {}).get("entry_id", "")),
+                        outcome="created",
+                        reason=title,
+                        extra={"scope": scope, "approved_for_agent_use": approve},
+                    )
+                status = 201 if code == 0 else 403 if code == 3 else 409 if code == 4 else 400
+                web_json_response(self, status, payload, headers={"Cache-Control": "no-store"})
+            finally:
+                if temporary_file is not None:
+                    try:
+                        temporary_file.unlink(missing_ok=True)
+                    except OSError:
+                        pass
 
         def do_POST(self) -> None:
             parsed = urllib.parse.urlparse(self.path)
@@ -8098,6 +8323,30 @@ def web_serve(args: argparse.Namespace) -> int:
                     if value:
                         command.extend([flag, value])
                 self.command_response(command, success_status=201)
+                return
+
+            if parsed.path == "/api/projects":
+                name = str(body.get("name", "")).strip()
+                if not name:
+                    web_json_response(self, 400, {"status": "error", "error": "name is required"})
+                    return
+                command = ["project-create", "--name", name]
+                project_id = str(body.get("project_id", "")).strip()
+                if project_id:
+                    command.extend(["--project", project_id])
+                agents = body.get("agent_roster")
+                if isinstance(agents, list):
+                    clean_agents = [str(item).strip() for item in agents if str(item).strip()]
+                    if clean_agents:
+                        command.extend(["--agents", ",".join(clean_agents)])
+                schedule = str(body.get("methodology_schedule", "")).strip()
+                if schedule in {"manual", "weekly", "monthly", "on_project_close"}:
+                    command.extend(["--methodology-schedule", schedule])
+                self.command_response(command, success_status=201)
+                return
+
+            if parsed.path == "/api/knowledge/uploads":
+                self.knowledge_upload_response(body, user=user, role=role)
                 return
 
             if parsed.path == "/api/agents":
