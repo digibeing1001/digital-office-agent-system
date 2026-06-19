@@ -1,15 +1,16 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "kind": "digital-office-product-release-manifest",
   "product_name": "Digital Office",
   "release_channel": "internal",
-  "includes_runtime": true,
+  "includes_runtime": false,
   "components": {
     "hermes_runtime": {
-      "included": true,
+      "included": false,
       "source": "https://github.com/NousResearch/hermes-agent.git",
       "version_policy": "pinned_commit_or_signed_release",
-      "install_path": "hermes-agent",
+      "install_path": "host_managed",
+      "note": "Digital Office installs into an existing Hermes, OpenClaw, or generic Agent host and does not redistribute that host runtime.",
       "customer_visible": false
     },
     "agent_system": {
@@ -40,9 +41,17 @@
       "install_path": "skills",
       "customer_visible": false
     },
-    "gui": {
-      "included": "future",
-      "install_path": "webui",
+    "gui_backend_contract": {
+      "included": true,
+      "install_path": "agent-system/web/app",
+      "note": "Read-only authenticated Web/PWA shell and GUI state contract are included; final visual GUI design is the next product phase.",
+      "customer_visible": true
+    },
+    "update_installer": {
+      "included": true,
+      "install_path": "update",
+      "preserves_runtime_data": true,
+      "requires_explicit_choice_for_unmanaged_host_rules": true,
       "customer_visible": true
     },
     "local_model_installers": {
@@ -86,7 +95,7 @@
     "direct_upstream_pull_in_production": false,
     "customer_sees_product_update_only": true,
     "hermes_name_hidden_by_default": true,
-    "customer_entrypoint": "gui_only",
+    "customer_entrypoint": "secretary_agent_then_gui",
     "raw_hermes_cli_hidden_by_default": true,
     "default_host_agent_injected_as_secretary": true,
     "clean_host_rules_overwritten_by_suite": true,

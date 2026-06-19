@@ -1,316 +1,281 @@
 {
-  "version": "1.0.0",
-  "kind": "digital-office-ai-native-loop",
-  "name": "Perceive, Plan, Execute, Reflect, Iterate",
-  "description": "Production delivery loop for the portable Digital Office multi-Agent system. It keeps Agent work observable, stateful, reviewable, and explicitly user-confirmed before iteration changes are applied.",
+  "version": "2.0.0",
+  "kind": "digital-office-loop-runtime",
+  "name": "Context, Decide, Act, Evaluate with deterministic control",
+  "description": "Production loop runtime for Digital Office. Four composable work nodes are driven by a deterministic controller and durable state. Reasoning and planning are structured outputs inside Decide; iteration is a controller transition rather than a mandatory content stage.",
+  "architecture": {
+    "work_nodes": [
+      "context",
+      "decide",
+      "act",
+      "evaluate"
+    ],
+    "controller_is_not_a_work_node": true,
+    "legacy_stage_aliases": {
+      "perceive": "context",
+      "reason": "decide",
+      "plan": "decide",
+      "execute": "act",
+      "reflect": "evaluate",
+      "iterate": "evaluate"
+    },
+    "task_profiles": {
+      "simple": [
+        "context",
+        "act",
+        "evaluate"
+      ],
+      "standard": [
+        "context",
+        "decide",
+        "act",
+        "evaluate"
+      ],
+      "complex_or_high_risk": [
+        "context",
+        "decide",
+        "act",
+        "evaluate",
+        "human_gate_when_required"
+      ]
+    }
+  },
   "research_foundations": [
     {
       "name": "ReAct",
       "source": "https://arxiv.org/abs/2210.03629",
-      "principle": "Interleave reasoning, tool action, and observation; do not rely on one-shot answers for uncertain work.",
-      "applies_to": [
-        "perceive",
-        "execute"
-      ]
+      "principle": "Reasoning, action, and fresh observations interleave inside a task instead of forming one irreversible linear pass."
     },
     {
-      "name": "Reflexion",
+      "name": "Reflexion and evaluator-optimizer",
       "source": "https://arxiv.org/abs/2303.11366",
-      "principle": "Turn failed or partial task outcomes into explicit reflective feedback for future trials.",
-      "applies_to": [
-        "reflect",
-        "iterate"
-      ]
+      "principle": "Evaluation feedback improves the next trial when success criteria and evidence are explicit."
     },
     {
-      "name": "Generative Agents",
-      "source": "https://arxiv.org/abs/2304.03442",
-      "principle": "Use memory, reflection, and planning as separate state layers instead of mixing all context into a single prompt.",
-      "applies_to": [
-        "perceive",
-        "plan",
-        "reflect"
-      ]
+      "name": "LangGraph persistence and interrupts",
+      "source": "https://docs.langchain.com/oss/python/langgraph/persistence",
+      "principle": "Checkpoints, stable run identity, interrupts, and resumable state are required for long-running work."
     },
     {
-      "name": "Voyager",
-      "source": "https://arxiv.org/abs/2305.16291",
-      "principle": "Build reusable skills and knowledge through an explicit, reviewed library rather than silent self-modification.",
-      "applies_to": [
-        "iterate"
-      ]
+      "name": "Temporal durable execution",
+      "source": "https://docs.temporal.io/workflow-execution",
+      "principle": "Deterministic control state is replayable; failure-prone side effects belong in retryable, idempotent activities."
     },
     {
-      "name": "MetaGPT",
-      "source": "https://arxiv.org/abs/2308.00352",
-      "principle": "Role-based SOPs and structured handoffs reduce multi-Agent drift.",
-      "applies_to": [
-        "plan",
-        "execute"
-      ]
+      "name": "Google ADK LoopAgent",
+      "source": "https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/",
+      "principle": "Every loop needs deterministic orchestration, an explicit termination signal, and a maximum iteration bound."
     },
     {
-      "name": "AutoGen",
-      "source": "https://arxiv.org/abs/2308.08155",
-      "principle": "Multi-Agent conversation should have explicit roles, boundaries, and human-controlled stopping conditions.",
-      "applies_to": [
-        "plan",
-        "execute"
-      ]
-    },
-    {
-      "name": "LangGraph durable execution",
-      "source": "https://docs.langchain.com/oss/python/langgraph/durable-execution",
-      "principle": "Long-running Agent workflows need persisted state, resumability, checkpoints, and human-in-the-loop control.",
-      "applies_to": [
-        "execute",
-        "iterate"
-      ]
-    },
-    {
-      "name": "SWE-bench",
-      "source": "https://arxiv.org/abs/2310.06770",
-      "principle": "Production claims need reproducible tasks and deterministic judges.",
-      "applies_to": [
-        "execute",
-        "reflect"
-      ]
-    },
-    {
-      "name": "RAGAS",
-      "source": "https://arxiv.org/abs/2309.15217",
-      "principle": "RAG quality should be judged by retrieval relevance, grounding, and answer faithfulness.",
-      "applies_to": [
-        "perceive",
-        "reflect"
-      ]
-    },
-    {
-      "name": "Self-RAG",
-      "source": "https://arxiv.org/abs/2310.11511",
-      "principle": "Retrieval should be critiqued before it is trusted as final context.",
-      "applies_to": [
-        "perceive",
-        "reflect"
-      ]
+      "name": "A2A task lifecycle",
+      "source": "https://github.com/a2aproject/A2A/blob/main/docs/topics/life-of-a-task.md",
+      "principle": "Stable context identity, immutable terminal tasks, new task ids for refinements, and artifact references improve traceability."
     }
   ],
   "stages": {
-    "perceive": {
-      "goal": "Build the task context from explicit user intent, identity, permissions, project knowledge, company knowledge, licensed references, KeyMemory relay, router signals, and current system health.",
+    "context": {
+      "goal": "Load the smallest authoritative context needed for the next decision, while keeping original evidence and large artifacts addressable by reference.",
       "required_inputs": [
         "current_user_request",
         "tenant_user_project_identity",
-        "agent_registry",
-        "global_rules",
-        "project_rules_when_project_selected",
-        "project_knowledge_inventory",
-        "company_knowledge_inventory",
-        "licensed_knowledge_mounts_when_used",
-        "keymemory_project_relay_when_project_selected"
+        "permissions",
+        "active_rules",
+        "run_state",
+        "relevant_knowledge_refs",
+        "prior_decisions_and_open_questions"
       ],
       "required_artifacts": [
-        "perception_report",
-        "context_priority_notes",
-        "knowledge_source_refs",
-        "permission_claims",
-        "routing_candidates"
+        "context_snapshot",
+        "source_inventory",
+        "scope_and_permission_record",
+        "unknowns_and_conflicts"
       ],
       "gates": [
-        "identity_and_project_scope_known_or_marked_unknown",
-        "knowledge_priority_is_respected",
-        "licensed_reference_access_logged_when_used",
-        "keymemory_is_relay_not_source_of_truth",
-        "ambiguity_is_escalated_to_secretary",
-        "human_judgment_case_created_when_route_or_scope_is_unsafe"
+        "identity_scope_and_permissions_resolved",
+        "authoritative_sources_separated_from_memory_relay",
+        "large_outputs_referenced_instead_of_repeated",
+        "unknowns_and_conflicts_are_explicit",
+        "context_budget_recorded"
       ]
     },
-    "plan": {
-      "goal": "Convert the perceived context into a role-based workflow plan with acceptance criteria, handoff contracts, risk, and deterministic checks.",
+    "decide": {
+      "goal": "Choose the next action from facts, assumptions, options, constraints, risk, and acceptance criteria. Produce a compact decision record, not private chain-of-thought.",
       "required_inputs": [
-        "perception_report",
-        "agent_registry_orchestration_roles",
-        "production_harness_policy",
-        "user_constraints"
-      ],
-      "required_artifacts": [
-        "workflow_plan",
-        "agent_role_mapping",
+        "context_snapshot",
+        "source_inventory",
+        "constraints",
         "acceptance_criteria",
-        "handoff_contract",
-        "test_or_review_plan",
-        "rollback_plan"
+        "current_progress"
+      ],
+      "required_artifacts": [
+        "decision_record",
+        "facts_assumptions_and_unknowns",
+        "selected_route_or_plan",
+        "risk_and_rollback_record",
+        "next_action_contract"
       ],
       "gates": [
-        "workflow_uses_roles_before_agent_names",
+        "facts_assumptions_and_unknowns_are_separated",
+        "decision_basis_references_sources",
+        "confidence_and_risk_are_recorded",
         "acceptance_criteria_are_testable",
-        "handoff_contract_is_present_for_multi_agent_work",
-        "risk_and_rollback_are_named",
-        "user_confirmation_required_for_high_risk_plan",
-        "human_judgment_gate_closed_before_execution"
+        "private_chain_of_thought_is_not_persisted",
+        "human_gate_created_for_unsafe_or_high_risk_action"
       ]
     },
-    "execute": {
-      "goal": "Run the planned workflow through the router and registered Agents while capturing artifacts, observations, failures, retries, and gate results.",
+    "act": {
+      "goal": "Execute the selected action through registered Agents, Skills, and typed tools while isolating side effects and recording observations.",
       "required_inputs": [
-        "workflow_plan",
-        "agent_router_result",
-        "knowledge_context",
-        "required_skills",
+        "next_action_contract",
+        "selected_route_or_plan",
+        "context_envelope",
         "tool_and_model_budget"
       ],
       "required_artifacts": [
         "execution_log",
         "run_ledger",
+        "tool_observations",
+        "changed_or_generated_artifacts",
         "checkpoint_records",
-        "typed_handoff_envelopes",
-        "agent_handoff_reports",
-        "changed_files_or_generated_outputs",
-        "command_outputs",
-        "gate_results"
+        "typed_handoff_records"
       ],
       "gates": [
-        "router_health_passed",
-        "agent_steps_match_workflow",
-        "required_harness_skills_available",
-        "deterministic_checks_run_when_applicable",
-        "run_ledger_hash_chain_recorded",
-        "checkpoint_recorded_before_resume",
-        "typed_handoff_contracts_recorded",
-        "failed_gate_routes_to_rework",
-        "open_human_judgment_cases_block_dispatch"
+        "authorization_passed",
+        "side_effects_are_idempotent_or_deduplicated",
+        "retryable_and_non_retryable_failures_are_distinguished",
+        "checkpoint_recorded_before_pause_or_resume",
+        "typed_handoffs_are_acknowledged",
+        "open_human_gate_blocks_high_risk_side_effects"
       ]
     },
-    "reflect": {
-      "goal": "Review what happened against the plan, evidence, user goal, quality gates, and known risks. Reflection produces decisions and proposals, not silent changes.",
+    "evaluate": {
+      "goal": "Judge outcome and progress against evidence, acceptance criteria, quality gates, budget, and user intent, then recommend one controller decision.",
       "required_inputs": [
+        "decision_record",
         "execution_log",
-        "gate_results",
-        "user_feedback",
-        "knowledge_access_logs",
-        "router_events",
-        "handoff_reports"
+        "tool_observations",
+        "generated_artifacts",
+        "acceptance_criteria",
+        "budget_usage"
       ],
       "required_artifacts": [
-        "reflection_report",
-        "quality_findings",
-        "root_cause_notes",
-        "methodology_draft_when_reusable",
-        "iteration_proposals_when_needed"
+        "evaluation_report",
+        "acceptance_results",
+        "progress_measurement",
+        "failure_classification",
+        "recommended_control_decision"
       ],
       "gates": [
-        "reflection_references_evidence",
-        "known_failures_are_not_hidden",
-        "reusable_methods_require_user_review_before_company_promotion",
-        "iteration_proposals_are_explicit",
-        "durable_user_rules_are_captured_as_reviewable_rule_proposals"
-      ]
-    },
-    "iterate": {
-      "goal": "Improve rules, workflows, Agent behavior, harness tasks, knowledge methods, or release packages only after the user can inspect the proposed change and explicitly confirm it.",
-      "required_inputs": [
-        "reflection_report",
-        "iteration_proposal",
-        "user_decision",
-        "regression_plan"
-      ],
-      "required_artifacts": [
-        "iteration_proposal_report",
-        "user_decision_record",
-        "applied_change_record",
-        "regression_result",
-        "rollback_record"
-      ],
-      "gates": [
-        "no_auto_iteration_without_user_confirmation",
-        "proposal_states_exactly_visible_to_gui",
-        "change_summary_risk_and_rollback_are_present",
-        "apply_requires_confirmed_decision",
-        "regression_checks_run_after_apply"
-      ],
-      "allowed_decisions": [
-        "confirm",
-        "tune",
-        "pause",
-        "reject"
-      ],
-      "forbidden": [
-        "silent self-iteration",
-        "unapproved Agent SOUL changes",
-        "unapproved workflow changes",
-        "unapproved skill installation or recomposition",
-        "unapproved company knowledge promotion",
-        "black-box release updates"
+        "evaluation_references_evidence",
+        "acceptance_results_are_explicit",
+        "progress_is_measured_against_previous_cycle",
+        "failure_root_cause_and_retry_class_are_recorded",
+        "recommended_transition_has_a_target_or_terminal_reason"
       ]
     }
   },
-  "state_model": {
-    "run_statuses": [
-      "created",
-      "perceiving",
-      "planning",
-      "executing",
-      "reflecting",
-      "iteration_proposed",
-      "waiting_user_confirmation",
-      "iterating",
-      "completed",
-      "blocked",
-      "cancelled"
+  "controller": {
+    "decisions": {
+      "continue": {
+        "target": "context",
+        "use_when": "New observations are needed before another decision."
+      },
+      "replan": {
+        "target": "decide",
+        "use_when": "The decision, route, constraints, or plan must change."
+      },
+      "retry": {
+        "target": "act",
+        "use_when": "A retryable activity failed and retry policy permits another attempt."
+      },
+      "wait_human": {
+        "target": "waiting_human",
+        "use_when": "Clarification, approval, professional judgment, or external input is required."
+      },
+      "complete": {
+        "target": "completed",
+        "use_when": "Acceptance criteria pass and required artifacts are reachable."
+      },
+      "fail": {
+        "target": "failed",
+        "use_when": "A permanent failure or unmet hard requirement prevents completion."
+      },
+      "cancel": {
+        "target": "cancelled",
+        "use_when": "The user or authorized operator stops the run."
+      },
+      "budget_exhausted": {
+        "target": "budget_exhausted",
+        "use_when": "Any hard run budget is exhausted before acceptance passes."
+      }
+    },
+    "default_budgets": {
+      "max_cycles": 4,
+      "max_stage_retries": 2,
+      "max_stagnant_cycles": 1,
+      "max_duration_seconds": 7200,
+      "max_tool_calls": 60,
+      "max_model_calls": 30,
+      "max_cost_microunits": 0
+    },
+    "progress_policy": {
+      "score_range": [
+        0.0,
+        1.0
+      ],
+      "minimum_progress_delta": 0.02,
+      "completion_requires_acceptance_passed": true,
+      "stagnation_requires_human_or_terminal_decision": true
+    },
+    "failure_classes": [
+      "transient_retryable",
+      "correctable_replan",
+      "missing_context",
+      "human_judgment_required",
+      "policy_blocked",
+      "permanent_failure"
     ],
-    "proposal_statuses": [
-      "drafted",
-      "pending_user_confirmation",
-      "confirmed_for_application",
-      "needs_tuning",
-      "paused_by_user",
-      "rejected",
-      "applied_pending_regression",
-      "applied_verified",
-      "rolled_back"
+    "system_change_boundary": "Task rework may loop within approved scope and budget. Changes to Agent SOUL, Skills, workflows, rules, knowledge promotion, GUI contracts, or release configuration require an explicit iteration proposal and user confirmation."
+  },
+  "state_model": {
+    "active_statuses": [
+      "created",
+      "context_loading",
+      "deciding",
+      "acting",
+      "evaluating",
+      "retrying"
+    ],
+    "waiting_statuses": [
+      "waiting_human_judgment",
+      "waiting_user_input",
+      "waiting_external_event",
+      "paused"
+    ],
+    "terminal_statuses": [
+      "completed",
+      "failed",
+      "cancelled",
+      "budget_exhausted"
     ],
     "storage": {
       "runs": "agent-system/runs/<run_id>/run.json",
       "run_ledger": "agent-system/runs/<run_id>/ledger.jsonl",
       "checkpoints": "agent-system/runs/<run_id>/checkpoints/<checkpoint_id>.json",
       "handoffs": "agent-system/runs/<run_id>/handoffs/<handoff_id>.json",
-      "proposal_reports": "agent-system/iterations/proposals/<proposal_id>.md",
-      "proposal_status": "agent-system/iterations/status/<proposal_id>.json",
-      "applied_records": "agent-system/iterations/applied/<proposal_id>.json",
-      "eval_suites": "agent-system/evals/<suite_id>.json",
-      "coordination_policy": "agent-system/coordination.policy.json"
-    }
-  },
-  "gui_contract": {
-    "show_loop_stages": true,
-    "show_current_stage": true,
-    "show_required_artifacts": true,
-    "show_failed_gates": true,
-    "show_iteration_proposals": true,
-    "iteration_buttons": [
-      "Confirm",
-      "Tune Through Conversation",
-      "Pause",
-      "Reject"
-    ],
-    "hide_raw_hermes_cli": true,
-    "recommended_labels": {
-      "perceive": "感知",
-      "plan": "规划",
-      "execute": "执行",
-      "reflect": "反思",
-      "iterate": "迭代"
+      "artifacts": "agent-system/runs/<run_id>/artifacts/<artifact_id>",
+      "eval_suites": "agent-system/evals/<suite_id>.json"
     }
   },
   "hard_rules": [
-    "Every production task should be represented as a loop run before it is described as completed.",
-    "Iteration is never automatic. The system may propose improvements, but user confirmation is required before application.",
-    "The proposal must explain what will change, why, expected impact, risk, rollback, affected Agents/workflows/knowledge, and required regression checks.",
-    "The secretary owns ambiguous routes, user confirmation, iteration proposals, and failed-gate recovery.",
-    "A production claim requires deterministic harness gates plus a reflection report.",
-    "Open human judgment cases block workflow resume, retry, task completion, Agent dispatch, and loop stage progress.",
-    "Durable user preferences discovered during collaboration become rule proposals first; active global, project, or Agent rules require human confirmation.",
-    "Every production run must be replayable from its run record, hash-chained ledger, checkpoints, typed handoff envelopes, and deterministic eval results.",
-    "Coordination mode must be selected from the coordination policy instead of letting Agent count or prompt style decide the topology implicitly."
+    "The controller owns transitions; an LLM may recommend but cannot directly mutate run state.",
+    "Every loop has a maximum cycle bound and at least one business termination condition.",
+    "Every side effect is idempotent, deduplicated, or guarded by explicit confirmation.",
+    "Every pause and resume uses durable state, a stable run id, and a checkpoint or event cursor.",
+    "Whole-workflow blind retries are forbidden; retry the smallest retryable activity or replan from evidence.",
+    "A run cannot complete until acceptance criteria pass and required artifacts remain reachable.",
+    "Context handoffs use typed envelopes, artifact references, provenance, hashes, and receiver acknowledgment.",
+    "Private chain-of-thought is never required, persisted, or exposed; store concise decision records instead.",
+    "System self-modification is never an automatic task-loop transition and always requires a confirmed proposal."
   ]
 }

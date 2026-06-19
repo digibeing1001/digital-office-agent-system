@@ -32,7 +32,7 @@
       "command": [
         "python3",
         "-c",
-        "import json, pathlib; required=set(json.loads(pathlib.Path('agent-system/context-envelope.schema.json').read_text(encoding='utf-8'))['required']); expected={'goal','user_intent','source_refs','artifact_refs','decisions','open_questions','risk_flags','permissions','handoff_reason','state_hash'}; assert expected <= required"
+        "import json, pathlib; schema=json.loads(pathlib.Path('agent-system/context-envelope.schema.json').read_text(encoding='utf-8')); required=set(schema['required']); expected={'context_id','task_id','context_version','cycle_index','summary','goal','user_intent','facts','source_refs','artifact_refs','decisions','open_questions','omissions','risk_flags','permissions','context_budget','handoff_reason','state_hash'}; assert expected <= required; assert schema['properties']['version']['const'] == '2.0.0'; assert schema['properties']['current_stage']['enum'] == ['context','decide','act','evaluate']"
       ]
     },
     {

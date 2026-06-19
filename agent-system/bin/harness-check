@@ -33,6 +33,7 @@ def main() -> int:
     digital_employees_path = base / "digital-employees.registry.json"
     workflow_packs_path = base / "workflow-packs.registry.json"
     context_envelope_path = base / "context-envelope.schema.json"
+    context_handoff_policy_path = base / "context-handoff.policy.json"
     skill_installations_path = base / "skill-installations.registry.json"
     secretary_path = base / "secretary.capabilities.json"
     host_injection_path = base / "host-injection.policy.json"
@@ -47,6 +48,7 @@ def main() -> int:
     require(digital_employees_path.exists(), errors, f"missing digital employees registry: {digital_employees_path}")
     require(workflow_packs_path.exists(), errors, f"missing workflow packs registry: {workflow_packs_path}")
     require(context_envelope_path.exists(), errors, f"missing context envelope schema: {context_envelope_path}")
+    require(context_handoff_policy_path.exists(), errors, f"missing context handoff policy: {context_handoff_policy_path}")
     require(skill_installations_path.exists(), errors, f"missing skill installations registry: {skill_installations_path}")
     require(not (base / "departments.registry.json").exists(), errors, "departments registry must not exist; departments are represented by digital employee Agent ownership plus Skills")
     require(secretary_path.exists(), errors, f"missing secretary capabilities: {secretary_path}")
@@ -92,15 +94,20 @@ def main() -> int:
         "digital-lawyer-production",
         "digital-employee-model-production",
         "context-envelope-production",
+        "context-handoff-production",
+        "backup-restore-production",
         "local-skill-installation-production",
         "ui-design-readiness-production",
     ):
         require(any(read_json(path).get("task_id") == task_id for path in tasks), errors, f"harness task missing: {task_id}")
-    for stage in ("perceive", "plan", "execute", "reflect", "iterate"):
+    for stage in ("context", "decide", "act", "evaluate"):
         require(stage in loop_manifest.get("stages", {}), errors, f"AI native loop stage missing: {stage}")
-    iterate = loop_manifest.get("stages", {}).get("iterate", {})
-    require("no_auto_iteration_without_user_confirmation" in iterate.get("gates", []), errors, "iteration gate missing explicit user confirmation")
-    require("silent self-iteration" in iterate.get("forbidden", []), errors, "iteration policy must forbid silent self-iteration")
+    decisions = loop_manifest.get("controller", {}).get("decisions", {})
+    for decision in ("continue", "replan", "retry", "wait_human", "complete", "fail", "cancel", "budget_exhausted"):
+        require(decision in decisions, errors, f"loop controller decision missing: {decision}")
+    hard_rules = loop_manifest.get("hard_rules", [])
+    require(any("System self-modification" in rule for rule in hard_rules), errors, "loop policy must require confirmed proposals for system changes")
+    require(any("Private chain-of-thought" in rule for rule in hard_rules), errors, "loop policy must forbid persisted private chain-of-thought")
 
     skills_root = hermes / "skills"
     required_skill_paths = {
@@ -117,8 +124,12 @@ def main() -> int:
     require(digital_employees.get("model", {}).get("levels") == ["secretary_control_plane", "digital_employee_agents", "skill_staff_lanes"], errors, "digital employee model must use secretary -> Agent -> Skill levels")
     require("legal" in digital_employees.get("employees", {}), errors, "digital employees registry missing legal")
     require(workflow_packs.get("packs", {}).get("legal", {}).get("owner_agent") == "legal", errors, "legal workflow pack must be owned by legal Agent")
-    for field in ("goal", "user_intent", "artifact_refs", "decisions", "risk_flags", "state_hash"):
+    for field in ("context_id", "task_id", "context_version", "summary", "facts", "goal", "user_intent", "artifact_refs", "decisions", "omissions", "risk_flags", "context_budget", "state_hash"):
         require(field in context_envelope.get("required", []), errors, f"context envelope required field missing: {field}")
+    if context_handoff_policy_path.exists():
+        context_handoff = read_json(context_handoff_policy_path)
+        require(context_handoff.get("default_mode") == "hybrid", errors, "context handoff default mode must be hybrid")
+        require(set(context_handoff.get("acknowledgment", {}).get("decisions", [])) == {"accept", "request_context", "reject"}, errors, "context handoff acknowledgment decisions are incomplete")
     legal_install = skill_installations.get("installations", {}).get("claude-for-legal-zh", {})
     legal_install_path = base / legal_install.get("install_path", "")
     require(legal_install.get("status") == "installed_local", errors, "claude-for-legal-zh must be installed locally")

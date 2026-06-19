@@ -6,15 +6,14 @@ This document records the production harness direction for the Digital Office mu
 
 The harness must raise product, design, engineering, knowledge, memory, and release quality without locking the system to the current Agent names. It should work after migration to a digital law firm, digital accounting firm, digital media studio, or another office package.
 
-The product loop is:
+The task runtime uses four composable work nodes:
 
-1. Perceive
-2. Plan
-3. Execute
-4. Reflect
-5. Iterate
+1. Context
+2. Decide
+3. Act
+4. Evaluate
 
-The loop is implemented in `agent-system/ai-native-loop.manifest.json` and exposed through `office-system loop-*` and `office-system iteration-proposal-*` commands.
+A deterministic controller chooses Continue, Replan, Retry, Wait Human, Complete, Fail, Cancel, or Budget Exhausted. Task rework stays inside bounded cycles and budgets. System changes still use separately confirmed `iteration-proposal-*` commands.
 
 ## Research Snapshot
 
@@ -29,8 +28,8 @@ High-signal coding-agent references:
 
 High-signal multi-Agent and durable workflow references:
 
-- [ReAct](https://arxiv.org/abs/2210.03629): interleave reasoning, action, and observation. This maps to Perceive and Execute.
-- [Reflexion](https://arxiv.org/abs/2303.11366): use explicit reflection to improve future attempts. This maps to Reflect and Iterate.
+- [ReAct](https://arxiv.org/abs/2210.03629): interleave reasoning, action, and observation. This informs Decide and Act inside a bounded controller.
+- [Reflexion](https://arxiv.org/abs/2303.11366): use explicit evaluation feedback to improve a later attempt. This informs Evaluate and controller Replan or Retry decisions.
 - [Generative Agents](https://arxiv.org/abs/2304.03442): separate memory, reflection, and planning. This maps to the separation of project knowledge, company knowledge, KeyMemory relay, and workflow plans.
 - [Voyager](https://arxiv.org/abs/2305.16291): build reusable skills through an explicit library. This supports provider-reviewed Agent plugin packages rather than customer-side skill recomposition.
 - [MetaGPT](https://arxiv.org/abs/2308.00352): role-based SOP and structured handoff. This supports portable orchestration roles and multi-Agent workflows.
@@ -57,7 +56,7 @@ The production harness uses eight layers:
 1. `agent-system/harness/production-gates.json`: portable gate definitions for product, design, implementation, and workflows.
 2. `skills/vibe-design-production-harness`: design-role operating contract and gates.
 3. `skills/vibe-coding-production-harness`: implementation-role operating contract and gates.
-4. `agent-system/ai-native-loop.manifest.json`: Perceive, Plan, Execute, Reflect, Iterate loop contract.
+4. `agent-system/ai-native-loop.manifest.json`: Context, Decide, Act, Evaluate work nodes, deterministic transitions, budgets, progress policy, and terminal states.
 5. `agent-system/coordination.policy.json`: topology selection for single-Agent, secretary-led, sequential specialist, parallel DAG, and human-gated workflows.
 6. `agent-system/runs/<run_id>/ledger.jsonl`: hash-chained execution trace for replay, audit, and drift diagnosis.
 7. `agent-system/evals/*.json`: deterministic eval suites for judgment gates, coordination policy, multilingual regressions, and rule-scope inference.
@@ -72,7 +71,7 @@ Production work must not depend on an Agent's private conversational memory. A r
 - `run.json`: durable workflow state, current stage, linked tasks, blockers, judgments, checkpoints, and handoffs.
 - `ledger.jsonl`: append-only, hash-chained runtime events with input/output hashes, artifact refs, model/provider metadata when available, and links to checkpoint or handoff ids.
 - `checkpoints/<checkpoint_id>.json`: resumable state snapshots with `state_hash`, `resume_cursor`, artifacts, and optional human judgment case.
-- `handoffs/<handoff_id>.json`: typed cross-Agent envelopes with source/target Agent, schema hash, context hash, artifacts, and acceptance criteria.
+- `handoffs/<handoff_id>.json`: typed cross-Agent envelopes with stable context/task identity, facts and provenance, omissions, artifact references, context budget, context hash, and recipient acknowledgment.
 - eval report: deterministic release-critical checks from `office-system eval-run`.
 
 If any of these are missing for a production claim, the run is still a draft or debug run, not a completed production workflow.

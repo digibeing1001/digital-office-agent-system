@@ -154,13 +154,106 @@ sync_dir() {
   fi
 }
 
-sync_dir "$SOURCE_DIR/agent-system/" "$INSTALL_ROOT/agent-system/"
+sync_with_excludes() {
+  local src="$1" dst="$2"
+  shift 2
+  mkdir -p "$dst"
+  if command -v rsync >/dev/null 2>&1; then
+    local args=(-a)
+    local pattern
+    for pattern in "$@"; do
+      args+=(--exclude "$pattern")
+    done
+    rsync "${args[@]}" "$src/" "$dst/"
+  else
+    local tar_args=()
+    local pattern
+    for pattern in "$@"; do
+      tar_args+=(--exclude "./${pattern#/}")
+    done
+    tar -C "$src" "${tar_args[@]}" -cf - . | tar -C "$dst" -xf -
+  fi
+}
+
+AGENT_RUNTIME_EXCLUDES=(
+  "/logs/*"
+  "/tmp/*"
+  "/runs/*"
+  "/tasks/*"
+  "/approvals/*"
+  "/judgments/*"
+  "/notifications/*"
+  "/settings/*"
+  "/rule-proposals/*"
+  "/iterations/proposals/*"
+  "/iterations/status/*"
+  "/iterations/applied/*"
+  "/harness/reports/*"
+  "/evals/reports/*"
+  "/data-sharing/consent.json"
+  "/data-sharing/exports/*"
+  "/data-sharing/outbox/*"
+  "/data-sharing/receipts/*"
+  "/agent-requests/outbox/*"
+  "/agent-requests/status/*"
+  "/agent-requests/receipts/*"
+  "/agent-improvements/*/drafts/*"
+  "/agent-improvements/*/approved/*"
+  "/agent-plugins/packages/*"
+  "/agent-plugins/reports/*"
+  "/agent-plugins/status/*"
+  "/knowledge/company/entries/*"
+  "/knowledge/company/index/*"
+  "/knowledge/spaces/*"
+  "/knowledge/mounts/*"
+  "/projects/*"
+  "/models/cache/*"
+  "/bin/__pycache__/*"
+)
+
+PROFILE_RUNTIME_EXCLUDES=(
+  "*/.skills_prompt_snapshot.json"
+  "*/.env"
+  "*/auth.json"
+  "*/auth.lock"
+  "*/models_dev_cache.json"
+  "*/state.db*"
+  "*/memory_store.db*"
+  "*/keymemory.db*"
+  "*/sessions/*"
+  "*/logs/*"
+  "*/__pycache__/*"
+)
+
+sync_with_excludes "$SOURCE_DIR/agent-system" "$INSTALL_ROOT/agent-system" "${AGENT_RUNTIME_EXCLUDES[@]}"
+if [ -d "$SOURCE_DIR/agent-system/projects/_template" ]; then
+  sync_dir "$SOURCE_DIR/agent-system/projects/_template/" "$INSTALL_ROOT/agent-system/projects/_template/"
+fi
 sync_dir "$SOURCE_DIR/scripts/" "$INSTALL_ROOT/scripts/"
-sync_dir "$SOURCE_DIR/profiles/" "$INSTALL_ROOT/profiles/"
+sync_with_excludes "$SOURCE_DIR/profiles" "$INSTALL_ROOT/profiles" "${PROFILE_RUNTIME_EXCLUDES[@]}"
 sync_dir "$SOURCE_DIR/skills/" "$INSTALL_ROOT/skills/"
 cp "$SOURCE_DIR/README.md" "$INSTALL_ROOT/README.md"
 cp "$SOURCE_DIR/README.zh-CN.md" "$INSTALL_ROOT/README.zh-CN.md"
+cp "$SOURCE_DIR/CHANGELOG.md" "$INSTALL_ROOT/CHANGELOG.md"
 cp "$SOURCE_DIR/install.sh" "$INSTALL_ROOT/install.sh"
+cp "$SOURCE_DIR/update" "$INSTALL_ROOT/update"
+
+mkdir -p \
+  "$INSTALL_ROOT/agent-system/logs" \
+  "$INSTALL_ROOT/agent-system/tmp" \
+  "$INSTALL_ROOT/agent-system/runs" \
+  "$INSTALL_ROOT/agent-system/tasks" \
+  "$INSTALL_ROOT/agent-system/approvals" \
+  "$INSTALL_ROOT/agent-system/judgments" \
+  "$INSTALL_ROOT/agent-system/notifications" \
+  "$INSTALL_ROOT/agent-system/settings" \
+  "$INSTALL_ROOT/agent-system/rule-proposals" \
+  "$INSTALL_ROOT/agent-system/harness/reports" \
+  "$INSTALL_ROOT/agent-system/evals/reports" \
+  "$INSTALL_ROOT/agent-system/knowledge/company/entries" \
+  "$INSTALL_ROOT/agent-system/knowledge/company/index" \
+  "$INSTALL_ROOT/agent-system/knowledge/spaces" \
+  "$INSTALL_ROOT/agent-system/knowledge/mounts"
 
 if [ "$MODE" = "preserve" ]; then
   for entrypoint in "${ENTRYPOINTS[@]}"; do
@@ -189,6 +282,7 @@ chmod +x "$INSTALL_ROOT/agent-system/bin/install-local-models"
 chmod +x "$INSTALL_ROOT/agent-system/bin/update-system"
 chmod +x "$INSTALL_ROOT/agent-system/bin/product-update"
 chmod +x "$INSTALL_ROOT/install.sh"
+chmod +x "$INSTALL_ROOT/update"
 
 if [ "$RUN_CHECKS" -eq 1 ]; then
   "$INSTALL_ROOT/agent-system/bin/install-skill-sources"

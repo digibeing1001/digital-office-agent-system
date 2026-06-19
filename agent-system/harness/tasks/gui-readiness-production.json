@@ -27,7 +27,7 @@
       "cwd": "hermes_home",
       "path": "README.md",
       "patterns": [
-        "GUI Readiness Update",
+        "当前完成度",
         "gui-state",
         "settings-update",
         "default secretary persona"

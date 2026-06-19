@@ -4,8 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import http.server
 import hashlib
+import hmac
+import ipaddress
 import math
 import datetime as dt
 import importlib.util
@@ -100,14 +103,25 @@ TEXT_EXTS = {".md", ".txt", ".json", ".csv"}
 DOCX_EXTS = {".docx"}
 PDF_EXTS = {".pdf"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}
-LOOP_STAGES = ["perceive", "plan", "execute", "reflect", "iterate"]
-LOOP_STATUS_BY_STAGE = {
-    "perceive": "perceiving",
-    "plan": "planning",
-    "execute": "executing",
-    "reflect": "reflecting",
-    "iterate": "iterating",
+DEFAULT_RESTORE_MAX_MEMBERS = 100_000
+DEFAULT_RESTORE_MAX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024 * 1024
+LOOP_STAGES = ["context", "decide", "act", "evaluate"]
+LOOP_STAGE_ALIASES = {
+    "perceive": "context",
+    "reason": "decide",
+    "plan": "decide",
+    "execute": "act",
+    "reflect": "evaluate",
+    "iterate": "evaluate",
 }
+LOOP_STAGE_CHOICES = sorted(set(LOOP_STAGES) | set(LOOP_STAGE_ALIASES))
+LOOP_STATUS_BY_STAGE = {
+    "context": "context_loading",
+    "decide": "deciding",
+    "act": "acting",
+    "evaluate": "evaluating",
+}
+LOOP_CONTROL_DECISIONS = {"continue", "replan", "retry", "wait_human", "complete", "fail", "cancel", "budget_exhausted"}
 ITERATION_DECISION_TO_STATUS = {
     "confirm": "confirmed_for_application",
     "tune": "needs_tuning",
@@ -365,9 +379,17 @@ def write_json(path: Path, data: dict[str, Any]) -> None:
 
 
 def append_jsonl(path: Path, event: dict[str, Any]) -> None:
+    lock_file = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(lock_file):
+        append_jsonl_unlocked(path, event)
+
+
+def append_jsonl_unlocked(path: Path, event: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def write_text(path: Path, text: str) -> None:
@@ -591,7 +613,6 @@ def append_audit_event(
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     path = root / "logs" / "audit-events.jsonl"
-    previous = read_last_jsonl(path)
     event = {
         "version": "1.0.0",
         "kind": "digital-office-audit-event",
@@ -612,11 +633,14 @@ def append_audit_event(
         "outcome": outcome,
         "reason": reason,
         "extra": extra or {},
-        "previous_event_hash": (previous or {}).get("event_hash", ""),
+        "previous_event_hash": "",
     }
-    encoded = json.dumps(event, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    event["event_hash"] = hashlib.sha256(encoded).hexdigest()
-    append_jsonl(path, event)
+    audit_lock = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(audit_lock):
+        previous = read_last_jsonl(path)
+        event["previous_event_hash"] = (previous or {}).get("event_hash", "")
+        event["event_hash"] = canonical_hash(event)
+        append_jsonl_unlocked(path, event)
     append_log(root, {"event": "audit_event", "audit_event": event_type, "event_id": event["event_id"], "outcome": outcome})
     return event
 
@@ -1876,14 +1900,16 @@ def load_run_record(root: Path, run_id: str) -> dict[str, Any]:
     if not path.exists():
         print(f"office-system: workflow run not found: {run_id}", file=sys.stderr)
         raise SystemExit(2)
-    return read_json(path)
+    run, _ = normalize_loop_run(root, read_json(path))
+    return run
 
 
 def read_run_records(root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for path in sorted((root / "runs").glob("*/run.json")):
         try:
-            records.append(read_json(path))
+            run, _ = normalize_loop_run(root, read_json(path))
+            records.append(run)
         except Exception:
             continue
     records.sort(key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""), reverse=True)
@@ -1911,7 +1937,6 @@ def append_run_ledger_event(
 ) -> dict[str, Any]:
     run_id = safe_component(run_id, "run id")
     path = run_ledger_path(root, run_id)
-    previous = read_last_jsonl(path)
     input_hash = canonical_hash(input_payload) if input_payload is not None else ""
     output_hash = canonical_hash(output_payload) if output_payload is not None else ""
     event = {
@@ -1920,7 +1945,7 @@ def append_run_ledger_event(
         "event_id": f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
         "time": now_iso(),
         "run_id": run_id,
-        "stage": safe_component(stage, "loop stage") if stage else "",
+        "stage": normalize_loop_stage(stage) if stage else "",
         "event": safe_component(event_type, "ledger event"),
         "action": safe_claim(action, "ledger action", required=False),
         "agent_id": registered_agent(root, agent_id) if agent_id else "",
@@ -1938,16 +1963,53 @@ def append_run_ledger_event(
         "artifact_refs": [safe_claim(item, "artifact ref") for item in (artifact_refs or [])],
         "checkpoint_id": safe_component(checkpoint_id, "checkpoint id") if checkpoint_id else "",
         "handoff_id": safe_component(handoff_id, "handoff id") if handoff_id else "",
-        "previous_event_hash": (previous or {}).get("event_hash", ""),
+        "previous_event_hash": "",
     }
-    event["event_hash"] = canonical_hash({key: value for key, value in event.items() if key != "event_hash"})
-    append_jsonl(path, event)
+    ledger_lock = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(ledger_lock):
+        previous = read_last_jsonl(path)
+        event["previous_event_hash"] = (previous or {}).get("event_hash", "")
+        event["event_hash"] = canonical_hash({key: value for key, value in event.items() if key != "event_hash"})
+        append_jsonl_unlocked(path, event)
     append_log(root, {"event": "run_ledger_event", "run_id": run_id, "ledger_event": event_type, "event_id": event["event_id"]})
     return event
 
 
 def list_run_ledger(root: Path, run_id: str, limit: int | None = None) -> list[dict[str, Any]]:
     return read_jsonl(run_ledger_path(root, run_id), limit=limit)
+
+
+def verify_run_ledger(root: Path, run_id: str) -> dict[str, Any]:
+    run_id = safe_component(run_id, "run id")
+    path = run_ledger_path(root, run_id)
+    with JsonFileLock(path.with_name(f".{path.name}.lock")):
+        events = read_jsonl(path)
+    issues: list[dict[str, Any]] = []
+    previous_hash = ""
+    seen_ids: set[str] = set()
+    for index, event in enumerate(events):
+        event_id = str(event.get("event_id", ""))
+        if not event_id:
+            issues.append({"index": index, "issue": "missing_event_id"})
+        elif event_id in seen_ids:
+            issues.append({"index": index, "event_id": event_id, "issue": "duplicate_event_id"})
+        seen_ids.add(event_id)
+        if event.get("run_id") != run_id:
+            issues.append({"index": index, "event_id": event_id, "issue": "run_id_mismatch"})
+        if str(event.get("previous_event_hash", "")) != previous_hash:
+            issues.append({"index": index, "event_id": event_id, "issue": "previous_event_hash_mismatch"})
+        expected_hash = canonical_hash({key: value for key, value in event.items() if key != "event_hash"})
+        actual_hash = str(event.get("event_hash", ""))
+        if not hmac.compare_digest(expected_hash, actual_hash):
+            issues.append({"index": index, "event_id": event_id, "issue": "event_hash_mismatch"})
+        previous_hash = actual_hash
+    return {
+        "status": "valid" if not issues else "invalid",
+        "run_id": run_id,
+        "event_count": len(events),
+        "last_event_hash": previous_hash,
+        "issues": issues,
+    }
 
 
 def find_run_by_idempotency(root: Path, key: str | None) -> dict[str, Any] | None:
@@ -1959,18 +2021,122 @@ def find_run_by_idempotency(root: Path, key: str | None) -> dict[str, Any] | Non
     return None
 
 
-def loop_stage_records(root: Path) -> dict[str, Any]:
+def normalize_loop_stage(stage: str | None, *, default: str = "context") -> str:
+    value = str(stage or default).strip()
+    return LOOP_STAGE_ALIASES.get(value, value)
+
+
+def fresh_loop_stage_state(root: Path, stage: str) -> dict[str, Any]:
+    stage = normalize_loop_stage(stage)
     manifest = loop_manifest(root)
+    definition = manifest["stages"][stage]
     return {
-        stage: {
-            "status": "pending",
-            "required_artifacts": manifest["stages"][stage]["required_artifacts"],
-            "gates": [{"gate": gate, "status": "pending"} for gate in manifest["stages"][stage]["gates"]],
-            "artifacts": [],
-            "notes": [],
-        }
-        for stage in LOOP_STAGES
+        "status": "pending",
+        "required_artifacts": list(definition["required_artifacts"]),
+        "gates": [{"gate": gate, "status": "pending"} for gate in definition["gates"]],
+        "artifacts": [],
+        "notes": [],
     }
+
+
+def loop_stage_records(root: Path) -> dict[str, Any]:
+    return {stage: fresh_loop_stage_state(root, stage) for stage in LOOP_STAGES}
+
+
+def initial_loop_control(root: Path, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    defaults = dict(loop_manifest(root).get("controller", {}).get("default_budgets", {}))
+    for key, value in (overrides or {}).items():
+        if value is not None:
+            defaults[key] = int(value)
+    return {
+        "cycle_index": 1,
+        "budgets": defaults,
+        "usage": {
+            "tool_calls": 0,
+            "model_calls": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_microunits": 0,
+        },
+        "stage_retries": {},
+        "last_progress_score": 0.0,
+        "stagnant_cycles": 0,
+        "decision_history": [],
+        "cycle_history": [],
+        "started_at": now_iso(),
+    }
+
+
+def normalize_loop_run(root: Path, run: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    changed = False
+    stages = run.get("stages", {}) or {}
+    if any(stage not in stages for stage in LOOP_STAGES):
+        legacy_candidates = {
+            "context": ["context", "perceive"],
+            "decide": ["decide", "plan", "reason"],
+            "act": ["act", "execute"],
+            "evaluate": ["evaluate", "reflect", "iterate"],
+        }
+        normalized: dict[str, Any] = {}
+        for stage in LOOP_STAGES:
+            source = next((stages.get(name) for name in legacy_candidates[stage] if isinstance(stages.get(name), dict)), None)
+            normalized[stage] = dict(source) if source is not None else fresh_loop_stage_state(root, stage)
+        run["stages"] = normalized
+        changed = True
+    current = normalize_loop_stage(str(run.get("current_stage", "context")))
+    if current not in LOOP_STAGES:
+        current = "context"
+    if run.get("current_stage") != current:
+        run["current_stage"] = current
+        changed = True
+    if not isinstance(run.get("control"), dict):
+        run["control"] = initial_loop_control(root)
+        changed = True
+    if not run.get("context_id"):
+        run["context_id"] = str(run.get("run_id", ""))
+        changed = True
+    if not run.get("task_id"):
+        tasks = run.get("tasks", []) or []
+        run["task_id"] = str(tasks[0]) if tasks else str(run.get("run_id", ""))
+        changed = True
+    run.setdefault("loop_contract_version", "1.x-compat" if changed else "2.0.0")
+    return run, changed
+
+
+def loop_budget_blockers(run: dict[str, Any]) -> list[str]:
+    control = run.get("control", {}) or {}
+    budgets = control.get("budgets", {}) or {}
+    usage = control.get("usage", {}) or {}
+    blockers: list[str] = []
+    if int(control.get("cycle_index", 1)) > int(budgets.get("max_cycles", 0) or 0) > 0:
+        blockers.append("max_cycles_exceeded")
+    for usage_key, budget_key in (
+        ("tool_calls", "max_tool_calls"),
+        ("model_calls", "max_model_calls"),
+        ("cost_microunits", "max_cost_microunits"),
+    ):
+        limit = int(budgets.get(budget_key, 0) or 0)
+        if limit > 0 and int(usage.get(usage_key, 0) or 0) >= limit:
+            blockers.append(f"{budget_key}_exhausted")
+    duration_limit = int(budgets.get("max_duration_seconds", 0) or 0)
+    if duration_limit > 0:
+        try:
+            started = dt.datetime.fromisoformat(str(control.get("started_at", run.get("created_at", ""))))
+            elapsed = (dt.datetime.now(dt.timezone.utc) - started.astimezone(dt.timezone.utc)).total_seconds()
+            if elapsed >= duration_limit:
+                blockers.append("max_duration_seconds_exhausted")
+        except (TypeError, ValueError):
+            blockers.append("invalid_loop_start_time")
+    return blockers
+
+
+def reset_loop_from_stage(root: Path, run: dict[str, Any], target_stage: str) -> None:
+    target_stage = normalize_loop_stage(target_stage)
+    start_index = LOOP_STAGES.index(target_stage)
+    for stage in LOOP_STAGES[start_index:]:
+        run.setdefault("stages", {})[stage] = fresh_loop_stage_state(root, stage)
+    run["current_stage"] = target_stage
+    run["status"] = LOOP_STATUS_BY_STAGE[target_stage]
 
 
 def route_task(root: Path, task: str, requested_agent: str, workflow: str | None) -> dict[str, Any]:
@@ -2073,7 +2239,7 @@ def evaluate_judgment(
     root: Path,
     *,
     task: str,
-    stage: str = "perceive",
+    stage: str = "context",
     agent_id: str = "",
     workflow_run_id: str = "",
     task_id: str = "",
@@ -2178,7 +2344,7 @@ def evaluate_judgment(
         "decision": decision,
         "risk_score": round(risk_score, 3),
         "risk_label": risk_label(risk_score),
-        "stage": safe_component(stage, "loop stage") if stage else "perceive",
+        "stage": normalize_loop_stage(stage),
         "agent_id": registered_agent(root, agent_id) if agent_id else str(route.get("agent", "")),
         "workflow_run_id": safe_claim(workflow_run_id, "workflow run id", required=False),
         "task_id": safe_claim(task_id, "task id", required=False),
@@ -2235,13 +2401,18 @@ def loop_completion_blockers(root: Path, run: dict[str, Any], *, require_all_sta
     open_cases = open_judgment_cases(root, run)
     if open_cases:
         blockers.append("human_judgment_pending")
+    for handoff in read_records(handoff_dir(root, str(run.get("run_id", ""))), "digital-office-typed-handoff"):
+        if handoff.get("status") in {"pending_acceptance", "needs_context"}:
+            blockers.append(f"handoff_{handoff.get('handoff_id', 'unknown')}_not_accepted")
     if not require_all_stages:
         return blockers
     stages = run.get("stages", {}) or {}
     for stage in LOOP_STAGES:
         state = stages.get(stage, {})
-        if state.get("status") != "completed":
+        if state.get("status") not in {"completed", "skipped"}:
             blockers.append(f"stage_{stage}_not_completed")
+            continue
+        if state.get("status") == "skipped":
             continue
         for artifact in state.get("required_artifacts", []) or []:
             if not stage_artifact_satisfies(str(artifact), state.get("artifacts", []) or []):
@@ -2255,7 +2426,7 @@ def loop_completion_blockers(root: Path, run: dict[str, Any], *, require_all_sta
 
 
 def status_for_current_stage(run: dict[str, Any]) -> str:
-    return LOOP_STATUS_BY_STAGE.get(str(run.get("current_stage", "perceive")), "created")
+    return LOOP_STATUS_BY_STAGE.get(normalize_loop_stage(str(run.get("current_stage", "context"))), "created")
 
 
 def create_judgment_case(
@@ -2280,7 +2451,7 @@ def create_judgment_case(
         "case_id": case_id,
         "status": "pending",
         "decision": evaluation.get("decision", "pause"),
-        "stage": evaluation.get("stage", "perceive"),
+        "stage": normalize_loop_stage(str(evaluation.get("stage", "context"))),
         "agent_id": evaluation.get("agent_id", ""),
         "workflow_run_id": run_id,
         "task_id": task_id,
@@ -2773,7 +2944,7 @@ def workflow_start(args: argparse.Namespace) -> int:
     judgment_eval = evaluate_judgment(
         root,
         task=body,
-        stage="perceive",
+        stage="context",
         agent_id=agent,
         action="workflow.start",
         route=route,
@@ -2814,9 +2985,11 @@ def workflow_start(args: argparse.Namespace) -> int:
         "version": "1.0.0",
         "kind": "digital-office-workflow-run",
         "run_id": run_id,
+        "context_id": run_id,
+        "task_id": task_id,
         "run_type": "workflow_run",
         "status": run_status,
-        "current_stage": "perceive",
+        "current_stage": "context",
         "project_id": project,
         "agent_id": agent,
         "workflow": route.get("workflow", ""),
@@ -2839,6 +3012,8 @@ def workflow_start(args: argparse.Namespace) -> int:
         "idempotency_key": args.idempotency_key or "",
         "created_at": now_iso(),
         "updated_at": now_iso(),
+        "loop_contract_version": "2.0.0",
+        "control": initial_loop_control(root),
         "stages": loop_stage_records(root),
         "events": [{"time": now_iso(), "event": "workflow_started", "status": run_status}],
     }
@@ -2862,7 +3037,7 @@ def workflow_start(args: argparse.Namespace) -> int:
         root,
         run_id,
         "workflow_started",
-        stage="perceive",
+        stage="context",
         action="workflow.start",
         agent_id=agent,
         actor_id=args.user,
@@ -3103,7 +3278,7 @@ def workflow_resume(args: argparse.Namespace) -> int:
     if open_cases:
         print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
-    run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+    run["status"] = LOOP_STATUS_BY_STAGE.get(normalize_loop_stage(str(run.get("current_stage", "context"))), "created")
     run["updated_at"] = now_iso()
     run.setdefault("blockers", [])
     run["blockers"] = [item for item in run["blockers"] if item != "clarification_required"]
@@ -3137,13 +3312,24 @@ def workflow_retry(args: argparse.Namespace) -> int:
     if not auth["allowed"]:
         print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
-    stage = args.stage or run.get("current_stage") or "perceive"
+    stage = normalize_loop_stage(args.stage or str(run.get("current_stage", "context")))
     if stage not in LOOP_STAGES:
         print(f"office-system: invalid retry stage: {stage}", file=sys.stderr)
         return 2
     open_cases = open_judgment_cases(root, run)
     if open_cases:
         print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    budget_blockers = loop_budget_blockers(run)
+    if budget_blockers:
+        print(json.dumps({"status": "budget_exhausted", "blockers": budget_blockers}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    control = run.setdefault("control", initial_loop_control(root))
+    retries = control.setdefault("stage_retries", {})
+    retries[stage] = int(retries.get(stage, 0)) + 1
+    max_retries = int(control.get("budgets", {}).get("max_stage_retries", 0) or 0)
+    if max_retries >= 0 and retries[stage] > max_retries:
+        print(json.dumps({"status": "blocked", "reason": "stage_retry_budget_exhausted", "stage": stage, "attempts": retries[stage]}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
     retry = {
         "time": now_iso(),
@@ -3152,12 +3338,9 @@ def workflow_retry(args: argparse.Namespace) -> int:
         "reason": args.reason or "",
     }
     run.setdefault("retries", []).append(retry)
-    run["current_stage"] = stage
-    run["status"] = LOOP_STATUS_BY_STAGE.get(stage, "created")
+    reset_loop_from_stage(root, run, stage)
     run["updated_at"] = now_iso()
     run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_retry", "stage": stage, "reason": args.reason or ""})
-    stage_state = run.setdefault("stages", {}).setdefault(stage, {"artifacts": [], "notes": [], "gates": []})
-    stage_state["status"] = "pending"
     for task_id in linked_tasks(root, run):
         task = load_task(root, task_id)
         if task.get("status") in {"failed", "blocked", "cancelled"}:
@@ -3195,17 +3378,19 @@ def agent_invoke(args: argparse.Namespace) -> int:
         print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
     route = {"agent": agent, "workflow": "direct_agent", "steps": [agent], "confidence": "direct", "routing_reason": "explicit_agent_invocation", "display_name": registry["agents"][agent].get("display_name", agent)}
-    judgment_eval = evaluate_judgment(root, task=body, stage="execute", agent_id=agent, workflow_run_id=run_id, action="agent.delegate", route=route)
+    judgment_eval = evaluate_judgment(root, task=body, stage="act", agent_id=agent, workflow_run_id=run_id, action="agent.delegate", route=route)
     judgment_required = judgment_eval["decision"] == "pause"
     initial_revision = initial_canvas_revision(root, route=route, body=body, agent_id=agent, workflow="direct_agent", created_by=args.user)
     run = {
         "version": "1.0.0",
         "kind": "digital-office-workflow-run",
         "run_id": run_id,
+        "context_id": run_id,
+        "task_id": task_id,
         "run_type": "workflow_run",
         "invocation_mode": "direct_agent",
         "status": "waiting_human_judgment" if judgment_required else "created",
-        "current_stage": "execute",
+        "current_stage": "context",
         "project_id": project,
         "agent_id": agent,
         "workflow": "direct_agent",
@@ -3227,6 +3412,8 @@ def agent_invoke(args: argparse.Namespace) -> int:
         "blockers": ["human_judgment_pending"] if judgment_required else [],
         "created_at": now_iso(),
         "updated_at": now_iso(),
+        "loop_contract_version": "2.0.0",
+        "control": initial_loop_control(root),
         "stages": loop_stage_records(root),
         "events": [{"time": now_iso(), "event": "agent_invoked", "agent_id": agent, "status": "waiting_human_judgment" if judgment_required else "created"}],
     }
@@ -3238,7 +3425,7 @@ def agent_invoke(args: argparse.Namespace) -> int:
         root,
         run_id,
         "agent_invoked",
-        stage="execute",
+        stage="context",
         action="agent.delegate",
         agent_id=agent,
         actor_id=args.user,
@@ -3406,7 +3593,7 @@ def workflow_control(args: argparse.Namespace) -> int:
         print("office-system: completed, cancelled, or stopped workflow cannot be controlled", file=sys.stderr)
         return 2
     if action in {"run", "resume"}:
-        run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+        run["status"] = LOOP_STATUS_BY_STAGE.get(normalize_loop_stage(str(run.get("current_stage", "context"))), "created")
         run["pause_requested"] = False
         outcome = "running"
     elif action == "pause":
@@ -3851,7 +4038,7 @@ def approval_decision(args: argparse.Namespace) -> int:
                     if "human_judgment_pending" not in run["blockers"]:
                         run["blockers"].append("human_judgment_pending")
                 else:
-                    run["status"] = LOOP_STATUS_BY_STAGE.get(run.get("current_stage", "perceive"), "created")
+                    run["status"] = LOOP_STATUS_BY_STAGE.get(normalize_loop_stage(str(run.get("current_stage", "context"))), "created")
             else:
                 run["status"] = "blocked"
                 run.setdefault("blockers", []).append(f"approval_{status}")
@@ -5559,15 +5746,33 @@ def loop_start(args: argparse.Namespace) -> int:
     if project:
         ensure_project(root, project)
     run_id = safe_component(args.run_id, "run id") if args.run_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    task_id = f"work-{run_id}"
     task = args.task if args.task is not None else sys.stdin.read()
-    judgment_eval = evaluate_judgment(root, task=task.strip(), stage="perceive", agent_id=agent, workflow_run_id=run_id, action="loop.start")
+    judgment_eval = evaluate_judgment(root, task=task.strip(), stage="context", agent_id=agent, workflow_run_id=run_id, action="loop.start")
     judgment_required = judgment_eval["decision"] == "pause"
+    control = initial_loop_control(
+        root,
+        {
+            "max_cycles": args.max_cycles,
+            "max_stage_retries": args.max_stage_retries,
+            "max_stagnant_cycles": args.max_stagnant_cycles,
+            "max_duration_seconds": args.max_duration_seconds,
+            "max_tool_calls": args.max_tool_calls,
+            "max_model_calls": args.max_model_calls,
+            "max_cost_microunits": args.max_cost_microunits,
+        },
+    )
+    if any(int(value) < 0 for value in control.get("budgets", {}).values()):
+        print("office-system: loop budgets must be non-negative", file=sys.stderr)
+        return 2
     run = {
-        "version": "1.0.0",
-        "kind": "digital-office-ai-native-loop-run",
+        "version": "2.0.0",
+        "kind": "digital-office-loop-run",
         "run_id": run_id,
+        "context_id": run_id,
+        "task_id": task_id,
         "status": "waiting_human_judgment" if judgment_required else "created",
-        "current_stage": "perceive",
+        "current_stage": "context",
         "project_id": project,
         "agent_id": agent,
         "workflow": safe_claim(args.workflow, "workflow", required=False),
@@ -5575,22 +5780,10 @@ def loop_start(args: argparse.Namespace) -> int:
         "task": task.strip(),
         "task_sha256": hashlib.sha256(task.encode("utf-8")).hexdigest(),
         "created_at": now_iso(),
-        "stages": {
-            stage: {
-                "status": "pending",
-                "required_artifacts": manifest["stages"][stage]["required_artifacts"],
-                "gates": [
-                    {
-                        "gate": gate,
-                        "status": "pending"
-                    }
-                    for gate in manifest["stages"][stage]["gates"]
-                ],
-                "artifacts": [],
-                "notes": []
-            }
-            for stage in LOOP_STAGES
-        },
+        "updated_at": now_iso(),
+        "loop_contract_version": "2.0.0",
+        "control": control,
+        "stages": loop_stage_records(root),
         "hard_rules": manifest.get("hard_rules", []),
         "judgment_cases": [],
         "judgment_evaluation": judgment_eval,
@@ -5612,7 +5805,7 @@ def loop_start(args: argparse.Namespace) -> int:
         root,
         run_id,
         "loop_start",
-        stage="perceive",
+        stage="context",
         action="loop.start",
         agent_id=agent,
         actor_id=args.requested_by or "",
@@ -5627,22 +5820,32 @@ def loop_start(args: argparse.Namespace) -> int:
 def loop_stage(args: argparse.Namespace) -> int:
     root = system_root()
     run_id = safe_component(args.run_id, "run id")
-    stage = args.stage
+    stage = normalize_loop_stage(args.stage)
     target = loop_run_path(root, run_id)
     if not target.exists():
         print(f"office-system: loop run not found: {run_id}", file=sys.stderr)
         return 2
-    run = read_json(target)
+    run = load_run_record(root, run_id)
+    if run.get("status") in {"completed", "failed", "cancelled", "budget_exhausted"}:
+        print(f"office-system: terminal loop cannot update stages: {run.get('status')}", file=sys.stderr)
+        return 2
     open_cases = open_judgment_cases(root, run)
     if open_cases:
         print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
         return 2
+    budget_blockers = loop_budget_blockers(run)
+    if budget_blockers and not (stage == "evaluate" or (stage == "act" and args.status == "completed")):
+        run.setdefault("blockers", []).extend(item for item in budget_blockers if item not in run.get("blockers", []))
+        run["updated_at"] = now_iso()
+        write_json(target, run)
+        print(json.dumps({"status": "blocked", "reason": "budget_reached", "blockers": budget_blockers, "allowed_next": ["complete current act", "evaluate", "loop-control"]}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+        return 2
     current_index = LOOP_STAGES.index(stage)
     for previous in LOOP_STAGES[:current_index]:
-        if run.get("stages", {}).get(previous, {}).get("status") != "completed":
+        if run.get("stages", {}).get(previous, {}).get("status") not in {"completed", "skipped"}:
             print(f"office-system: cannot update {stage} before {previous} is completed", file=sys.stderr)
             return 2
-    stage_state = run.setdefault("stages", {}).setdefault(stage, {"artifacts": [], "notes": [], "gates": []})
+    stage_state = run.setdefault("stages", {}).setdefault(stage, fresh_loop_stage_state(root, stage))
     prior_status = str(stage_state.get("status", "pending"))
     if args.status == "started" and prior_status not in {"pending", "blocked", "failed", "started"}:
         print(f"office-system: cannot start {stage} from status {prior_status}", file=sys.stderr)
@@ -5650,6 +5853,16 @@ def loop_stage(args: argparse.Namespace) -> int:
     if args.status == "completed" and prior_status != "started":
         print(f"office-system: cannot complete {stage} before it is started", file=sys.stderr)
         return 2
+    if args.status == "skipped":
+        if stage != "decide":
+            print("office-system: only the decide stage may be skipped for an explicitly simple task profile", file=sys.stderr)
+            return 2
+        if prior_status not in {"pending", "started"}:
+            print(f"office-system: cannot skip {stage} from status {prior_status}", file=sys.stderr)
+            return 2
+        if not args.summary:
+            print("office-system: skipping decide requires --summary with the deterministic reason", file=sys.stderr)
+            return 2
     stage_state["status"] = args.status
     if args.summary:
         stage_state.setdefault("notes", []).append({"time": now_iso(), "summary": args.summary})
@@ -5709,19 +5922,13 @@ def loop_stage(args: argparse.Namespace) -> int:
     elif args.status in {"failed", "blocked"}:
         run["status"] = "blocked"
         run["current_stage"] = stage
-    elif args.status == "completed":
+    elif args.status in {"completed", "skipped"}:
         next_stage = LOOP_STAGES[current_index + 1] if current_index + 1 < len(LOOP_STAGES) else None
         run["current_stage"] = next_stage or stage
         if next_stage:
             run["status"] = LOOP_STATUS_BY_STAGE[next_stage]
         else:
-            blockers = loop_completion_blockers(root, run, require_all_stages=True)
-            run["status"] = "completed" if not blockers else "blocked"
-            if blockers:
-                run.setdefault("blockers", [])
-                for blocker in blockers:
-                    if blocker not in run["blockers"]:
-                        run["blockers"].append(blocker)
+            run["status"] = "awaiting_control"
     run["updated_at"] = now_iso()
     run.setdefault("events", []).append({"time": run["updated_at"], "event": "loop_stage", "stage": stage, "status": args.status})
     write_json(target, run)
@@ -5747,7 +5954,185 @@ def loop_status(args: argparse.Namespace) -> int:
     if not target.exists():
         print(f"office-system: loop run not found: {args.run_id}", file=sys.stderr)
         return 2
-    print(json.dumps(read_json(target), ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps(load_run_record(root, args.run_id), ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def loop_usage_add(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    additions = {
+        "tool_calls": args.tool_calls,
+        "model_calls": args.model_calls,
+        "input_tokens": args.input_tokens,
+        "output_tokens": args.output_tokens,
+        "cost_microunits": args.cost_microunits,
+    }
+    if any(int(value) < 0 for value in additions.values()):
+        print("office-system: loop usage values must be non-negative", file=sys.stderr)
+        return 2
+    usage = run.setdefault("control", initial_loop_control(root)).setdefault("usage", {})
+    for key, value in additions.items():
+        usage[key] = int(usage.get(key, 0) or 0) + int(value)
+    blockers = loop_budget_blockers(run)
+    if blockers:
+        run.setdefault("blockers", []).extend(item for item in blockers if item not in run.get("blockers", []))
+    run["updated_at"] = now_iso()
+    write_json(run_record_path(root, args.run_id), run)
+    append_run_ledger_event(
+        root,
+        args.run_id,
+        "loop_usage_recorded",
+        stage=normalize_loop_stage(args.stage or str(run.get("current_stage", "context"))),
+        action="loop.usage.add",
+        input_payload=additions,
+        output_payload={"usage": usage, "budget_blockers": blockers},
+    )
+    payload = {
+        "status": "budget_reached" if blockers else "success",
+        "summary": "Loop usage recorded; no further resource-consuming transition is allowed before evaluation." if blockers else "Loop usage recorded.",
+        "next_actions": ["complete current act if needed", "evaluate", "loop-control"] if blockers else ["continue current work node"],
+        "artifacts": [str(run_record_path(root, args.run_id).relative_to(root))],
+        "run_id": args.run_id,
+        "usage": usage,
+        "budget_blockers": blockers,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 2 if blockers else 0
+
+
+def loop_control(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    decision = args.decision
+    if decision not in LOOP_CONTROL_DECISIONS:
+        print(f"office-system: unsupported loop control decision: {decision}", file=sys.stderr)
+        return 2
+    if run.get("status") in {"completed", "failed", "cancelled", "budget_exhausted"}:
+        print(f"office-system: terminal loop cannot transition: {run.get('status')}", file=sys.stderr)
+        return 2
+    if decision == "cancel" and not args.confirmed:
+        print("office-system: cancel requires --confirmed", file=sys.stderr)
+        return 2
+    progress_score = float(args.progress_score)
+    if progress_score < 0.0 or progress_score > 1.0:
+        print("office-system: --progress-score must be between 0 and 1", file=sys.stderr)
+        return 2
+    evaluate_state = run.get("stages", {}).get("evaluate", {})
+    if decision not in {"cancel", "budget_exhausted"} and evaluate_state.get("status") != "completed":
+        print("office-system: loop control requires a completed evaluate stage", file=sys.stderr)
+        return 2
+    budget_blockers = loop_budget_blockers(run)
+    if budget_blockers and decision in {"continue", "replan", "retry"}:
+        print(json.dumps({"status": "blocked", "reason": "budget_exhausted", "blockers": budget_blockers}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+        return 2
+
+    control = run.setdefault("control", initial_loop_control(root))
+    budgets = control.setdefault("budgets", {})
+    previous_score = float(control.get("last_progress_score", 0.0) or 0.0)
+    minimum_delta = float(loop_manifest(root).get("controller", {}).get("progress_policy", {}).get("minimum_progress_delta", 0.02))
+    progress_delta = progress_score - previous_score
+    effective_decision = decision
+    target_stage = ""
+    reason = safe_claim(args.reason, "loop control reason", required=False)
+
+    if decision == "complete":
+        if not args.acceptance_passed:
+            print("office-system: complete requires --acceptance-passed", file=sys.stderr)
+            return 2
+        blockers = loop_completion_blockers(root, run, require_all_stages=True)
+        if blockers:
+            print(json.dumps({"status": "blocked", "reason": "completion_gates_failed", "blockers": blockers}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
+        run["status"] = "completed"
+        run["blockers"] = []
+    elif decision in {"continue", "replan", "retry"}:
+        target_stage = {"continue": "context", "replan": "decide", "retry": "act"}[decision]
+        next_cycle = int(control.get("cycle_index", 1)) + 1
+        max_cycles = int(budgets.get("max_cycles", 0) or 0)
+        if max_cycles > 0 and next_cycle > max_cycles:
+            effective_decision = "budget_exhausted"
+            run["status"] = "budget_exhausted"
+            run.setdefault("blockers", []).append("max_cycles_exceeded")
+        else:
+            if progress_delta < minimum_delta:
+                control["stagnant_cycles"] = int(control.get("stagnant_cycles", 0)) + 1
+            else:
+                control["stagnant_cycles"] = 0
+            max_stagnant = int(budgets.get("max_stagnant_cycles", 0) or 0)
+            if max_stagnant >= 0 and int(control.get("stagnant_cycles", 0)) > max_stagnant:
+                effective_decision = "wait_human"
+                run["status"] = "waiting_user_input"
+                run.setdefault("blockers", []).append("loop_progress_stagnant")
+            else:
+                if decision == "retry":
+                    retries = control.setdefault("stage_retries", {})
+                    retries[target_stage] = int(retries.get(target_stage, 0)) + 1
+                    max_retries = int(budgets.get("max_stage_retries", 0) or 0)
+                    if max_retries >= 0 and retries[target_stage] > max_retries:
+                        print("office-system: act retry budget exhausted; replan, wait for human input, or fail", file=sys.stderr)
+                        return 2
+                control.setdefault("cycle_history", []).append(
+                    {
+                        "cycle_index": int(control.get("cycle_index", 1)),
+                        "ended_at": now_iso(),
+                        "decision": decision,
+                        "progress_score": progress_score,
+                        "stage_statuses": {stage: run.get("stages", {}).get(stage, {}).get("status", "missing") for stage in LOOP_STAGES},
+                        "stage_artifact_hashes": {stage: canonical_hash(run.get("stages", {}).get(stage, {}).get("artifacts", [])) for stage in LOOP_STAGES},
+                    }
+                )
+                control["cycle_index"] = next_cycle
+                reset_loop_from_stage(root, run, target_stage)
+    elif decision == "wait_human":
+        run["status"] = "waiting_user_input"
+        run.setdefault("blockers", []).append("loop_human_input_required")
+    elif decision == "fail":
+        if not reason:
+            print("office-system: fail requires --reason", file=sys.stderr)
+            return 2
+        run["status"] = "failed"
+        run.setdefault("blockers", []).append("permanent_failure")
+    elif decision == "cancel":
+        run["status"] = "cancelled"
+    elif decision == "budget_exhausted":
+        run["status"] = "budget_exhausted"
+        run.setdefault("blockers", []).extend(item for item in budget_blockers if item not in run.get("blockers", []))
+
+    control["last_progress_score"] = progress_score
+    record = {
+        "time": now_iso(),
+        "requested_decision": decision,
+        "effective_decision": effective_decision,
+        "target_stage": target_stage,
+        "progress_score": progress_score,
+        "progress_delta": round(progress_delta, 6),
+        "acceptance_passed": bool(args.acceptance_passed),
+        "reason": reason,
+        "cycle_index": int(control.get("cycle_index", 1)),
+    }
+    control.setdefault("decision_history", []).append(record)
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "loop_control", **record})
+    write_json(run_record_path(root, args.run_id), run)
+    append_run_ledger_event(
+        root,
+        args.run_id,
+        "loop_control",
+        stage="evaluate",
+        action=f"loop.control.{effective_decision}",
+        input_payload={"decision": decision, "progress_score": progress_score, "acceptance_passed": bool(args.acceptance_passed), "reason": reason},
+        output_payload={"status": run["status"], "current_stage": run.get("current_stage", ""), "record": record},
+    )
+    payload = {
+        "status": run["status"],
+        "summary": f"Loop controller applied {effective_decision}.",
+        "next_actions": ["loop-status"] if run["status"] in {"completed", "failed", "cancelled", "budget_exhausted"} else [f"continue at {run.get('current_stage', 'evaluate')}"],
+        "artifacts": [str(run_record_path(root, args.run_id).relative_to(root))],
+        "run_id": args.run_id,
+        "control_decision": record,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -5787,10 +6172,18 @@ def run_ledger_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_ledger_verify(args: argparse.Namespace) -> int:
+    root = system_root()
+    load_run_record(root, args.run_id)
+    result = verify_run_ledger(root, args.run_id)
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0 if result["status"] == "valid" else 2
+
+
 def checkpoint_create(args: argparse.Namespace) -> int:
     root = system_root()
     run = load_run_record(root, args.run_id)
-    stage = args.stage or str(run.get("current_stage", "perceive"))
+    stage = normalize_loop_stage(args.stage or str(run.get("current_stage", "context")))
     if stage not in LOOP_STAGES:
         print(f"office-system: invalid checkpoint stage: {stage}", file=sys.stderr)
         return 2
@@ -5869,6 +6262,220 @@ def checkpoint_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def forbidden_context_keys(value: Any, path: str = "$") -> list[str]:
+    forbidden = {
+        "chain_of_thought",
+        "chain-of-thought",
+        "private_reasoning",
+        "reasoning_trace",
+        "hidden_reasoning",
+        "credential",
+        "credentials",
+        "password",
+        "secret",
+        "api_key",
+        "access_token",
+        "refresh_token",
+    }
+    found: list[str] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            item_path = f"{path}.{key}"
+            if str(key).lower() in forbidden:
+                found.append(item_path)
+            found.extend(forbidden_context_keys(item, item_path))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            found.extend(forbidden_context_keys(item, f"{path}[{index}]"))
+    return found
+
+
+def validate_json_schema_instance(value: Any, schema: dict[str, Any], root_schema: dict[str, Any], path: str = "$") -> list[str]:
+    if "$ref" in schema:
+        reference = str(schema["$ref"])
+        if not reference.startswith("#/"):
+            return [f"{path}: unsupported schema reference {reference}"]
+        resolved: Any = root_schema
+        try:
+            for part in reference[2:].split("/"):
+                resolved = resolved[part.replace("~1", "/").replace("~0", "~")]
+        except (KeyError, TypeError):
+            return [f"{path}: unresolved schema reference {reference}"]
+        return validate_json_schema_instance(value, resolved, root_schema, path)
+
+    errors: list[str] = []
+    if "const" in schema and value != schema["const"]:
+        errors.append(f"{path}: must equal {schema['const']!r}")
+    if "enum" in schema and value not in schema["enum"]:
+        errors.append(f"{path}: must be one of {schema['enum']}")
+
+    expected_type = schema.get("type")
+    type_ok = True
+    if expected_type == "object":
+        type_ok = isinstance(value, dict)
+    elif expected_type == "array":
+        type_ok = isinstance(value, list)
+    elif expected_type == "string":
+        type_ok = isinstance(value, str)
+    elif expected_type == "integer":
+        type_ok = isinstance(value, int) and not isinstance(value, bool)
+    elif expected_type == "number":
+        type_ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif expected_type == "boolean":
+        type_ok = isinstance(value, bool)
+    if expected_type and not type_ok:
+        return errors + [f"{path}: must be {expected_type}"]
+
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        for key in schema.get("required", []):
+            if key not in value:
+                errors.append(f"{path}: missing required field {key}")
+        if schema.get("additionalProperties") is False:
+            for key in value:
+                if key not in properties:
+                    errors.append(f"{path}.{key}: unsupported field")
+        for key, item in value.items():
+            if key in properties:
+                errors.extend(validate_json_schema_instance(item, properties[key], root_schema, f"{path}.{key}"))
+    elif isinstance(value, list):
+        minimum_items = schema.get("minItems")
+        if isinstance(minimum_items, int) and len(value) < minimum_items:
+            errors.append(f"{path}: must contain at least {minimum_items} item(s)")
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for index, item in enumerate(value):
+                errors.extend(validate_json_schema_instance(item, item_schema, root_schema, f"{path}[{index}]"))
+    elif isinstance(value, str):
+        minimum_length = schema.get("minLength")
+        if isinstance(minimum_length, int) and len(value) < minimum_length:
+            errors.append(f"{path}: must contain at least {minimum_length} character(s)")
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            errors.append(f"{path}: must be greater than or equal to {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            errors.append(f"{path}: must be less than or equal to {schema['maximum']}")
+    return errors
+
+
+def validate_context_envelope(
+    root: Path,
+    context: Any,
+    *,
+    run_id: str,
+    run: dict[str, Any],
+    from_agent: str,
+    to_agent: str,
+    handoff_id: str,
+) -> tuple[dict[str, Any], list[str]]:
+    if not isinstance(context, dict):
+        return {}, ["context must be a JSON object"]
+    normalized = copy.deepcopy(context)
+    normalized["handoff_id"] = handoff_id
+    if normalized.get("current_stage"):
+        normalized["current_stage"] = normalize_loop_stage(str(normalized["current_stage"]))
+    schema = read_json(root / "context-envelope.schema.json")
+    errors = validate_json_schema_instance(normalized, schema, schema)
+    if normalized.get("kind") != "digital-office-context-envelope":
+        errors.append("kind must be digital-office-context-envelope")
+    if normalized.get("version") != "2.0.0":
+        errors.append("version must be 2.0.0")
+    if normalized.get("run_id") != run_id:
+        errors.append("run_id does not match the handoff run")
+    for key in ("context_id", "task_id", "goal", "summary", "handoff_reason", "state_hash"):
+        if key in normalized and not str(normalized.get(key, "")).strip():
+            errors.append(f"{key} must not be empty")
+    if len(str(normalized.get("state_hash", ""))) < 12:
+        errors.append("state_hash must contain at least 12 characters")
+    for key, minimum in (("context_version", 1), ("cycle_index", 0)):
+        value = normalized.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+            errors.append(f"{key} must be an integer greater than or equal to {minimum}")
+    if normalized.get("current_stage") not in LOOP_STAGES:
+        errors.append(f"current_stage must be one of: {', '.join(LOOP_STAGES)}")
+    for key, expected_agent in (("from", from_agent), ("to", to_agent)):
+        actor = normalized.get(key)
+        if not isinstance(actor, dict) or actor.get("id") != expected_agent:
+            errors.append(f"{key}.id must match {expected_agent}")
+        elif actor.get("type") not in {"secretary", "agent"}:
+            errors.append(f"{key}.type must be secretary or agent for Agent handoff")
+    list_fields = (
+        "constraints",
+        "acceptance_criteria",
+        "facts",
+        "source_refs",
+        "artifact_refs",
+        "decisions",
+        "open_questions",
+        "omissions",
+        "risk_flags",
+    )
+    for key in list_fields:
+        if key in normalized and not isinstance(normalized[key], list):
+            errors.append(f"{key} must be an array")
+    if isinstance(normalized.get("acceptance_criteria"), list) and not normalized["acceptance_criteria"]:
+        errors.append("acceptance_criteria must contain at least one criterion")
+    for index, fact in enumerate(normalized.get("facts", []) if isinstance(normalized.get("facts"), list) else []):
+        if not isinstance(fact, dict):
+            errors.append(f"facts[{index}] must be an object")
+            continue
+        if fact.get("status") not in {"verified", "assumption", "uncertain", "conflict"}:
+            errors.append(f"facts[{index}].status is invalid")
+        confidence = fact.get("confidence")
+        if not isinstance(confidence, (int, float)) or isinstance(confidence, bool) or not 0 <= confidence <= 1:
+            errors.append(f"facts[{index}].confidence must be between 0 and 1")
+        for key in ("fact_id", "statement", "basis_refs"):
+            if key not in fact:
+                errors.append(f"facts[{index}] is missing {key}")
+    for collection in ("source_refs", "artifact_refs"):
+        for index, ref in enumerate(normalized.get(collection, []) if isinstance(normalized.get(collection), list) else []):
+            if not isinstance(ref, dict):
+                errors.append(f"{collection}[{index}] must be an object")
+                continue
+            for key in ("ref_id", "type", "uri", "authority", "retrievable"):
+                if key not in ref:
+                    errors.append(f"{collection}[{index}] is missing {key}")
+            if "retrievable" in ref and not isinstance(ref["retrievable"], bool):
+                errors.append(f"{collection}[{index}].retrievable must be boolean")
+    permissions = normalized.get("permissions")
+    if not isinstance(permissions, dict):
+        errors.append("permissions must be an object")
+    else:
+        for key in ("tenant_id", "project_id", "requested_by", "role", "allowed_actions"):
+            if key not in permissions:
+                errors.append(f"permissions is missing {key}")
+    budget = normalized.get("context_budget")
+    if not isinstance(budget, dict):
+        errors.append("context_budget must be an object")
+    else:
+        if budget.get("strategy") not in {"inline", "reference", "hybrid"}:
+            errors.append("context_budget.strategy is invalid")
+        estimated = budget.get("estimated_tokens")
+        maximum = budget.get("max_tokens")
+        if not isinstance(estimated, int) or isinstance(estimated, bool) or estimated < 0:
+            errors.append("context_budget.estimated_tokens must be a non-negative integer")
+        if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum < 1:
+            errors.append("context_budget.max_tokens must be a positive integer")
+        if isinstance(estimated, int) and isinstance(maximum, int) and estimated > maximum:
+            errors.append("context envelope exceeds context_budget.max_tokens")
+        if not isinstance(budget.get("compacted"), bool):
+            errors.append("context_budget.compacted must be boolean")
+    forbidden = forbidden_context_keys(normalized)
+    errors.extend(f"forbidden sensitive or private reasoning field: {item}" for item in forbidden)
+    run_context_id = str(run.get("context_id", ""))
+    if run_context_id and normalized.get("context_id") != run_context_id:
+        errors.append("context_id does not match the run context_id")
+    run_task_id = str(run.get("task_id", ""))
+    if run_task_id and normalized.get("task_id") != run_task_id:
+        errors.append("task_id does not match the run task_id")
+    if isinstance(permissions, dict):
+        for context_key, run_key in (("tenant_id", "tenant_id"), ("project_id", "project_id"), ("requested_by", "requested_by"), ("role", "requested_by_role")):
+            run_value = str(run.get(run_key, ""))
+            if run_value and permissions.get(context_key) != run_value:
+                errors.append(f"permissions.{context_key} does not match run {run_key}")
+    return normalized, errors
+
+
 def handoff_create(args: argparse.Namespace) -> int:
     root = system_root()
     run = load_run_record(root, args.run_id)
@@ -5878,7 +6485,7 @@ def handoff_create(args: argparse.Namespace) -> int:
         print("office-system: handoff requires different source and target agents", file=sys.stderr)
         return 2
     input_schema = parse_json_value(args.input_schema_json, args.input_schema_file, "handoff input schema", required=False)
-    context = parse_json_value(args.context_json, args.context_file, "handoff context", required=False)
+    context = parse_json_value(args.context_json, args.context_file, "handoff context", required=True)
     acceptance = [safe_claim(item, "acceptance criterion") for item in (args.acceptance_criterion or [])]
     if not acceptance:
         print("office-system: handoff requires at least one --acceptance-criterion", file=sys.stderr)
@@ -5887,14 +6494,38 @@ def handoff_create(args: argparse.Namespace) -> int:
     if handoff_path(root, args.run_id, handoff_id).exists():
         print(f"office-system: handoff already exists: {handoff_id}", file=sys.stderr)
         return 2
+    context, context_errors = validate_context_envelope(
+        root,
+        context,
+        run_id=safe_component(args.run_id, "run id"),
+        run=run,
+        from_agent=from_agent,
+        to_agent=to_agent,
+        handoff_id=handoff_id,
+    )
+    if context_errors:
+        print("office-system: invalid context envelope:", file=sys.stderr)
+        for error in context_errors:
+            print(f"  - {error}", file=sys.stderr)
+        return 2
+    if set(context.get("acceptance_criteria", [])) != set(acceptance):
+        print("office-system: handoff acceptance criteria must match context.acceptance_criteria", file=sys.stderr)
+        return 2
+    stage = normalize_loop_stage(args.stage or str(run.get("current_stage", "context")))
+    if context.get("current_stage") != stage:
+        print("office-system: handoff stage must match context.current_stage", file=sys.stderr)
+        return 2
     envelope = {
-        "version": "1.0.0",
+        "version": "2.0.0",
         "kind": "digital-office-typed-handoff",
         "handoff_id": handoff_id,
         "run_id": safe_component(args.run_id, "run id"),
         "from_agent": from_agent,
         "to_agent": to_agent,
-        "stage": safe_component(args.stage, "loop stage") if args.stage else str(run.get("current_stage", "")),
+        "context_id": context["context_id"],
+        "task_id": context["task_id"],
+        "context_version": context["context_version"],
+        "stage": stage,
         "reason": safe_claim(args.reason, "handoff reason"),
         "input_schema": input_schema,
         "input_schema_hash": canonical_hash(input_schema),
@@ -5903,6 +6534,7 @@ def handoff_create(args: argparse.Namespace) -> int:
         "artifacts": [safe_claim(item, "handoff artifact") for item in (args.artifact or [])],
         "acceptance_criteria": acceptance,
         "status": "pending_acceptance",
+        "acknowledgments": [],
         "created_by": safe_claim(args.created_by, "created by", required=False),
         "created_at": now_iso(),
     }
@@ -5927,6 +6559,83 @@ def handoff_create(args: argparse.Namespace) -> int:
         handoff_id=handoff_id,
     )
     print(json.dumps(envelope, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def handoff_ack(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    handoff_id = safe_component(args.handoff_id, "handoff id")
+    path = handoff_path(root, args.run_id, handoff_id)
+    if not path.exists():
+        print(f"office-system: handoff not found: {handoff_id}", file=sys.stderr)
+        return 2
+    record = read_json(path)
+    recipient = registered_agent(root, args.received_by)
+    if record.get("to_agent") != recipient:
+        print("office-system: only the registered target Agent may acknowledge this handoff", file=sys.stderr)
+        return 2
+    current_status = str(record.get("status", ""))
+    if current_status not in {"pending_acceptance", "needs_context"}:
+        print(f"office-system: handoff cannot be acknowledged from status {current_status}", file=sys.stderr)
+        return 2
+    expected_hash = safe_claim(args.expected_context_hash, "expected context hash")
+    actual_hash = str(record.get("context_hash", ""))
+    if not hmac.compare_digest(expected_hash, actual_hash):
+        print("office-system: context hash mismatch; refusing acknowledgment", file=sys.stderr)
+        return 2
+    missing_fields = [safe_claim(item, "missing context field") for item in (args.missing_field or [])]
+    message = safe_claim(args.message, "acknowledgment message", required=False)
+    if args.decision == "request_context" and (not missing_fields or not message):
+        print("office-system: request_context requires --missing-field and --message", file=sys.stderr)
+        return 2
+    if args.decision == "reject" and not message:
+        print("office-system: reject requires --message", file=sys.stderr)
+        return 2
+    status_by_decision = {"accept": "accepted", "request_context": "needs_context", "reject": "rejected"}
+    acknowledged_at = now_iso()
+    acknowledgment = {
+        "decision": args.decision,
+        "received_by": recipient,
+        "verified_context_hash": expected_hash,
+        "missing_fields": missing_fields,
+        "message": message,
+        "confirmed": bool(args.confirmed),
+        "acknowledged_at": acknowledged_at,
+    }
+    record["status"] = status_by_decision[args.decision]
+    record.setdefault("acknowledgments", []).append(acknowledgment)
+    record["updated_at"] = acknowledged_at
+    write_json(path, record)
+    for summary in run.get("handoffs", []):
+        if summary.get("handoff_id") == handoff_id:
+            summary["status"] = record["status"]
+            summary["acknowledged_at"] = acknowledged_at
+            summary["received_by"] = recipient
+    run["updated_at"] = acknowledged_at
+    run.setdefault("events", []).append({
+        "time": acknowledged_at,
+        "event": "handoff_acknowledged",
+        "handoff_id": handoff_id,
+        "decision": args.decision,
+        "received_by": recipient,
+    })
+    write_json(run_record_path(root, args.run_id), run)
+    append_run_ledger_event(
+        root,
+        args.run_id,
+        "handoff_acknowledged",
+        stage=str(record.get("stage", run.get("current_stage", "context"))),
+        action="handoff.ack",
+        agent_id=recipient,
+        actor_id=args.created_by or "",
+        actor_role=args.role or "",
+        input_payload={"decision": args.decision, "expected_context_hash": expected_hash, "missing_fields": missing_fields},
+        output_payload={"handoff_id": handoff_id, "status": record["status"], "message": message},
+        artifact_refs=record.get("artifacts", []),
+        handoff_id=handoff_id,
+    )
+    print(json.dumps(record, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -6081,7 +6790,7 @@ def grade_eval_case(root: Path, case: dict[str, Any]) -> dict[str, Any]:
         observed = evaluate_judgment(
             root,
             task=str(case.get("task", "")),
-            stage=str(case.get("stage", "perceive")),
+            stage=normalize_loop_stage(str(case.get("stage", "context"))),
             action=str(case.get("action", "")),
             route=case.get("route") if isinstance(case.get("route"), dict) else {},
             signal=case.get("signal") if isinstance(case.get("signal"), dict) else {},
@@ -6325,6 +7034,7 @@ def health_checks(root: Path) -> dict[str, Any]:
         "digital_employees_registry": (root / "digital-employees.registry.json").exists(),
         "workflow_packs_registry": (root / "workflow-packs.registry.json").exists(),
         "context_envelope_schema": (root / "context-envelope.schema.json").exists(),
+        "context_handoff_policy": (root / "context-handoff.policy.json").exists(),
         "skill_installations_registry": (root / "skill-installations.registry.json").exists(),
         "local_skill_sources": (root.parent / "skills" / "_imported" / "claude-for-legal-ZH").exists(),
         "knowledge_registry": (root / "knowledge.registry.json").exists(),
@@ -6370,6 +7080,7 @@ def required_health_keys() -> tuple[str, ...]:
         "digital_employees_registry",
         "workflow_packs_registry",
         "context_envelope_schema",
+        "context_handoff_policy",
         "skill_installations_registry",
         "local_skill_sources",
         "ai_native_loop_manifest",
@@ -6599,11 +7310,33 @@ def context_contract_summary(root: Path) -> dict[str, Any]:
     if not path.exists():
         return {"configured": False, "required": []}
     schema = read_json(path)
+    handoff_policy_path = root / "context-handoff.policy.json"
+    handoff_policy = read_json(handoff_policy_path) if handoff_policy_path.exists() else {}
     return {
         "configured": True,
         "schema": "context-envelope.schema.json",
+        "schema_version": schema.get("properties", {}).get("version", {}).get("const", ""),
         "required": schema.get("required", []),
         "actor_types": schema.get("$defs", {}).get("actor", {}).get("properties", {}).get("type", {}).get("enum", []),
+        "handoff_policy": "context-handoff.policy.json" if handoff_policy else "",
+        "default_transfer_mode": handoff_policy.get("default_mode", ""),
+        "acknowledgment_decisions": handoff_policy.get("acknowledgment", {}).get("decisions", []),
+    }
+
+
+def loop_runtime_summary(root: Path) -> dict[str, Any]:
+    path = root / "ai-native-loop.manifest.json"
+    if not path.exists():
+        return {"configured": False, "work_nodes": [], "controller_decisions": [], "default_budgets": {}}
+    manifest = read_json(path)
+    return {
+        "configured": True,
+        "version": manifest.get("version", ""),
+        "work_nodes": list(manifest.get("stages", {}).keys()),
+        "controller_decisions": list(manifest.get("controller", {}).get("decisions", {}).keys()),
+        "default_budgets": manifest.get("controller", {}).get("default_budgets", {}),
+        "task_profiles": manifest.get("architecture", {}).get("task_profiles", {}),
+        "legacy_stage_aliases": manifest.get("architecture", {}).get("legacy_stage_aliases", {}),
     }
 
 
@@ -6642,8 +7375,9 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
         {"id": "workflow_runtime_controls", "status": "ready", "commands": ["workflow-control", "workflow-node-context"]},
-        {"id": "runtime_replay_and_checkpoints", "status": "ready", "commands": ["run-ledger-add", "run-ledger-list", "checkpoint-create", "checkpoint-list"]},
-        {"id": "typed_agent_handoffs", "status": "ready", "commands": ["handoff-create", "handoff-list"]},
+        {"id": "runtime_replay_and_checkpoints", "status": "ready", "commands": ["run-ledger-add", "run-ledger-list", "run-ledger-verify", "checkpoint-create", "checkpoint-list"]},
+        {"id": "typed_agent_handoffs", "status": "ready", "commands": ["handoff-create", "handoff-ack", "handoff-list"]},
+        {"id": "loop_runtime", "status": "ready", "commands": ["loop-start", "loop-stage", "loop-usage-add", "loop-control", "loop-status"]},
         {"id": "coordination_policy", "status": "ready", "commands": ["coordination-plan"]},
         {"id": "agent_eval_harness", "status": "ready", "commands": ["eval-run"]},
         {"id": "task_inbox", "status": "ready", "commands": ["task-list", "task-status", "task-update"]},
@@ -6658,7 +7392,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "agent_registry", "status": "ready", "commands": ["agent-plugin-report", "agent-plugin-decision", "agent-plugin-activate"]},
         {"id": "digital_employee_registry", "status": "ready", "commands": ["gui-state"]},
         {"id": "workflow_packs", "status": "ready", "commands": ["gui-state", "workflow-start"]},
-        {"id": "context_envelope", "status": "ready", "commands": ["handoff-create", "checkpoint-create", "gui-state"]},
+        {"id": "context_envelope", "status": "ready", "commands": ["handoff-create", "handoff-ack", "checkpoint-create", "gui-state"]},
         {"id": "local_skill_installations", "status": "ready", "commands": ["install-skill-sources"]},
         {"id": "product_updates", "status": "ready", "commands": ["iteration-proposal-create", "iteration-proposal-decision", "iteration-proposal-apply"]},
         {"id": "data_sharing", "status": "ready", "commands": ["telemetry-status", "telemetry-export", "telemetry-send"]},
@@ -6710,6 +7444,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
     digital_employees = digital_employee_summaries(root)
     workflow_packs = workflow_pack_summaries(root)
     context_contract = context_contract_summary(root)
+    loop_runtime = loop_runtime_summary(root)
     skill_installations = skill_installation_summaries(root)
     projects = project_summaries(root, 1000)
     active_workflows = [run for run in runs if run.get("status") not in {"completed", "cancelled", "stopped"}]
@@ -6721,12 +7456,20 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
             "ledger_events": count_jsonl_records(run_ledger_path(root, str(run.get("run_id", "")))) if run.get("run_id") else 0,
             "checkpoints": len(run.get("checkpoints", []) or []),
             "handoffs": len(run.get("handoffs", []) or []),
+            "pending_handoffs": sum(1 for item in run.get("handoffs", []) or [] if item.get("status", "pending_acceptance") in {"pending_acceptance", "needs_context"}),
+            "context_id": run.get("context_id", ""),
+            "task_id": run.get("task_id", ""),
+            "current_stage": run.get("current_stage", ""),
+            "cycle_index": run.get("control", {}).get("cycle_index", 1),
+            "budget_usage": run.get("control", {}).get("usage", {}),
+            "budgets": run.get("control", {}).get("budgets", {}),
+            "last_control_decision": (run.get("control", {}).get("decision_history", []) or [{}])[-1],
         }
         for run in runs[:limit]
     ]
     payload = {
         "kind": "digital-office-gui-state",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "generated_at": now_iso(),
         "scope": {"project_id": project, "user_id": user, "role": role},
         "health": {"status": "ok" if all(checks[k] for k in required_health_keys()) else "degraded", "checks": checks},
@@ -6742,6 +7485,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
         "digital_employees": {"count": len(digital_employees), "items": digital_employees},
         "workflow_packs": {"count": len(workflow_packs), "items": workflow_packs},
         "context_contract": context_contract,
+        "loop_runtime": loop_runtime,
         "skill_installations": {
             "count": len(skill_installations),
             "by_status": status_counts(skill_installations),
@@ -6804,6 +7548,8 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
             "Show open judgment cases before workflow actions; resume only after judgment-decision closes the case.",
             "Use rule-elicit during collaboration and rule-suggest when the user states a durable operating rule.",
             "Use workflow draft revisions for canvas edits; activate only after validation and explicit confirmation.",
+            "Render Context, Decide, Act, and Evaluate from loop_runtime; expose controller decisions and budget usage without inventing client-side state transitions.",
+            "Treat pending_acceptance and needs_context handoffs as incomplete; call handoff-ack only after recipient and context hash verification.",
             "Resolve knowledge folders through knowledge-scope-resolve before running Agent nodes.",
             "Route all mutating actions through the matching command and require explicit GUI confirmation where commands expose --confirmed.",
         ],
@@ -6851,6 +7597,7 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
                 {"method": "GET", "path": "/api/gui-state", "description": "Return the home-screen GUI state snapshot."},
                 {"method": "GET", "path": "/api/web-app", "description": "Return this Web/PWA configuration contract."},
             ],
+            "authentication": "Bearer token from DIGITAL_OFFICE_WEB_TOKEN is required for every non-loopback binding. Loopback development may omit the token.",
             "mutation_policy": "Mutating GUI actions must call explicit governed commands or future dedicated API routes. Do not expose a generic remote shell/CLI execution endpoint.",
         },
         "pwa": {
@@ -6873,11 +7620,13 @@ def web_config(args: argparse.Namespace) -> int:
     return 0 if payload["health"]["status"] == "ok" else 1
 
 
-def web_json_response(handler: http.server.BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
+def web_json_response(handler: http.server.BaseHTTPRequestHandler, status: int, payload: dict[str, Any], headers: dict[str, str] | None = None) -> None:
     body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
+    for name, value in (headers or {}).items():
+        handler.send_header(name, value)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -6898,6 +7647,18 @@ def web_serve(args: argparse.Namespace) -> int:
         "project": args.project or "",
     }
     allow_origin = args.allow_origin or ""
+    auth_env = safe_component(args.auth_token_env, "auth token environment variable")
+    auth_token = os.environ.get(auth_env, "")
+    try:
+        loopback_host = ipaddress.ip_address(args.host).is_loopback
+    except ValueError:
+        loopback_host = args.host.lower() == "localhost"
+    if not loopback_host and not auth_token:
+        print(f"office-system: non-loopback web binding requires a Bearer token in ${auth_env}", file=sys.stderr)
+        return 2
+    if auth_token and allow_origin == "*":
+        print("office-system: authenticated web API cannot use wildcard --allow-origin", file=sys.stderr)
+        return 2
 
     class DigitalOfficeHandler(http.server.SimpleHTTPRequestHandler):
         server_version = "DigitalOfficeWeb/1.0"
@@ -6911,9 +7672,30 @@ def web_serve(args: argparse.Namespace) -> int:
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "same-origin")
             self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+            self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'")
             if allow_origin:
                 self.send_header("Access-Control-Allow-Origin", allow_origin)
+                self.send_header("Vary", "Origin")
             super().end_headers()
+
+        def api_authorized(self) -> bool:
+            if not auth_token:
+                return True
+            authorization = self.headers.get("Authorization", "")
+            prefix = "Bearer "
+            supplied = authorization[len(prefix):] if authorization.startswith(prefix) else ""
+            return bool(supplied) and hmac.compare_digest(supplied, auth_token)
+
+        def do_OPTIONS(self) -> None:
+            if not allow_origin:
+                self.send_error(405)
+                return
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            self.send_header("Access-Control-Max-Age", "600")
+            self.end_headers()
 
         def translate_path(self, path: str) -> str:
             parsed = urllib.parse.urlparse(path)
@@ -6941,10 +7723,18 @@ def web_serve(args: argparse.Namespace) -> int:
                 values = query.get(name)
                 return values[0] if values else default
 
-            if parsed.path in {"/healthz", "/api/health"}:
+            if parsed.path == "/healthz":
                 detail = detailed_health(root)
                 code = 200 if detail["status"] == "ok" else 503 if detail["status"] == "down" else 200
-                web_json_response(self, code, detail)
+                web_json_response(self, code, {"status": detail["status"], "timestamp": detail["timestamp"]}, headers={"Cache-Control": "no-store"})
+                return
+            if parsed.path.startswith("/api/") and not self.api_authorized():
+                web_json_response(self, 401, {"status": "unauthorized"}, headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"})
+                return
+            if parsed.path == "/api/health":
+                detail = detailed_health(root)
+                code = 200 if detail["status"] == "ok" else 503 if detail["status"] == "down" else 200
+                web_json_response(self, code, detail, headers={"Cache-Control": "no-store"})
                 return
             if parsed.path == "/api/gui-state":
                 try:
@@ -6952,11 +7742,11 @@ def web_serve(args: argparse.Namespace) -> int:
                 except (SystemExit, ValueError) as exc:
                     web_json_response(self, 400, {"status": "error", "error": str(exc)})
                     return
-                web_json_response(self, 200, payload)
+                web_json_response(self, 200, payload, headers={"Cache-Control": "no-store"})
                 return
             if parsed.path == "/api/web-app":
                 payload = web_app_config(root, public_url=public_url, user=one("user", default_scope["user"]), role=one("role", default_scope["role"]), project=one("project", default_scope["project"]), tenant=one("tenant", default_scope["tenant"]), deployment=one("deployment", default_scope["deployment"]))
-                web_json_response(self, 200 if payload["health"]["status"] == "ok" else 503, payload)
+                web_json_response(self, 200 if payload["health"]["status"] == "ok" else 503, payload, headers={"Cache-Control": "no-store"})
                 return
             if parsed.path.startswith("/api/"):
                 web_json_response(self, 404, {"status": "not_found", "path": parsed.path})
@@ -6964,7 +7754,7 @@ def web_serve(args: argparse.Namespace) -> int:
             super().do_GET()
 
     server = http.server.ThreadingHTTPServer((args.host, args.port), DigitalOfficeHandler)
-    print(json.dumps({"status": "serving", "host": args.host, "port": args.port, "static_root": str(static_root), "url": f"http://{args.host}:{args.port}/", "api": ["/api/health", "/api/gui-state", "/api/web-app"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": "serving", "host": args.host, "port": args.port, "static_root": str(static_root), "url": f"http://{args.host}:{args.port}/", "api": ["/api/health", "/api/gui-state", "/api/web-app"], "api_authentication": "bearer" if auth_token else "loopback_only_without_token", "auth_token_env": auth_env}, ensure_ascii=False, indent=2, sort_keys=True))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -6979,7 +7769,15 @@ def backup(args: argparse.Namespace) -> int:
     root = system_root()
     timestamp = dt.datetime.now().strftime('%Y%m%d-%H%M%S')
     backup_name = f'digital-office-backup-{timestamp}.tar.gz'
-    backup_path = Path.cwd() / backup_name
+    backup_path = Path(args.output).expanduser() if getattr(args, "output", None) else Path.cwd() / backup_name
+    backup_path = backup_path.resolve()
+    if os.path.commonpath([str(backup_path), str(root.resolve())]) == str(root.resolve()):
+        print('backup: output must be outside agent-system so it cannot archive itself', file=sys.stderr)
+        return 1
+    if backup_path.exists():
+        print(f'backup: output already exists: {backup_path}', file=sys.stderr)
+        return 1
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
 
     critical_dirs = [
         'settings',
@@ -6990,6 +7788,10 @@ def backup(args: argparse.Namespace) -> int:
         'iterations',
         'tasks',
         'agent-requests',
+        'runs',
+        'judgments',
+        'rule-proposals',
+        'logs',
     ]
 
     existing_dirs = [d for d in critical_dirs if (root / d).exists()]
@@ -7009,6 +7811,9 @@ def backup(args: argparse.Namespace) -> int:
 
 def restore(args: argparse.Namespace) -> int:
     """Restore from a tar.gz backup file."""
+    if not args.confirmed and not args.dry_run:
+        print('restore: --confirmed is required because restore replaces active user-data directories', file=sys.stderr)
+        return 2
     backup_file = Path(args.backup_file)
     if not backup_file.exists():
         print(f'restore: backup file not found: {backup_file}', file=sys.stderr)
@@ -7016,58 +7821,120 @@ def restore(args: argparse.Namespace) -> int:
     if not backup_file.is_file():
         print(f'restore: not a file: {backup_file}', file=sys.stderr)
         return 1
+    if args.max_members <= 0 or args.max_uncompressed_bytes <= 0:
+        print('restore: archive limits must be positive integers', file=sys.stderr)
+        return 2
 
-    # Verify tar.gz structure
+    expected_dirs = {'settings', 'knowledge', 'projects', 'approvals', 'notifications', 'iterations', 'tasks', 'agent-requests', 'runs', 'judgments', 'rule-proposals', 'logs'}
+    safe_members: list[tarfile.TarInfo] = []
     try:
         with tarfile.open(str(backup_file), 'r:gz') as tar:
             members = tar.getmembers()
+            if len(members) > args.max_members:
+                print(f'restore: archive has too many members ({len(members)} > {args.max_members})', file=sys.stderr)
+                return 1
+            uncompressed_bytes = sum(member.size for member in members if member.isfile())
+            if uncompressed_bytes > args.max_uncompressed_bytes:
+                print(f'restore: archive is too large after extraction ({uncompressed_bytes} > {args.max_uncompressed_bytes} bytes)', file=sys.stderr)
+                return 1
             top_dirs = set()
             for m in members:
-                parts = m.name.split('/')
-                if parts:
-                    top_dirs.add(parts[0])
+                normalized_name = m.name.replace('\\', '/')
+                parts = [part for part in normalized_name.split('/') if part not in {'', '.'}]
+                if not parts or normalized_name.startswith('/') or '..' in parts:
+                    print(f'restore: unsafe archive path: {m.name}', file=sys.stderr)
+                    return 1
+                if m.issym() or m.islnk() or m.isdev() or m.isfifo():
+                    print(f'restore: unsupported archive member type: {m.name}', file=sys.stderr)
+                    return 1
+                if not (m.isdir() or m.isfile()):
+                    print(f'restore: unsupported archive member: {m.name}', file=sys.stderr)
+                    return 1
+                top_dirs.add(parts[0])
+                safe_members.append(m)
     except (tarfile.TarError, OSError) as exc:
         print(f'restore: invalid backup archive: {exc}', file=sys.stderr)
         return 1
 
-    expected_dirs = {'settings', 'knowledge', 'projects', 'approvals', 'notifications', 'iterations', 'tasks', 'agent-requests'}
+    unexpected_dirs = top_dirs - expected_dirs
+    if unexpected_dirs:
+        print(f"restore: archive contains unsupported top-level paths: {', '.join(sorted(unexpected_dirs))}", file=sys.stderr)
+        return 1
     found_dirs = top_dirs & expected_dirs
     if not found_dirs:
         print('restore: no recognized data directories found in backup', file=sys.stderr)
         return 1
 
-    # Warn about running processes
-    print('restore: WARNING - ensure no office-system processes are running before restoring.', file=sys.stderr)
-
     root = system_root()
+    if args.dry_run:
+        print(json.dumps({"status": "valid", "backup": str(backup_file.resolve()), "components": sorted(found_dirs), "members": len(safe_members)}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
 
-    # Extract with path traversal protection
+    staging = root / 'tmp' / f'restore-staging-{uuid.uuid4().hex}'
+    rollback = root / 'tmp' / 'restore-rollbacks' / f"{dt.datetime.now().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    staging.mkdir(parents=True, exist_ok=False)
+    rollback.mkdir(parents=True, exist_ok=False)
     try:
         with tarfile.open(str(backup_file), 'r:gz') as tar:
-            for member in tar.getmembers():
-                member_path = (root / member.name).resolve()
-                if not str(member_path).startswith(str(root.resolve())):
-                    print(f'restore: skipping unsafe path: {member.name}', file=sys.stderr)
+            for member in safe_members:
+                target = (staging / member.name).resolve()
+                if os.path.commonpath([str(target), str(staging.resolve())]) != str(staging.resolve()):
+                    raise ValueError(f'unsafe archive path: {member.name}')
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
                     continue
-                tar.extract(member, path=str(root))
-    except (tarfile.TarError, OSError) as exc:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = tar.extractfile(member)
+                if source is None:
+                    raise ValueError(f'archive file has no content: {member.name}')
+                with source, target.open('wb') as output:
+                    shutil.copyfileobj(source, output)
+                os.chmod(target, member.mode & 0o777)
+    except (tarfile.TarError, OSError, ValueError) as exc:
+        shutil.rmtree(staging, ignore_errors=True)
         print(f'restore: extraction failed: {exc}', file=sys.stderr)
         return 1
 
-    # Verify JSON files are valid after extraction
     json_errors: list[str] = []
-    for json_file in root.glob('**/*.json'):
+    for json_file in staging.glob('**/*.json'):
         try:
             json.loads(json_file.read_text(encoding='utf-8'))
         except (json.JSONDecodeError, OSError) as exc:
-            json_errors.append(f'{json_file.name}: {exc}')
-
-    restored = sorted(found_dirs)
-    print(f"restore: restored {len(restored)} component(s): {', '.join(restored)}")
+            json_errors.append(f'{json_file.relative_to(staging)}: {exc}')
     if json_errors:
-        print(f'restore: WARNING - {len(json_errors)} JSON file(s) may be corrupt:', file=sys.stderr)
+        shutil.rmtree(staging, ignore_errors=True)
+        print(f'restore: archive contains {len(json_errors)} invalid JSON file(s):', file=sys.stderr)
         for err in json_errors[:10]:
             print(f'  {err}', file=sys.stderr)
+        return 1
+
+    moved_existing: list[str] = []
+    installed: list[str] = []
+    try:
+        with JsonFileLock(root / 'tmp' / 'restore.lock'):
+            for dirname in sorted(found_dirs):
+                current = root / dirname
+                candidate = staging / dirname
+                if current.exists():
+                    shutil.move(str(current), str(rollback / dirname))
+                    moved_existing.append(dirname)
+                shutil.move(str(candidate), str(current))
+                installed.append(dirname)
+    except OSError as exc:
+        for dirname in reversed(installed):
+            current = root / dirname
+            if current.exists():
+                shutil.rmtree(current, ignore_errors=True)
+        for dirname in reversed(moved_existing):
+            prior = rollback / dirname
+            if prior.exists():
+                shutil.move(str(prior), str(root / dirname))
+        shutil.rmtree(staging, ignore_errors=True)
+        print(f'restore: atomic replacement failed and was rolled back: {exc}', file=sys.stderr)
+        return 1
+
+    shutil.rmtree(staging, ignore_errors=True)
+    print(json.dumps({"status": "restored", "components": sorted(found_dirs), "rollback_path": str(rollback)}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 def health(args: argparse.Namespace) -> int:
@@ -7253,8 +8120,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=web_config)
 
     p = sub.add_parser("web-serve")
-    p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8787)
+    p.add_argument("--host", default=os.environ.get("WEB_HOST", "127.0.0.1"))
+    p.add_argument("--port", type=int, default=os.environ.get("WEB_PORT", "8787"))
     p.add_argument("--static-dir")
     p.add_argument("--public-url")
     p.add_argument("--tenant")
@@ -7263,6 +8130,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role")
     p.add_argument("--project")
     p.add_argument("--allow-origin")
+    p.add_argument("--auth-token-env", default="DIGITAL_OFFICE_WEB_TOKEN")
     p.add_argument("--quiet", action="store_true")
     p.set_defaults(func=web_serve)
 
@@ -7380,7 +8248,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("workflow-retry")
     p.add_argument("--run-id", required=True)
-    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES)
     p.add_argument("--requested-by", required=True)
     p.add_argument("--role", required=True)
     p.add_argument("--reason")
@@ -7458,7 +8326,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("judgment-evaluate")
     p.add_argument("--task")
-    p.add_argument("--stage", choices=LOOP_STAGES, default="perceive")
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES, default="context")
     p.add_argument("--agent")
     p.add_argument("--workflow-run")
     p.add_argument("--task-id")
@@ -7563,13 +8431,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent")
     p.add_argument("--workflow", default="")
     p.add_argument("--requested-by", default="")
+    p.add_argument("--max-cycles", type=int)
+    p.add_argument("--max-stage-retries", type=int)
+    p.add_argument("--max-stagnant-cycles", type=int)
+    p.add_argument("--max-duration-seconds", type=int)
+    p.add_argument("--max-tool-calls", type=int)
+    p.add_argument("--max-model-calls", type=int)
+    p.add_argument("--max-cost-microunits", type=int)
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=loop_start)
 
     p = sub.add_parser("loop-stage")
     p.add_argument("--run-id", required=True)
-    p.add_argument("--stage", choices=LOOP_STAGES, required=True)
-    p.add_argument("--status", choices=["started", "completed", "failed", "blocked"], required=True)
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES, required=True)
+    p.add_argument("--status", choices=["started", "completed", "skipped", "failed", "blocked"], required=True)
     p.add_argument("--summary")
     p.add_argument("--body")
     p.add_argument("--artifact", action="append")
@@ -7580,10 +8455,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run-id", required=True)
     p.set_defaults(func=loop_status)
 
+    p = sub.add_parser("loop-usage-add")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES)
+    p.add_argument("--tool-calls", type=int, default=0)
+    p.add_argument("--model-calls", type=int, default=0)
+    p.add_argument("--input-tokens", type=int, default=0)
+    p.add_argument("--output-tokens", type=int, default=0)
+    p.add_argument("--cost-microunits", type=int, default=0)
+    p.set_defaults(func=loop_usage_add)
+
+    p = sub.add_parser("loop-control")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--decision", choices=sorted(LOOP_CONTROL_DECISIONS), required=True)
+    p.add_argument("--progress-score", type=float, required=True)
+    p.add_argument("--acceptance-passed", action="store_true")
+    p.add_argument("--reason")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=loop_control)
+
     p = sub.add_parser("run-ledger-add")
     p.add_argument("--run-id", required=True)
     p.add_argument("--event", required=True)
-    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES)
     p.add_argument("--action")
     p.add_argument("--agent")
     p.add_argument("--actor")
@@ -7606,10 +8500,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, default=50)
     p.set_defaults(func=run_ledger_list)
 
+    p = sub.add_parser("run-ledger-verify")
+    p.add_argument("--run-id", required=True)
+    p.set_defaults(func=run_ledger_verify)
+
     p = sub.add_parser("checkpoint-create")
     p.add_argument("--run-id", required=True)
     p.add_argument("--checkpoint-id")
-    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES)
     p.add_argument("--label")
     p.add_argument("--resume-cursor")
     p.add_argument("--state-json")
@@ -7632,7 +8530,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--handoff-id")
     p.add_argument("--from-agent", required=True)
     p.add_argument("--to-agent", required=True)
-    p.add_argument("--stage", choices=LOOP_STAGES)
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES)
     p.add_argument("--reason", required=True)
     p.add_argument("--input-schema-json")
     p.add_argument("--input-schema-file")
@@ -7649,6 +8547,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent")
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=handoff_list)
+
+    p = sub.add_parser("handoff-ack")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--handoff-id", required=True)
+    p.add_argument("--received-by", required=True)
+    p.add_argument("--decision", choices=["accept", "request_context", "reject"], required=True)
+    p.add_argument("--expected-context-hash", required=True)
+    p.add_argument("--missing-field", action="append")
+    p.add_argument("--message")
+    p.add_argument("--confirmed", action="store_true")
+    p.add_argument("--created-by")
+    p.add_argument("--role")
+    p.set_defaults(func=handoff_ack)
 
     p = sub.add_parser("coordination-plan")
     p.add_argument("--task")
@@ -7850,10 +8761,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=telemetry_send)
 
     p = sub.add_parser("backup")
+    p.add_argument("--output")
     p.set_defaults(func=backup)
 
     p = sub.add_parser("restore")
     p.add_argument("backup_file", help="Path to the backup tar.gz file")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--confirmed", action="store_true")
+    p.add_argument("--max-members", type=int, default=DEFAULT_RESTORE_MAX_MEMBERS)
+    p.add_argument("--max-uncompressed-bytes", type=int, default=DEFAULT_RESTORE_MAX_UNCOMPRESSED_BYTES)
     p.set_defaults(func=restore)
 
     p = sub.add_parser("health")
@@ -7864,6 +8780,28 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    read_only_run_commands = {
+        "workflow-status",
+        "workflow-list",
+        "loop-status",
+        "run-ledger-list",
+        "run-ledger-verify",
+        "checkpoint-list",
+        "handoff-list",
+    }
+    run_id = str(getattr(args, "run_id", "") or "")
+    if not run_id and args.command in {"workflow-start", "agent-invoke", "loop-start"}:
+        run_id = "_create"
+    if not run_id and args.command == "task-update":
+        task_id = str(getattr(args, "task_id", "") or "")
+        task_file = task_path(system_root(), task_id) if task_id else None
+        if task_file and task_file.exists():
+            run_id = str(read_json(task_file).get("workflow_run_id", ""))
+    if run_id and args.command not in read_only_run_commands:
+        lock_id = safe_component(run_id, "run lock id")
+        lock_path = system_root() / "runs" / f".{lock_id}.command.lock"
+        with JsonFileLock(lock_path):
+            return args.func(args)
     return args.func(args)
 
 

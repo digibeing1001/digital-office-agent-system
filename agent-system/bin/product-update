@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Product-level update scaffold for Digital Office releases.
+"""Inspect and stage Digital Office release packages.
 
-This does not pull upstream Hermes directly in production. It manages a future
-release package that may include Hermes runtime, agent-system, skills, GUI, and
-local model installers.
+The top-level ``update`` command performs user-facing install or upgrade. This
+tool reports package composition and stages an already downloaded candidate;
+it never updates the host runtime directly.
 """
 
 from __future__ import annotations
@@ -37,8 +37,11 @@ def status(args: argparse.Namespace) -> int:
         "version": manifest.get("version"),
         "channel": manifest.get("release_channel"),
         "includes_runtime": manifest.get("includes_runtime"),
-        "hermes_runtime_present": (ROOT.parent / "hermes-agent").exists(),
+        "host_runtime_managed_externally": not manifest.get("includes_runtime", False),
         "agent_system_present": ROOT.exists(),
+        "update_installer_present": (ROOT.parent / "update").exists(),
+        "context_handoff_policy_present": (ROOT / "context-handoff.policy.json").exists(),
+        "loop_runtime_version": read_json(ROOT / "ai-native-loop.manifest.json").get("version"),
         "router_health": run([str(ROOT.parent / "scripts" / "agent-router"), "--health"])[0] == 0,
         "office_system_health": run([str(ROOT / "bin" / "office-system"), "health"])[0] == 0,
         "production_direct_upstream_pull": manifest.get("enterprise_update_policy", {}).get("direct_upstream_pull_in_production"),

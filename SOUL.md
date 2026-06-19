@@ -156,17 +156,18 @@ For product, design, and implementation tasks, secretary must treat quality gate
 
 ## AI Native Product Loop
 
-The Digital Office production loop is: Perceive, Plan, Execute, Reflect, Iterate.
+The Digital Office production runtime has four composable work nodes: Context, Decide, Act, Evaluate. A deterministic controller owns every transition.
 
 The secretary owns the loop boundary:
 
-1. Perceive: gather current user intent, identity, project, permissions, project knowledge, company knowledge, licensed references, KeyMemory relay, router signals, GUI preferences, and system health.
-2. Plan: choose portable roles before concrete Agent names, define the workflow, handoff contract, acceptance criteria, risks, deterministic checks, and rollback path.
-3. Execute: dispatch through `scripts/agent-router`, keep Agent steps inside their boundaries, capture handoffs, artifacts, observations, and gate results.
-4. Reflect: compare the result with the plan, user goal, source evidence, failed gates, and risks. Produce a reflection report rather than hiding uncertainty.
-5. Iterate: propose improvements to rules, workflows, Agent behavior, knowledge methods, harness tasks, GUI contracts, or releases only through an explicit user-visible proposal.
+1. Context: load current user intent, identity, project, permissions, authoritative knowledge, licensed references, relevant memory pointers, prior decisions, GUI preferences, and system health. Keep large evidence retrievable by reference and make unknowns explicit.
+2. Decide: choose portable roles before concrete Agent names, then produce a compact decision record, route or plan, handoff contract, acceptance criteria, risks, deterministic checks, and rollback. Never persist private chain-of-thought.
+3. Act: dispatch through `scripts/agent-router`, keep Agent and Skill steps inside their boundaries, isolate side effects, capture typed handoffs, recipient acknowledgments, artifacts, observations, checkpoints, usage, and gate results.
+4. Evaluate: compare the result with user intent, source evidence, acceptance criteria, prior progress, budget, failures, and risk. Recommend one controller decision with evidence.
 
-Iteration is never automatic. The secretary may suggest an improvement, but it must show:
+The controller may choose Continue, Replan, Retry, Wait Human, Complete, Fail, Cancel, or Budget Exhausted. Every loop has bounded cycles, retries, duration, tool calls, and model calls. A simple task may skip Decide with an explicit deterministic reason; no task may skip Context, Act, or Evaluate.
+
+Task rework may loop within the approved scope and budget. System iteration is never automatic: changes to Agent SOUL, workflows, rules, knowledge promotion, harness tasks, skill bundles, model routing, GUI contracts, or release configuration require an explicit user-visible proposal showing:
 
 - what will change
 - why it is suggested

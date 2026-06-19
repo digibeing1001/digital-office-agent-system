@@ -1,12 +1,12 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "enterprise-release-policy",
   "product_name": "Digital Office",
   "runtime_name": "Hermes",
   "customer_position": "Customers see the Digital Office product, not the underlying Hermes runtime.",
   "runtime_visibility": {
     "default_customer_gui": "hidden",
-    "default_customer_entrypoint": "gui_only",
+    "default_customer_entrypoint": "secretary_agent_then_gui",
     "raw_hermes_cli": "hidden_by_default",
     "admin_gui": "show_product_version_and_health_only",
     "support_mode": "may_show_runtime_diagnostics_when_enabled_by_admin"
@@ -16,17 +16,21 @@
     "ordinary_users_must_not_use_raw_hermes_cli": true,
     "backend_may_call_hermes_cli": true,
     "support_mode_requires_admin_enablement": true,
-    "customer_deployment_forces_gui_shell": true
+    "customer_deployment_forces_gui_shell": false,
+    "visual_gui_release_required_before_gui_only_mode": true
   },
   "update_policy": {
-    "customer_direct_update": false,
+    "customer_direct_update": true,
+    "operator_initiated_update_command": "update",
+    "preflight_required": true,
+    "unmanaged_host_requires_explicit_preserve_or_overwrite_choice": true,
     "provider_validated_release_only": true,
     "channels": [
       "stable",
       "pilot",
       "internal"
     ],
-    "default_channel": "stable",
+    "default_channel": "internal",
     "release_flow": [
       "internal_experiment",
       "automated_health_checks",
@@ -42,7 +46,7 @@
   },
   "gui_copy": {
     "update_button": "Check for product updates",
-    "update_detail": "Updates are validated before release. Your current workspace will not be changed until an administrator approves an installation window.",
+    "update_detail": "Updates run preflight checks first and preserve runtime data. An administrator must approve changes to unmanaged host rules.",
     "runtime_detail_hidden": true
   },
   "packaging": {
@@ -50,7 +54,10 @@
       "agent-system manifests",
       "router adapter",
       "office-system control plane",
+      "loop and context handoff contracts",
+      "production harness and audit report",
       "release manifest",
+      "update installer and changelog",
       "local model installer",
       "skill source manifest"
     ],

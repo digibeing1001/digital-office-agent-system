@@ -35,7 +35,7 @@ import sys
 path, expr = sys.argv[1], sys.argv[2]
 with open(path, "r", encoding="utf-8") as handle:
     data = json.load(handle)
-if not eval(expr, {"__builtins__": {"all": all, "any": any, "len": len}}, {"data": data}):
+if not eval(expr, {"__builtins__": {"all": all, "any": any, "len": len, "list": list, "set": set}}, {"data": data}):
     raise SystemExit(f"assertion failed: {expr}\n{json.dumps(data, ensure_ascii=False, indent=2)}")
 PY
 }
@@ -202,19 +202,21 @@ json_assert agent-system/harness/tasks/multilingual-agent-eval-production.json '
 json_assert agent-system/harness/tasks/digital-lawyer-production.json 'data["task_id"] == "digital-lawyer-production"'
 json_assert agent-system/harness/tasks/digital-employee-model-production.json 'data["task_id"] == "digital-employee-model-production"'
 json_assert agent-system/harness/tasks/context-envelope-production.json 'data["task_id"] == "context-envelope-production"'
+json_assert agent-system/harness/tasks/context-handoff-production.json 'data["task_id"] == "context-handoff-production"'
 json_assert agent-system/harness/tasks/local-skill-installation-production.json 'data["task_id"] == "local-skill-installation-production"'
 json_assert agent-system/harness/tasks/ui-design-readiness-production.json 'data["task_id"] == "ui-design-readiness-production"'
 json_assert agent-system/digital-employees.registry.json 'data["model"]["levels"] == ["secretary_control_plane", "digital_employee_agents", "skill_staff_lanes"] and data["employees"]["legal"]["agent_id"] == "legal"'
 json_assert agent-system/workflow-packs.registry.json 'data["packs"]["legal"]["owner_agent"] == "legal" and data["packs"]["legal"]["context_envelope_required"] is True'
 json_assert agent-system/skill-installations.registry.json 'data["installations"]["claude-for-legal-zh"]["status"] == "installed_local" and data["installations"]["Legal-Skills-Chinese"]["status"] == "blocked_license"'
-json_assert agent-system/context-envelope.schema.json '"state_hash" in data["required"] and "artifact_refs" in data["required"] and "risk_flags" in data["required"]'
+json_assert agent-system/context-envelope.schema.json 'data["properties"]["version"]["const"] == "2.0.0" and {"context_id","facts","omissions","context_budget","state_hash","artifact_refs","risk_flags"} <= set(data["required"])'
+json_assert agent-system/context-handoff.policy.json 'data["default_mode"] == "hybrid" and set(data["acknowledgment"]["decisions"]) == {"accept","request_context","reject"}'
 json_assert agent-system/judgment.policy.json '"regulated_professional_domain" in [item["id"] for item in data["categories"]]'
 json_assert agent-system/coordination.policy.json '"parallel_expert_dag" in data["modes"] and "human_gated" in data["modes"]'
 json_assert agent-system/evals/runtime-replay-and-multilingual.json 'len(data["cases"]) >= 6'
 json_assert agent-system/host-injection.policy.json 'data["default_agent_role"] == "secretary" and data["supported_hosts"]["openclaw"]["default_agent_injection"] == "AGENTS.md"'
-json_assert agent-system/ai-native-loop.manifest.json 'data["stages"]["iterate"]["gates"][0] == "no_auto_iteration_without_user_confirmation"'
-json_assert agent-system/ai-native-loop.manifest.json '"silent self-iteration" in data["stages"]["iterate"]["forbidden"]'
-json_assert agent-system/ai-native-loop.manifest.json '"run_ledger" in data["stages"]["execute"]["required_artifacts"]'
+json_assert agent-system/ai-native-loop.manifest.json 'list(data["stages"]) == ["context","decide","act","evaluate"]'
+json_assert agent-system/ai-native-loop.manifest.json 'set(data["controller"]["decisions"]) == {"continue","replan","retry","wait_human","complete","fail","cancel","budget_exhausted"}'
+json_assert agent-system/ai-native-loop.manifest.json '"run_ledger" in data["stages"]["act"]["required_artifacts"]'
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
 test -f skills/vibe-design-production-harness/SKILL.md || fail "missing vibe design harness skill"
 test -f skills/digital-lawyer-workflows/SKILL.md || fail "missing digital lawyer workflow skill"
@@ -238,11 +240,15 @@ OFFICE="$HOME_DIR/agent-system/bin/office-system"
 "$OFFICE" eval-run --suite runtime-replay-and-multilingual --no-write >"$WORK_DIR/runtime-eval.json"
 json_assert "$WORK_DIR/runtime-eval.json" 'data["status"] == "success" and data["passed"] == data["total"]'
 "$OFFICE" loop-start --run-id smoke-replay-run --agent writer --task "Draft a cited handoff summary." >"$WORK_DIR/smoke-loop.json"
-"$OFFICE" checkpoint-create --run-id smoke-replay-run --checkpoint-id smoke-cp --stage perceive --label "smoke checkpoint" --resume-cursor perceive:ready --state-json '{"ok":true}' >"$WORK_DIR/smoke-checkpoint.json"
-must_fail "$OFFICE" checkpoint-create --run-id smoke-replay-run --checkpoint-id smoke-human-cp-bad --stage plan --label "bad human checkpoint" --requires-human --reason "needs decision"
-"$OFFICE" checkpoint-create --run-id smoke-replay-run --checkpoint-id smoke-human-cp --stage plan --label "human checkpoint" --requires-human --create-judgment --reason "needs decision" --created-by user-a --role project_manager >"$WORK_DIR/smoke-human-checkpoint.json"
+"$OFFICE" checkpoint-create --run-id smoke-replay-run --checkpoint-id smoke-cp --stage context --label "smoke checkpoint" --resume-cursor context:ready --state-json '{"ok":true}' >"$WORK_DIR/smoke-checkpoint.json"
+must_fail "$OFFICE" checkpoint-create --run-id smoke-replay-run --checkpoint-id smoke-human-cp-bad --stage decide --label "bad human checkpoint" --requires-human --reason "needs decision"
+"$OFFICE" checkpoint-create --run-id smoke-replay-run --checkpoint-id smoke-human-cp --stage decide --label "human checkpoint" --requires-human --create-judgment --reason "needs decision" --created-by user-a --role project_manager >"$WORK_DIR/smoke-human-checkpoint.json"
 json_assert "$WORK_DIR/smoke-human-checkpoint.json" 'data["checkpoint"]["requires_human"] is True and data["judgment_case"]["status"] == "pending"'
-"$OFFICE" handoff-create --run-id smoke-replay-run --handoff-id smoke-handoff --from-agent writer --to-agent researcher --reason "Need evidence before final draft." --input-schema-json '{"required":["sources"]}' --context-json '{"topic":"smoke"}' --acceptance-criterion "Researcher provides source-backed evidence." >"$WORK_DIR/smoke-handoff.json"
+SMOKE_CONTEXT='{"kind":"digital-office-context-envelope","version":"2.0.0","context_id":"smoke-replay-run","run_id":"smoke-replay-run","task_id":"work-smoke-replay-run","context_version":1,"cycle_index":1,"from":{"type":"agent","id":"writer"},"to":{"type":"agent","id":"researcher"},"goal":"Return source-backed evidence.","user_intent":"Draft a cited handoff summary.","summary":"Evidence is required before drafting.","current_stage":"context","constraints":[],"acceptance_criteria":["Researcher provides source-backed evidence."],"facts":[],"source_refs":[],"artifact_refs":[],"decisions":[],"open_questions":[],"omissions":[],"risk_flags":[],"permissions":{"tenant_id":"t1","project_id":"p1","requested_by":"user-a","role":"project_manager","allowed_actions":["research"]},"context_budget":{"strategy":"hybrid","estimated_tokens":200,"max_tokens":1000,"compacted":false},"handoff_reason":"Need evidence before final draft.","state_hash":"0123456789abcdef"}'
+"$OFFICE" handoff-create --run-id smoke-replay-run --handoff-id smoke-handoff --from-agent writer --to-agent researcher --stage context --reason "Need evidence before final draft." --input-schema-json '{"required":["sources"]}' --context-json "$SMOKE_CONTEXT" --acceptance-criterion "Researcher provides source-backed evidence." >"$WORK_DIR/smoke-handoff.json"
+smoke_context_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["context_hash"])' "$WORK_DIR/smoke-handoff.json")"
+"$OFFICE" handoff-ack --run-id smoke-replay-run --handoff-id smoke-handoff --received-by researcher --decision accept --expected-context-hash "$smoke_context_hash" >"$WORK_DIR/smoke-handoff-ack.json"
+json_assert "$WORK_DIR/smoke-handoff-ack.json" 'data["status"] == "accepted"'
 "$OFFICE" run-ledger-list --run-id smoke-replay-run >"$WORK_DIR/smoke-ledger.json"
 json_assert "$WORK_DIR/smoke-ledger.json" 'len(data["events"]) >= 3 and all(item.get("event_hash") for item in data["events"])'
 "$OFFICE" coordination-plan --task "Compare independent examples in parallel before synthesis." --agent researcher --agent writer --parallelizable >"$WORK_DIR/smoke-coordination.json"
@@ -271,9 +277,9 @@ grep -q "## AI Native Product Loop" "$HOME_DIR/SOUL.md" || fail "installed secre
 
 "$OFFICE" loop-start --run-id smoke-loop --task "Build a governed AI native product loop" >"$WORK_DIR/loop-start.json"
 json_assert "$WORK_DIR/loop-start.json" 'data["run_id"] == "smoke-loop" and data["status"] == "created"'
-"$OFFICE" loop-stage --run-id smoke-loop --stage perceive --status started --summary "Context gathered" >"$WORK_DIR/loop-stage.json"
-json_assert "$WORK_DIR/loop-stage.json" 'data["run_id"] == "smoke-loop" and data["stage"] == "perceive" and data["run_status"] == "perceiving"'
-"$OFFICE" iteration-proposal-create --title "Tighten smoke loop gate" --target harness --summary "Add a regression gate after reflection" --body "Add a harness check after reflection." --expected-impact "Fewer workflow drifts" --risk "Could slow delivery" --rollback "Remove the proposed gate" --run-id smoke-loop --regression-check "harness-runner --task all --no-write" >"$WORK_DIR/iteration-proposal.json"
+"$OFFICE" loop-stage --run-id smoke-loop --stage context --status started --summary "Context gathered" >"$WORK_DIR/loop-stage.json"
+json_assert "$WORK_DIR/loop-stage.json" 'data["run_id"] == "smoke-loop" and data["stage"] == "context" and data["run_status"] == "context_loading"'
+"$OFFICE" iteration-proposal-create --title "Tighten smoke loop gate" --target harness --summary "Add a regression gate after evaluation" --body "Add a harness check after evaluation." --expected-impact "Fewer workflow drifts" --risk "Could slow delivery" --rollback "Remove the proposed gate" --run-id smoke-loop --regression-check "harness-runner --task all --no-write" >"$WORK_DIR/iteration-proposal.json"
 proposal_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["proposal_id"])' "$WORK_DIR/iteration-proposal.json")"
 must_fail "$OFFICE" iteration-proposal-apply --proposal-id "$proposal_id"
 "$OFFICE" iteration-proposal-decision --proposal-id "$proposal_id" --decision tune --message "Need clearer risk" >"$WORK_DIR/iteration-tune.json"
@@ -437,7 +443,7 @@ must_fail "$OFFICE" workflow-node-context --run-id direct-run --node-id agent-1-
 "$OFFICE" workflow-control --run-id direct-run --action pause --requested-by user-a --role project_manager >"$WORK_DIR/workflow-pause.json"
 json_assert "$WORK_DIR/workflow-pause.json" 'data["status"] == "paused_after_current_node" and data["outcome"] == "pause_requested"'
 "$OFFICE" workflow-control --run-id direct-run --action resume --requested-by user-a --role project_manager >"$WORK_DIR/workflow-runtime-resume.json"
-json_assert "$WORK_DIR/workflow-runtime-resume.json" 'data["status"] == "executing"'
+json_assert "$WORK_DIR/workflow-runtime-resume.json" 'data["status"] == "context_loading"'
 must_fail "$OFFICE" workflow-control --run-id direct-run --action stop --requested-by user-a --role project_manager
 "$OFFICE" workflow-control --run-id direct-run --action stop --requested-by user-a --role project_manager --confirmed >"$WORK_DIR/workflow-stop.json"
 json_assert "$WORK_DIR/workflow-stop.json" 'data["status"] == "stopped" and data["outcome"] == "stopped"'
@@ -453,12 +459,12 @@ must_fail "$OFFICE" approval-decision --approval-id "$approval_id" --decision ap
 "$OFFICE" approval-decision --approval-id "$approval_id" --decision approve --decided-by user-a --role project_manager --confirmed >"$WORK_DIR/approval-decision.json"
 json_assert "$WORK_DIR/approval-decision.json" 'data["approval"]["status"] == "approved"'
 "$OFFICE" workflow-status --run-id "$workflow_run" >"$WORK_DIR/workflow-approved.json"
-json_assert "$WORK_DIR/workflow-approved.json" 'data["status"] == "perceiving"'
+json_assert "$WORK_DIR/workflow-approved.json" 'data["status"] == "context_loading"'
 must_fail "$OFFICE" task-update --task-id "$workflow_task" --status completed --summary "viewer cannot complete" --updated-by user-a --role viewer
 "$OFFICE" task-update --task-id "$workflow_task" --status completed --summary "workflow closed" --updated-by user-a --role project_manager >"$WORK_DIR/task-completed.json"
 json_assert "$WORK_DIR/task-completed.json" 'data["status"] == "completed"'
 "$OFFICE" workflow-status --run-id "$workflow_run" >"$WORK_DIR/workflow-completed.json"
-json_assert "$WORK_DIR/workflow-completed.json" 'data["status"] == "blocked" and "stage_perceive_not_completed" in data["blockers"]'
+json_assert "$WORK_DIR/workflow-completed.json" 'data["status"] == "blocked" and "stage_context_not_completed" in data["blockers"]'
 "$OFFICE" audit-events --resource-type approval --resource-id "$approval_id" >"$WORK_DIR/audit-approval.json"
 json_assert "$WORK_DIR/audit-approval.json" 'len(data["events"]) >= 1 and data["events"][-1]["event_hash"]'
 "$OFFICE" notification-list --user user-a >"$WORK_DIR/notification-list.json"
@@ -482,7 +488,7 @@ must_fail "$OFFICE" workflow-resume --run-id "$clarify_run" --requested-by user-
 "$OFFICE" judgment-decision --case-id "$clarify_case" --decision approve --decided-by user-a --role project_manager --confirmed --message "user clarified task" >"$WORK_DIR/judgment-clarify.json"
 json_assert "$WORK_DIR/judgment-clarify.json" 'data["judgment"]["status"] == "approved"'
 "$OFFICE" workflow-resume --run-id "$clarify_run" --requested-by user-a --role project_manager --reason "user clarified task" >"$WORK_DIR/workflow-resume.json"
-json_assert "$WORK_DIR/workflow-resume.json" 'data["status"] == "perceiving"'
+json_assert "$WORK_DIR/workflow-resume.json" 'data["status"] == "context_loading"'
 must_fail "$OFFICE" workflow-cancel --run-id "$clarify_run" --requested-by user-a --role project_manager --reason "stop"
 "$OFFICE" workflow-cancel --run-id "$clarify_run" --requested-by user-a --role project_manager --reason "stop" --confirmed >"$WORK_DIR/workflow-cancel.json"
 json_assert "$WORK_DIR/workflow-cancel.json" 'data["status"] == "cancelled"'

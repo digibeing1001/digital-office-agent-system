@@ -2,26 +2,34 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://digital-office.local/schemas/context-envelope.schema.json",
   "title": "Digital Office Context Envelope",
+  "description": "A compact, versioned handoff contract. Large evidence and generated outputs stay in artifact storage and travel by reference.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "kind",
     "version",
+    "context_id",
     "run_id",
     "task_id",
+    "context_version",
+    "cycle_index",
     "from",
     "to",
     "goal",
     "user_intent",
+    "summary",
     "current_stage",
     "constraints",
     "acceptance_criteria",
+    "facts",
     "source_refs",
     "artifact_refs",
     "decisions",
     "open_questions",
+    "omissions",
     "risk_flags",
     "permissions",
+    "context_budget",
     "handoff_reason",
     "state_hash"
   ],
@@ -30,7 +38,11 @@
       "const": "digital-office-context-envelope"
     },
     "version": {
-      "type": "string"
+      "const": "2.0.0"
+    },
+    "context_id": {
+      "type": "string",
+      "minLength": 1
     },
     "run_id": {
       "type": "string",
@@ -39,6 +51,21 @@
     "task_id": {
       "type": "string",
       "minLength": 1
+    },
+    "handoff_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_handoff_id": {
+      "type": "string"
+    },
+    "context_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cycle_index": {
+      "type": "integer",
+      "minimum": 0
     },
     "from": {
       "$ref": "#/$defs/actor"
@@ -53,14 +80,16 @@
     "user_intent": {
       "type": "string"
     },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
     "current_stage": {
       "enum": [
-        "perceive",
-        "plan",
-        "execute",
-        "reflect",
-        "iterate",
-        "delivery"
+        "context",
+        "decide",
+        "act",
+        "evaluate"
       ]
     },
     "constraints": {
@@ -71,8 +100,15 @@
     },
     "acceptance_criteria": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "string"
+      }
+    },
+    "facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fact"
       }
     },
     "source_refs": {
@@ -99,6 +135,12 @@
         "type": "string"
       }
     },
+    "omissions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/omission"
+      }
+    },
     "risk_flags": {
       "type": "array",
       "items": {
@@ -117,16 +159,20 @@
       ],
       "properties": {
         "tenant_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "requested_by": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "role": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "allowed_actions": {
           "type": "array",
@@ -136,8 +182,42 @@
         }
       }
     },
+    "context_budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "estimated_tokens",
+        "max_tokens",
+        "compacted"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "inline",
+            "reference",
+            "hybrid"
+          ]
+        },
+        "estimated_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "compacted": {
+          "type": "boolean"
+        },
+        "compacted_from_hash": {
+          "type": "string"
+        }
+      }
+    },
     "handoff_reason": {
-      "type": "string"
+      "type": "string",
+      "minLength": 1
     },
     "state_hash": {
       "type": "string",
@@ -163,7 +243,8 @@
           ]
         },
         "id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "workflow_pack": {
           "type": "string"
@@ -177,11 +258,13 @@
         "ref_id",
         "type",
         "uri",
-        "authority"
+        "authority",
+        "retrievable"
       ],
       "properties": {
         "ref_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "type": {
           "enum": [
@@ -194,7 +277,8 @@
           ]
         },
         "uri": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "authority": {
           "enum": [
@@ -205,8 +289,61 @@
             "memory_pointer"
           ]
         },
+        "retrievable": {
+          "type": "boolean"
+        },
         "sha256": {
           "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_id",
+        "statement",
+        "status",
+        "confidence",
+        "basis_refs"
+      ],
+      "properties": {
+        "fact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "verified",
+            "assumption",
+            "uncertain",
+            "conflict"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "basis_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -220,12 +357,44 @@
       ],
       "properties": {
         "decision_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "summary": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "basis_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "omission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "reason",
+        "retrieval_refs"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "enum": [
+            "context_budget",
+            "large_artifact",
+            "permission_boundary",
+            "irrelevant_to_recipient",
+            "duplicate"
+          ]
+        },
+        "retrieval_refs": {
           "type": "array",
           "items": {
             "type": "string"
@@ -243,7 +412,8 @@
       ],
       "properties": {
         "risk_id": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "severity": {
           "enum": [
@@ -254,7 +424,8 @@
           ]
         },
         "summary": {
-          "type": "string"
+          "type": "string",
+          "minLength": 1
         },
         "requires_human_review": {
           "type": "boolean"

@@ -31,10 +31,14 @@ fetch() {
   local output="$2"
   python3 - "$url" "$output" <<'PY'
 import sys
+import os
 import urllib.request
 
 url, output = sys.argv[1], sys.argv[2]
-with urllib.request.urlopen(url, timeout=5) as response:
+request = urllib.request.Request(url)
+if os.environ.get("WEB_TOKEN"):
+    request.add_header("Authorization", f"Bearer {os.environ['WEB_TOKEN']}")
+with urllib.request.urlopen(request, timeout=5) as response:
     body = response.read()
 with open(output, "wb") as handle:
     handle.write(body)
@@ -53,6 +57,14 @@ test -f "$SOURCE_ROOT/agent-system/web/app/service-worker.js" || fail "missing s
 "$OFFICE" web-config --public-url http://127.0.0.1 >"$WORK_DIR/web-config.json"
 json_assert "$WORK_DIR/web-config.json" 'data["kind"] == "digital-office-web-app-config" and data["pwa"]["installable_shell"] is True'
 json_assert "$WORK_DIR/web-config.json" 'any(route["path"] == "/api/gui-state" for route in data["api"]["read_routes"])'
+json_assert "$WORK_DIR/web-config.json" '"Bearer token" in data["api"]["authentication"]'
+
+set +e
+timeout 2 "$OFFICE" web-serve --host 0.0.0.0 --port 0 --quiet >"$WORK_DIR/non-loopback.out" 2>"$WORK_DIR/non-loopback.err"
+non_loopback_code=$?
+set -e
+[ "$non_loopback_code" -eq 2 ] || fail "non-loopback web server started without authentication token"
+grep -q "requires a Bearer token" "$WORK_DIR/non-loopback.err" || fail "non-loopback denial did not explain token requirement"
 
 WEB_PORT="$(python3 - <<'PY'
 import socket
@@ -64,13 +76,13 @@ sock.close()
 PY
 )"
 
-"$OFFICE" web-serve --host 127.0.0.1 --port "$WEB_PORT" --public-url "http://127.0.0.1:$WEB_PORT" --quiet >"$WORK_DIR/web.log" 2>&1 &
+DIGITAL_OFFICE_WEB_TOKEN="smoke-web-token" "$OFFICE" web-serve --host 127.0.0.1 --port "$WEB_PORT" --public-url "http://127.0.0.1:$WEB_PORT" --quiet >"$WORK_DIR/web.log" 2>&1 &
 WEB_PID=$!
 
 BASE_URL="http://127.0.0.1:$WEB_PORT"
 ready=0
 for _ in $(seq 1 50); do
-  if fetch "$BASE_URL/api/health" "$WORK_DIR/health.json" >/dev/null 2>&1; then
+  if fetch "$BASE_URL/healthz" "$WORK_DIR/healthz.json" >/dev/null 2>&1; then
     ready=1
     break
   fi
@@ -78,12 +90,29 @@ for _ in $(seq 1 50); do
 done
 [ "$ready" -eq 1 ] || { cat "$WORK_DIR/web.log" >&2 || true; fail "web server did not become ready"; }
 
+python3 - "$BASE_URL/api/gui-state" <<'PY'
+import sys
+import urllib.error
+import urllib.request
+
+try:
+    urllib.request.urlopen(sys.argv[1], timeout=5)
+except urllib.error.HTTPError as exc:
+    assert exc.code == 401, exc.code
+else:
+    raise SystemExit("API accepted a request without Bearer authentication")
+PY
+
+export WEB_TOKEN="smoke-web-token"
+fetch "$BASE_URL/api/health" "$WORK_DIR/health.json"
+
 fetch "$BASE_URL/api/web-app" "$WORK_DIR/web-app.json"
 fetch "$BASE_URL/api/gui-state?limit=5" "$WORK_DIR/gui-state.json"
 fetch "$BASE_URL/manifest.webmanifest" "$WORK_DIR/manifest.webmanifest"
 fetch "$BASE_URL/service-worker.js" "$WORK_DIR/service-worker.js"
 fetch "$BASE_URL/" "$WORK_DIR/index.html"
 
+json_assert "$WORK_DIR/healthz.json" 'len(data) == 2 and "status" in data and "timestamp" in data and data["status"] == "ok"'
 json_assert "$WORK_DIR/health.json" 'data["status"] == "ok" and data["checks"]["web_index"] is True and data["checks"]["service_worker"] is True'
 json_assert "$WORK_DIR/web-app.json" 'data["pwa"]["installable_shell"] is True and data["api"]["mutation_policy"].startswith("Mutating GUI actions")'
 json_assert "$WORK_DIR/gui-state.json" '"web_ui_pwa" in [item["id"] for item in data["capabilities"]]'

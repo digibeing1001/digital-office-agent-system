@@ -1,358 +1,214 @@
-# 数字办公室 Agent System
+# Digital Office 数字办公室
 
-## GUI Readiness Update
+Digital Office 是一套可以装进 Hermes、OpenClaw 或其他 Agent 主机的“数字办公室”。
 
-The backend now exposes a GUI-ready control contract through `gui-state`,
-`settings-update`, workflow control commands, approval records, human judgment
-gates, and collaborative rule-intake proposals. The default secretary persona
-changed to a neutral baseline so the first GUI can guide users through
-configuration without requiring them to understand Hermes internals.
+你只需要把事情告诉秘书 Agent。秘书会判断该找谁、要不要先问清楚、哪些步骤需要审批，再把工作交给合适的数字员工。写作、研究、产品、设计、开发、规划和企业法务都有各自的数字员工；它们下面不再堆更多 Agent，而是调用一组经过约束的 Skill 完成工作。
 
-## Human Judgment Gates And Rule Intake
+当前版本已经完成 GUI 设计前的后端、运行时和生产 harness。最终视觉 GUI 仍是下一阶段，仓库里现有的是 Web/PWA 外壳和稳定的 GUI 数据契约。
 
-Production workflows can pause themselves before risky or ambiguous work. The
-runtime creates a human judgment case, blocks dispatch/resume/completion, and
-waits for a qualified human decision before continuing. During collaboration,
-Agents can use `rule-elicit` to ask focused questions about missing operating
-rules and `rule-suggest` to turn user-stated preferences into pending global,
-project, or Agent-scoped rule proposals.
+## 一分钟理解
 
-## Runtime Replay, Checkpoints, And Agent Handoffs
+可以把它理解成：
 
-Production runs now write a hash-chained runtime ledger under
-`agent-system/runs/<run_id>/ledger.jsonl`. Long-running work can create
-checkpoint records with `checkpoint-create`, and every cross-Agent handoff can
-be represented as a typed handoff envelope with a contract hash. Coordination
-mode is selected through `coordination.policy.json` so a deployment can choose
-single-Agent, secretary-led, sequential specialist, parallel DAG, or human-gated
-execution without hard-coding today's Agent names.
+```text
+你
+└── 秘书 Agent：接任务、澄清、分派、盯进度、管审批
+    ├── 研究员 Agent ── 检索、证据、引用等 Skills
+    ├── 产品经理 Agent ── 需求、优先级、验收等 Skills
+    ├── 设计师 Agent ── 交互、视觉、原型、无障碍等 Skills
+    ├── 程序员 Agent ── 编码、调试、测试、部署等 Skills
+    ├── 写作 Agent ── 提纲、起草、编辑等 Skills
+    ├── 规划 Agent ── 架构、里程碑、依赖、风险等 Skills
+    └── 数字律师 Agent ── 合同、合规、隐私、公司法等 Skills
+```
 
-The deterministic eval harness lives under `agent-system/evals/`. The baseline
-suite verifies multilingual judgment pauses, coordination mode selection, and
-rule-scope inference before a production release can be claimed.
+Agent 是对结果负责的数字员工，Skill 是它内部使用的专业能力。部门可以作为用户理解业务边界的方式，但系统不会模拟一棵层层汇报的人类组织树。
+
+## 它解决什么问题
+
+普通多 Agent 系统常见的问题不是“Agent 不够多”，而是任务一转手，目标、证据、限制和已经做过的决定就开始丢。
+
+Digital Office 把重点放在四件事上：
+
+1. **工作有负责人**：秘书负责入口，每项专业工作只交给一个明确的数字员工 Agent。
+2. **交接不靠聊天记忆**：任务用带版本、来源、风险、产物引用和哈希的交接包传递，接收方必须确认收到。
+3. **任务不会无限循环**：每次工作都有循环次数、重试、时间、工具调用和模型调用上限。
+4. **高风险动作有人把关**：法务、外部发送、上线、签署等动作可以被审批或专业判断门拦住。
+
+## 和常见方案相比
+
+| 常见做法 | Digital Office 的做法 |
+| --- | --- |
+| 为每个小步骤再建一个 Agent | 一个数字员工 Agent 负责一个方向，小步骤交给 Skills |
+| 把整段聊天转给下一个 Agent | 只传最小必要上下文，大文件和证据按引用取回 |
+| 让模型自己决定是否继续循环 | 后端控制器决定继续、重做、等待人工、完成或失败 |
+| 成功与否主要看模型说“完成了” | 必须经过验收条件、产物、门禁和可回放账本 |
+| 更新程序时顺便覆盖本地数据 | 程序文件与项目、知识、任务、偏好、认证数据分开 |
+| 法务能力等同于一个万能律师提示词 | 企业内设数字律师，按合同、隐私、合规等 Skill 通道工作，并保留人工复核 |
+
+这并不意味着它比所有 Agent 产品都更聪明。它的优势是更容易知道任务现在在哪里、为什么停住、交接时带了什么、出了问题如何恢复。
+
+## 已经具备的能力
+
+- 秘书 Agent 统一接收、澄清和分派任务
+- 研究、产品、设计、开发、写作、规划、企业法务等数字员工
+- `Context -> Decide -> Act -> Evaluate` 四节点工作循环
+- 继续、改计划、重试、等待人工、完成、失败、取消和预算耗尽等明确状态
+- 可恢复检查点、并发安全的哈希链账本、备份和原子恢复
+- 带来源、事实置信度、省略说明、权限和接收确认的上下文交接
+- 项目知识、公司知识、文件夹权限、审批、通知和审计记录
+- 企业数字律师常用工作流和本地法律 Skill 包
+- Web/PWA 外壳、健康检查和 GUI 状态接口
+- 新安装、保留原规则安装、明确覆盖安装和一条命令升级
+
+## 最简单的安装方式
+
+在 WSL 或 Linux 终端运行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-system/main/update | bash
+```
+
+它会安装到 `~/.hermes`，安装 Skills，并自动跑健康检查和生产门禁。
+
+以后升级只需要：
+
+```bash
+~/.hermes/update
+```
+
+`update` 只更新程序、配置和内置 Skills，不会把源码目录里的认证缓存、会话、项目、知识库、任务、审批或个人偏好复制到目标环境，也不会在升级时覆盖目标环境里的这些数据。
+
+### 已经有 Hermes 或个人规则
+
+如果目标目录里存在不是 Digital Office 管理的规则或个人数据，安装器会停下来让你明确选择：
+
+```bash
+# 保留原来的规则，Digital Office 并排安装
+curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-system/main/update | bash -s -- --preserve-existing
+
+# 备份原规则后，让 Digital Office 成为默认秘书入口
+curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-system/main/update | bash -s -- --overwrite-existing
+```
+
+这是刻意的保护，不会替用户偷偷决定。
+
+### 安装到 OpenClaw
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-system/main/update | bash -s -- --host openclaw
+```
+
+## 安装后怎么用
+
+安装后，主机的默认入口会成为秘书 Agent（default secretary persona）。正常使用时直接对秘书描述任务即可，例如：
+
+```text
+帮我审查这份供应商合同，列出高风险条款和需要业务确认的问题。
+```
+
+```text
+先调研同类产品，再整理需求，设计界面，最后实现一个可运行的前端版本。
+```
+
+```text
+把这份材料写成一篇文章，完成事实核对、编辑和终稿检查。
+```
+
+管理员可以先做两个快速检查：
+
+```bash
+~/.hermes/scripts/agent-router --health
+~/.hermes/agent-system/bin/office-system health
+```
+
+## 为什么任务交接更稳
+
+系统不会默认把完整聊天历史转发给下一个 Agent。每次交接都会记录：
+
+- 用户真正想完成什么
+- 当前目标、限制和验收标准
+- 哪些是事实、假设、不确定项或冲突
+- 来源和生成产物在哪里
+- 已经做过哪些决定
+- 哪些内容因篇幅、权限或相关性被省略，以及如何取回
+- 接收方是谁、是否验证了交接哈希、是否要求补充上下文
+
+大型文件只保存一次，通过引用传递。私有思维链、密码、密钥和访问令牌禁止进入交接包。
+
+详细说明见 [上下文交接规范](agent-system/docs/context-handoff.zh-CN.md)。
+
+## LOOP 不是无限自我反思
+
+主流 Agent 实践并不存在唯一正确的六步循环。这个项目把运行时收敛为四个能被持久化和测试的节点：
+
+- `Context`：拿到完成下一步所需的可信信息
+- `Decide`：形成决定、路线、风险和下一步动作
+- `Act`：调用 Agent、Skill 和工具执行
+- `Evaluate`：按证据、验收条件、进度和预算判断
+
+模型可以建议下一步，但只有后端控制器能改变状态。简单任务可以跳过 Decide；任务返工可以在批准范围内循环；修改 Agent、Skill、规则、工作流、GUI 契约或发布配置仍然必须由用户确认。
+
+详细说明见 [LOOP 工程](agent-system/docs/loop-engineering.zh-CN.md)。
+
+## 企业数字律师
+
+法务不是律师事务所式的多层 Agent 团队，而是一个企业内设数字律师 `legal`。它可以调用合同审查、公司法、隐私数据、产品合规、用工与知识产权、争议分流和 AI 治理等 Skills。
+
+法律输出是企业内部工作草稿，不替代执业律师意见。正式外发、签署、用工动作、产品上线、诉讼或仲裁必须经过合适的人类专业复核。
+
+本地已安装 Apache-2.0 的 `claude-for-legal-zh`。`Legal-Skills-Chinese` 因 CC BY-NC-ND 4.0 不适合未经授权的商用内置，当前只登记许可证状态，不会激活。
 
 ## Web UI And PWA
 
-The Web shell exposes read-only GUI APIs through `web-config`, `web-serve`,
-`/api/health`, `/api/gui-state`, and `/api/web-app`. It ships with
-`manifest.webmanifest` and `service-worker.js` so a deployment can be installed
-as a PWA. Install as PWA requires HTTPS in normal browsers, with localhost
-allowed for local development.
+仓库包含可安装的 Web/PWA 外壳和后端契约，但最终视觉 GUI 尚未开始设计。
 
-> 把 AI Agent 变成你的数字员工团队 — 秘书、产品经理、研究员、规划师、设计师、工程师、写手，各司其职，协同交付。
-
-数字办公室是一套**可分发的多 Agent 办公运行层**。部署到 [Hermes](https://hermes-agent.nousresearch.com)、OpenClaw 或其他兼容 Agent 宿主后，它将宿主默认 Agent 注入为"数字办公室秘书"，由秘书统一完成需求收口、角色路由、工作流编排、知识边界、质量门禁和交付说明。
-
-用户不需要理解底层 Agent 工具 — 你只需要描述需求，秘书会安排合适的数字员工接手。
-
----
-
-## AI Native Loop（核心运行原则）
-
-数字办公室的每一项任务都遵循 **Perceive → Plan → Execute → Reflect → Iterate** 五步闭环。这不是某一条工作流，而是整个产品的基础运行逻辑：
-
-| 阶段 | 名称 | 做什么 |
-|------|------|--------|
-| 1 | **感知** | 收集用户意图、项目上下文、知识来源、权限和路由候选 |
-| 2 | **规划** | 选择角色、编排工作流、定义验收标准和回滚方案 |
-| 3 | **执行** | 通过路由器调度 Agent，记录产物、观察和门禁结果 |
-| 4 | **反思** | 对照计划和证据审查结果，生成问题发现和方法论改进建议 |
-| 5 | **迭代** | 系统可提出改进提案，但**必须等用户确认后才能应用** |
-
-关键约束：
-- **迭代永远不是自动的** — 任何规则、工作流、Agent 行为、知识库的变更都必须先生成用户可见提案，等用户确认后才应用
-- **生产声明需要确定性门禁 + 反思报告**双重验证 — 没有通过 harness 检查的任务不能标记为完成
-- **秘书拥有最终责任** — 模糊路由、用户确认、迭代提案和失败门禁恢复都由秘书负责
-
-这条原则被硬编码在 `agent-system/ai-native-loop.manifest.json` 中，秘书能力配置 `secretary.capabilities.json` 专门定义了 loop policy，并有独立的 harness 生产门禁 `ai-native-loop-production.json` 验证其完整性。它约束着所有工作流的执行方式，包括 PPT 生产、Vibe Design、Vibe Coding 等。
-
----
-
-## 它能做什么
-
-### 多 Agent 协作
-
-内置基础数字员工角色。每个特定工作的 Agent 既是数字员工，也可以代表对应业务部门负责人；该部门的“员工”不再是子 Agent，而是一个个 Skill：
-
-| 角色 | 职责 |
-|------|------|
-| **秘书** | 需求澄清、任务路由、交接管理、最终交付 |
-| **产品经理** | 产品判断、PRD、路线图、优先级 |
-| **研究员** | 市场调研、竞品分析、事实验证 |
-| **规划师** | 架构设计、方案规划、里程碑拆解 |
-| **设计师** | 视觉方向、UI 设计、原型 |
-| **工程师** | 编码、调试、测试、部署 |
-| **写手** | 文案、故事线、讲稿、文档 |
-| **数字律师** | 作为企业法务负责人处理合同审查、隐私数据、产品合规、用工/IP、争议分流，内部由法律 Skill lanes 执行 |
-
-用户说出需求，秘书自动选择合适的角色组合，管理多 Agent 交接，确保后续角色使用前序产物而不是从头开始。
-
-部门不是模拟人类管理层。部门负责人 Agent 只在 intake、综合、升级和审批门槛处出现；窄任务会直接进入对应能力节点。
-
-### 工作流引擎
-
-内置可扩展的工作流控制面，支持：
-
-- **PPT 生产** — `intake → writing → design → intake`，从需求澄清到交付完整 deck
-- **Vibe Design** — 设计类任务的产品门禁保障
-- **Vibe Coding** — 编码类任务的 TDD + 质量审查
-- **数字律师** — `legal` 单一 Agent 负责，合同审查、隐私数据、产品合规、用工/IP、争议分流由内部 Skill lanes 执行，所有输出均为人工审查前的内部草稿
-
-所有工作流都在 AI Native Loop 框架内执行，遵循感知 → 规划 → 执行 → 反思 → 迭代的五步闭环。
-
-### 知识与记忆管理
-
-分层知识体系，避免把草稿当事实：
-
-1. **项目知识库** — 当前项目的文档、决策、素材（最高优先级）
-2. **公司知识库** — 组织级方法论、模板、标准
-3. **授权行业参考层** — 按权限挂载的行业知识
-4. **KeyMemory 接力记忆** — 跨会话、跨 Agent 的语义接力
-
-### 质量门禁
-
-每个生产任务必须通过 `harness-check` 和 `harness-runner` 验证：
-
-- 路由正确性
-- 工作流闭环
-- 知识权限合规
-- GUI 契约一致性
-- 生产门禁通过
-
-### 用户确认式迭代
-
-系统**不允许静默自我修改**。任何规则、工作流、Agent 行为、知识库的改进，都必须先生成迭代提案，等用户确认后才应用。
-
----
-
-## 快速开始
-
-### 安装
+本机预览：
 
 ```bash
-git clone https://github.com/digibeing1001/digital-office-agent-system.git
-cd digital-office-agent-system
-
-# 安装到 Hermes
-./install.sh --host hermes --target ~/.hermes
-
-# 安装到 OpenClaw
-./install.sh --host openclaw --target ~/.openclaw
+~/.hermes/agent-system/bin/office-system web-config
+~/.hermes/agent-system/bin/office-system web-serve
 ```
 
-安装器会自动：
-- 注入数字办公室秘书入口到宿主默认 Agent
-- 同步 agent-system、scripts、profiles、skills 和产品文档
-- 运行健康检查验证安装完整性
+打开终端显示的地址后可以 Install as PWA。监听非本机地址时必须通过 `DIGITAL_OFFICE_WEB_TOKEN` 配置 Bearer Token；系统不会把项目和任务状态裸露到局域网。
 
-### 已有宿主的安装选项
+未来 GUI 将直接读取 `gui-state`，并通过 `settings-update` 更新用户设置。前端不能自己伪造工作流状态。
 
-如果目标宿主已有个人规则或数据，安装器不会静默覆盖：
+## 当前完成度
+
+当前是 `0.2.0 internal` 后端就绪版本：
+
+- Agent 与 Skill 责任模型已统一
+- 法务已对齐为企业数字律师
+- LOOP、上下文交接、权限、审批、恢复和审计契约已落地
+- 完整生产 harness 和 smoke 已通过
+- Hermes/OpenClaw 安装升级路径已具备
+- Web/PWA 后端接口已具备认证边界
+- 最终 GUI 视觉和交互设计尚未开始
+
+也就是说，现在适合正式进入 GUI 设计阶段，但还不应把现有 Web 外壳描述成已经完成的商业 GUI 产品。
+
+## 给开发者和运维人员
+
+常用检查：
 
 ```bash
-# 保留原规则，旁路安装
-./install.sh --host openclaw --target ~/.openclaw --preserve-existing
-
-# 备份原入口后覆盖
-./install.sh --host openclaw --target ~/.openclaw --overwrite-existing
-```
-
-### 使用
-
-安装完成后，直接向宿主 Agent 描述需求即可。秘书会自动接管并路由到合适的数字员工：
-
-```
-> 帮我做一份竞品分析的 PPT 汇报
-> 帮我调研一下东南亚市场的 SaaS 机会
-> 写一个产品需求文档
-> 帮我重构这个 Python 模块
-```
-
----
-
-## 支持的宿主
-
-| 宿主 | 默认目标目录 | 注入入口 | 默认 Agent 角色 |
-|------|-------------|---------|----------------|
-| [Hermes](https://hermes-agent.nousresearch.com) | `~/.hermes` | `SOUL.md` | secretary |
-| OpenClaw | `~/.openclaw` | `AGENTS.md` | secretary |
-| generic | `~/.digital-office-agent` | `AGENTS.md` | secretary |
-
----
-
-## 面向开发者
-
-### 架构概览
-
-```
-┌─────────────────────────────────────────┐
-│           Digital Office GUI            │
-│         (Web UI / PWA Shell)            │
-├─────────────────────────────────────────┤
-│        Product Backend API              │
-│    (office-system CLI + web-serve)      │
-├─────────────────────────────────────────┤
-│      Tenant / Roles / Entitlements      │
-├─────────────────────────────────────────┤
-│     Agent Host Runtime (Hermes etc.)    │
-├─────────────────────────────────────────┤
-│       agent-system registries           │
-│   ┌──────────┬──────────┬──────────┐    │
-│   │ Router   │ Registry │ Policies │    │
-│   └──────────┴──────────┴──────────┘    │
-├─────────────────────────────────────────┤
-│    Agent Profiles + Skills Bundles      │
-├─────────────────────────────────────────┤
-│  Knowledge (Project / Company / RAG)    │
-├─────────────────────────────────────────┤
-│     KeyMemory Relay + Semantic Mem      │
-└─────────────────────────────────────────┘
-```
-
-### 仓库结构
-
-```
-.
-├── README.md                          # 本文件
-├── CHANGELOG.md                       # 开发进度日志
-├── SOUL.md                            # 默认秘书 Agent 入口
-├── install.sh                         # 安装器
-├── scripts/
-│   └── agent-router                   # 智能路由器
-├── profiles/                          # Agent Profile 模板
-│   ├── office-coder/
-│   ├── office-designer/
-│   ├── office-planner/
-│   ├── office-product-manager/
-│   ├── office-researcher/
-│   ├── office-writer/
-│   └── office-legal/
-├── skills/                            # 产品技能包
-│   ├── agent-team-staffing/
-│   ├── digital-lawyer-workflows/
-│   ├── _imported/claude-for-legal-ZH/
-│   ├── vibe-coding-production-harness/
-│   └── vibe-design-production-harness/
-└── agent-system/
-    ├── agents.registry.json           # Agent 注册表
-    ├── digital-employees.registry.json # 数字员工可见模型
-    ├── workflow-packs.registry.json   # 工作流包与 Skill lanes
-    ├── context-envelope.schema.json   # 上下文交接契约
-    ├── skill-installations.registry.json # 本地 Skill source 安装状态
-    ├── secretary.capabilities.json    # 秘书能力配置
-    ├── host-injection.policy.json     # 宿主注入策略
-    ├── product.release.manifest.json  # 发布清单
-    ├── skills.sources.json            # 外部技能来源
-    ├── memory.relay.registry.json     # KeyMemory 接力规则
-    ├── multimodal.pipeline.json       # 多模态处理管线
-    ├── harness/                       # 质量门禁
-    │   ├── production-gates.json
-    │   └── tasks/
-    ├── bin/                           # CLI 工具
-    │   ├── office-system.py           # GUI 后端控制面
-    │   ├── harness-check              # 门禁检查
-    │   └── harness-runner             # 门禁执行器
-    ├── docs/                          # 产品文档
-    ├── rules/                         # 规则体系
-    ├── knowledge/                     # 知识库骨架
-    ├── tests/                         # 测试
-    ├── web/                           # Web UI / PWA shell
-    └── deploy/                        # 部署模板
-```
-
-### 核心设计原则
-
-1. **Portable Role 优先** — 不把 Agent 名称写死到产品逻辑。先选择 portable role，再从注册表映射到具体 Agent。
-2. **知识分层** — KeyMemory 是接力记忆层，不是事实源。项目知识库 > 公司知识库 > 行业参考 > KeyMemory。
-3. **用户确认** — 不允许系统静默自我迭代。任何变更必须生成提案，等用户确认。
-4. **GUI 契约** — 所有后端能力必须有 GUI 命令合约，不只提供 CLI。
-5. **本地优先** — 模型权重不提交到仓库，部署时由安装器下载到客户主机。
-
-### 开发验证
-
-提交前运行：
-
-```bash
-# 语法检查
-python3 -m py_compile agent-system/bin/office-system.py \
-  agent-system/bin/harness-check \
-  agent-system/bin/harness-runner \
-  scripts/agent-router
-
-# 门禁检查
 agent-system/bin/harness-check
 agent-system/bin/harness-runner --task all --no-write
-
-# 冒烟测试
-bash agent-system/tests/smoke.sh
+agent-system/tests/smoke.sh
 ```
 
-### 路由测试
+重要文档：
 
-```bash
-# 查看路由健康状态
-scripts/agent-router --health
+- [GUI 后端契约](agent-system/docs/gui-contract.md)
+- [UI 设计前置就绪说明](agent-system/docs/ui-design-readiness.zh-CN.md)
+- [GUI 设计前最终生产审计](agent-system/docs/pre-gui-production-audit.zh-CN.md)
+- [生产 harness](agent-system/docs/production-harness.md)
+- [企业数字律师](agent-system/docs/digital-lawyer.zh-CN.md)
+- [主机规则注入与安装模式](agent-system/docs/host-rule-injection.zh-CN.md)
 
-# 测试路由决策
-scripts/agent-router --route-json "帮我做一份PPT汇报"
-scripts/agent-router --route-json "research competitors and design the interface"
-```
+## 许可证与责任
 
-### GUI 后端入口
+仓库中的外部 Skill 仍受各自许可证约束。安装登记为“本地可用”不代表可以忽略原作者许可证、数据授权或行业监管要求。
 
-```bash
-# 首页总览
-agent-system/bin/office-system gui-state --user <user_id> --project <project_id>
-
-# Onboarding
-agent-system/bin/office-system onboarding-options
-agent-system/bin/office-system onboarding-apply --assistant-style neutral_operator ...
-
-# 设置
-agent-system/bin/office-system settings-status
-agent-system/bin/office-system settings-update --work-mode quality --confirmed
-
-# Web UI
-agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787
-```
-
----
-
-## 关键文档
-
-| 文档 | 说明 |
-|------|------|
-| [architecture.md](agent-system/docs/architecture.md) | 总体架构、运行层、知识模型、发布模型 |
-| [digital-lawyer.zh-CN.md](agent-system/docs/digital-lawyer.zh-CN.md) | 数字律师模型、工作流、本地 Skill source 与安全边界 |
-| [ui-design-readiness.zh-CN.md](agent-system/docs/ui-design-readiness.zh-CN.md) | UI 设计前的后端契约和门禁清单 |
-| [host-rule-injection.zh-CN.md](agent-system/docs/host-rule-injection.zh-CN.md) | 宿主注入策略详解 |
-| [ppt-production-workflow.md](agent-system/docs/ppt-production-workflow.md) | PPT 生产工作流与角色边界 |
-| [production-harness.md](agent-system/docs/production-harness.md) | 生产门禁设计 |
-| [gui-contract.md](agent-system/docs/gui-contract.md) | GUI 与本地运行层的命令合约 |
-
----
-
-## 开发进度
-
-详见 [CHANGELOG.md](CHANGELOG.md)。
-
----
-
-## 参考与致谢
-
-本系统的工程原则参考了以下方向：
-
-- **ReAct** — action / observation 循环
-- **Reflexion** — 反思反馈机制
-- **Generative Agents** — 记忆 / 反思 / 规划分层
-- **Voyager** — 可复用技能库
-- **MetaGPT / AutoGen** — 多 Agent 角色协作
-- **LangGraph** — 持久执行与 human-in-the-loop
-- **SWE-agent / OpenHands** — 编码 Agent harness
-- **RAGAS / Self-RAG** — 检索质量与自我评估
-
----
-
-## 许可
-
-Private — 当前为内部开发通道。生产客户应接收经过验证的发布包。
+Digital Office 是工作流和 Agent 运行系统，不替代法律、财务、医疗或其他受监管专业人员的最终判断。

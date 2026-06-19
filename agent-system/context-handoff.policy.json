@@ -1,0 +1,80 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-context-handoff-policy",
+  "purpose": "Preserve task intent, evidence, authority, and decision state when work crosses Agent or Skill boundaries.",
+  "identity": {
+    "context_id": "Stable across related work in one user intent chain.",
+    "task_id": "Stable only until a terminal task state; refinements create a new task id under the same context id.",
+    "handoff_id": "Unique for every delivery attempt.",
+    "context_version": "Monotonically increases when the envelope meaningfully changes.",
+    "idempotency_key": "handoff_id plus context envelope hash"
+  },
+  "transfer_modes": {
+    "inline": "Small authoritative facts and decisions are carried in the envelope.",
+    "reference": "Large evidence and outputs are stored once and transferred as immutable retrievable references.",
+    "hybrid": "Default mode: compact task state inline, evidence and generated artifacts by reference."
+  },
+  "default_mode": "hybrid",
+  "rules": [
+    "Do not forward the entire chat history by default.",
+    "Do not recursively summarize an earlier summary when the original source remains retrievable.",
+    "Separate verified facts, assumptions, uncertainty, and conflicts.",
+    "Every fact and decision must retain basis references when evidence exists.",
+    "Declare omitted material and how the recipient can retrieve it.",
+    "Large artifacts travel by reference with authority, version or hash, and retrievability metadata.",
+    "Private chain-of-thought, hidden reasoning traces, credentials, and unrelated tenant data are forbidden.",
+    "The recipient verifies the envelope hash and explicitly accepts, requests context, or rejects the handoff.",
+    "A sender cannot treat pending_acceptance as completed delivery.",
+    "A terminal task is immutable; later refinement creates a new task id linked by context id."
+  ],
+  "acknowledgment": {
+    "decisions": [
+      "accept",
+      "request_context",
+      "reject"
+    ],
+    "accept_requires": [
+      "matching_recipient",
+      "matching_context_hash",
+      "required_fields_present",
+      "referenced_artifacts_reachable_or_explicitly_deferred"
+    ],
+    "request_context_requires": [
+      "missing_fields_or_refs",
+      "message"
+    ],
+    "reject_requires": [
+      "message"
+    ]
+  },
+  "status_transitions": {
+    "pending_acceptance": [
+      "accepted",
+      "needs_context",
+      "rejected"
+    ],
+    "needs_context": [
+      "accepted",
+      "needs_context",
+      "rejected"
+    ],
+    "accepted": [],
+    "rejected": []
+  },
+  "quality_metrics": [
+    "required_field_retention",
+    "artifact_reachability",
+    "source_fidelity",
+    "decision_consistency",
+    "context_request_rate",
+    "compression_ratio",
+    "duplicate_delivery_rate"
+  ],
+  "security": {
+    "enforce_tenant_and_project_scope": true,
+    "minimum_disclosure": true,
+    "redact_secrets_before_transfer": true,
+    "verify_recipient_permissions": true,
+    "audit_every_delivery_and_acknowledgment": true
+  }
+}

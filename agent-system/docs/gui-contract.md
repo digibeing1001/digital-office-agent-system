@@ -77,6 +77,7 @@ Router contract:
 - Business department wording is a UI mental model, not a third Agent layer. The backend contract is `secretary -> digital employee Agent -> Skill staff lanes`.
 - `agent-system/digital-employees.registry.json` describes product-visible digital employees. `agent-system/workflow-packs.registry.json` describes workflow ids, owning Agents, Skill lanes, source packs, and delivery gates.
 - `agent-system/context-envelope.schema.json` is the context handoff contract. Large documents move by artifact refs; decisions, assumptions, open questions, and risk flags must stay structured.
+- `agent-system/context-handoff.policy.json` defines stable context/task/handoff identity, transfer modes, recipient acknowledgment, status transitions, security boundaries, and quality metrics.
 - `agent-system/skill-installations.registry.json` records locally installed source packs and license-blocked candidates.
 - The legal UI should show one enterprise Digital Lawyer. Contract review, compliance review, privacy review, employment/IP review, dispute triage, and AI governance are internal Skill lanes under that Agent.
 - Digital Lawyer workflows are internal review drafts. The GUI must show source verification status and human review gates before any user relies on legal output, sends external communications, approves launch, approves signature, or takes regulated action.
@@ -104,7 +105,7 @@ The GUI should prefer the workflow control plane for normal users. It creates a 
 ~/.hermes/agent-system/bin/office-system workflow-status --run-id <run_id>
 ~/.hermes/agent-system/bin/office-system workflow-list --project <project_id>
 ~/.hermes/agent-system/bin/office-system workflow-resume --run-id <run_id> --requested-by <user_id> --role <role>
-~/.hermes/agent-system/bin/office-system workflow-retry --run-id <run_id> --stage execute --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-retry --run-id <run_id> --stage act --requested-by <user_id> --role <role>
 ~/.hermes/agent-system/bin/office-system workflow-cancel --run-id <run_id> --requested-by <user_id> --role <role> --confirmed
 ```
 
@@ -131,7 +132,7 @@ Agent self-checks or deterministic policy checks before the system continues
 high-risk, ambiguous, externally visible, or evidence-sensitive work.
 
 ```bash
-~/.hermes/agent-system/bin/office-system judgment-evaluate --task "<task>" --stage plan --agent <agent_id>
+~/.hermes/agent-system/bin/office-system judgment-evaluate --task "<task>" --stage decide --agent <agent_id>
 ~/.hermes/agent-system/bin/office-system judgment-list --status pending
 ~/.hermes/agent-system/bin/office-system judgment-decision --case-id <case_id> --decision approve --decided-by <user_id> --role <required_role> --confirmed
 ~/.hermes/agent-system/bin/office-system judgment-resume --run-id <run_id> --requested-by <user_id> --role <role>
@@ -165,7 +166,7 @@ These commands are production control-plane commands, not hidden debug tools. Th
 ```bash
 ~/.hermes/agent-system/bin/office-system coordination-plan --task "<task>" --agent researcher --agent writer --parallelizable
 ~/.hermes/agent-system/bin/office-system run-ledger-list --run-id <run_id>
-~/.hermes/agent-system/bin/office-system checkpoint-create --run-id <run_id> --stage plan --label "<label>" --resume-cursor plan:ready
+~/.hermes/agent-system/bin/office-system checkpoint-create --run-id <run_id> --stage decide --label "<label>" --resume-cursor decide:ready
 ~/.hermes/agent-system/bin/office-system checkpoint-list --run-id <run_id>
 ~/.hermes/agent-system/bin/office-system handoff-create --run-id <run_id> --from-agent researcher --to-agent writer --reason "<reason>" --acceptance-criterion "<criterion>"
 ~/.hermes/agent-system/bin/office-system handoff-list --run-id <run_id>
@@ -237,24 +238,29 @@ Runtime controls:
 
 AI Native Product Loop:
 
-The production loop is Perceive, Plan, Execute, Reflect, Iterate. The GUI should render it as five visible stages rather than a hidden background process.
+The production runtime has four composable work nodes: Context, Decide, Act, Evaluate. A deterministic backend controller owns transitions. The GUI renders durable backend state and never invents a client-side transition.
 
 ```bash
 ~/.hermes/agent-system/bin/office-system loop-start --task "<task>" --project <project_id> --agent <agent_id>
-~/.hermes/agent-system/bin/office-system loop-stage --run-id <run_id> --stage perceive --status started
+~/.hermes/agent-system/bin/office-system loop-stage --run-id <run_id> --stage context --status started
+~/.hermes/agent-system/bin/office-system loop-usage-add --run-id <run_id> --tool-calls 1 --model-calls 1
+~/.hermes/agent-system/bin/office-system loop-control --run-id <run_id> --decision complete --progress-score 1 --acceptance-passed
 ~/.hermes/agent-system/bin/office-system loop-status --run-id <run_id>
 ~/.hermes/agent-system/bin/office-system iteration-proposal-create --title "<title>" --target workflow --summary "<why>" --expected-impact "<impact>" --risk "<risk>" --rollback "<rollback>"
 ~/.hermes/agent-system/bin/office-system iteration-proposal-decision --proposal-id <proposal_id> --decision confirm
 ~/.hermes/agent-system/bin/office-system iteration-proposal-apply --proposal-id <proposal_id> --confirmed --regression-result "<result>"
 ```
 
-Loop stage labels:
+Work node labels:
 
-1. Perceive: context, knowledge, permissions, memory relay, route candidates.
-2. Plan: role workflow, handoff contract, acceptance criteria, risk, rollback, tests.
-3. Execute: Agent dispatch, observations, artifacts, handoffs, gate results.
-4. Reflect: findings, root causes, failed gates, reusable methodology drafts.
-5. Iterate: explicit improvement proposals only.
+1. Context: authoritative context, permissions, provenance, unknowns, artifact references, and context budget.
+2. Decide: structured decision record, route or plan, acceptance criteria, risk, rollback, and next action. Private chain-of-thought is never stored or displayed.
+3. Act: Agent and Skill dispatch, idempotent side effects, observations, artifacts, typed handoffs, acknowledgments, checkpoints, and usage.
+4. Evaluate: evidence-backed acceptance results, progress, failure class, budget, and one recommended controller decision.
+
+Controller decisions are `continue`, `replan`, `retry`, `wait_human`, `complete`, `fail`, `cancel`, and `budget_exhausted`. The UI must expose current cycle, configured budgets, usage, progress score, last decision, blockers, and waiting reason. Simple tasks may show Decide as skipped only when the backend records the reason.
+
+Typed handoff UI must distinguish `pending_acceptance`, `needs_context`, `accepted`, and `rejected`. The recipient must verify `context_hash` before calling `handoff-ack`; pending or missing-context delivery is not complete.
 
 Iteration must never be black-box. The GUI must show the proposed change, why it is suggested, expected impact, risk, rollback, affected objects, and regression checks. The only iteration actions are Confirm, Tune Through Conversation, Pause, and Reject. `iteration-proposal-apply` is unavailable unless the proposal was confirmed by the user.
 

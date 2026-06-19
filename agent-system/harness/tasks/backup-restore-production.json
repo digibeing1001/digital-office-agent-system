@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "task_id": "backup-restore-production",
+  "description": "Verify backups include critical runtime data and restore validates archives, requires confirmation, replaces atomically, and retains rollback data.",
+  "roles": [
+    "operations",
+    "release"
+  ],
+  "workflow": "backup_restore",
+  "gates": [
+    {
+      "id": "backup_restore_roundtrip_and_archive_safety",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 120,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; office=\"$tmp/agent-system/bin/office-system\"; mkdir -p \"$tmp/agent-system/settings\" \"$tmp/agent-system/runs/r1\" \"$tmp/agent-system/logs\"; printf '{\"mode\":\"original\"}' > \"$tmp/agent-system/settings/user-preferences.json\"; printf '{\"kind\":\"digital-office-loop-run\",\"run_id\":\"r1\"}' > \"$tmp/agent-system/runs/r1/run.json\"; printf '{\"event\":\"original\"}\\n' > \"$tmp/agent-system/logs/audit-events.jsonl\"; \"$office\" backup --output \"$tmp/backup.tar.gz\" >/dev/null; printf '{\"mode\":\"changed\"}' > \"$tmp/agent-system/settings/user-preferences.json\"; set +e; \"$office\" restore \"$tmp/backup.tar.gz\" >/dev/null 2>&1; code=$?; set -e; test \"$code\" -ne 0; \"$office\" restore \"$tmp/backup.tar.gz\" --dry-run > \"$tmp/dry-run.json\"; \"$office\" restore \"$tmp/backup.tar.gz\" --confirmed > \"$tmp/restored.json\"; python3 -c 'import json,sys,pathlib; dry=json.load(open(sys.argv[1])); restored=json.load(open(sys.argv[2])); prefs=json.load(open(sys.argv[3])); assert dry[\"status\"]==\"valid\"; assert {\"settings\",\"runs\",\"logs\"} <= set(dry[\"components\"]); assert restored[\"status\"]==\"restored\" and pathlib.Path(restored[\"rollback_path\"]).exists(); assert prefs[\"mode\"]==\"original\"' \"$tmp/dry-run.json\" \"$tmp/restored.json\" \"$tmp/agent-system/settings/user-preferences.json\"; python3 -c 'import io,tarfile,sys; t=tarfile.open(sys.argv[1],\"w:gz\"); i=tarfile.TarInfo(\"settings/link\"); i.type=tarfile.SYMTYPE; i.linkname=\"../../outside\"; t.addfile(i); t.close()' \"$tmp/malicious.tar.gz\"; set +e; \"$office\" restore \"$tmp/malicious.tar.gz\" --dry-run >/dev/null 2>&1; code=$?; set -e; test \"$code\" -ne 0; python3 -c 'import io,tarfile,sys; t=tarfile.open(sys.argv[1],\"w:gz\"); i=tarfile.TarInfo(\"settings/large.txt\"); data=b\"ab\"; i.size=len(data); t.addfile(i,io.BytesIO(data)); t.close()' \"$tmp/oversized.tar.gz\"; set +e; \"$office\" restore \"$tmp/oversized.tar.gz\" --dry-run --max-uncompressed-bytes 1 >/dev/null 2>&1; code=$?; set -e; test \"$code\" -ne 0"
+      ]
+    }
+  ]
+}

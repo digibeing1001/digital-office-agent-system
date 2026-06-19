@@ -1,76 +1,86 @@
-# UI 界面设计前置就绪说明
+# UI 设计前置就绪说明
 
-本文记录正式开始 UI 设计前，后端和运行契约必须满足的条件。
+本文件定义正式开始 GUI 视觉设计前，后端必须稳定下来的产品结构、运行状态和发布门禁。GUI 只能消费这些契约，不能自己创造另一套业务状态。
 
-## 最终产品结构
+## 产品结构
 
-数字办公室采用稳定的二层 Agent 模型：
+数字办公室采用两层 Agent 责任模型：
 
 1. 用户通过秘书 Agent 下达任务。
-2. 秘书把任务交给特定工作的数字员工 Agent。
-3. 每个数字员工 Agent 可以代表一个业务部门负责人。
-4. 该业务部门下面的员工不是 Agent，而是一个个 Skill。
+2. 秘书把任务交给某项工作的数字员工 Agent。
+3. 数字员工 Agent 可以代表部门负责人，但仍然是一个产品可见的责任主体。
+4. Agent 下方的“员工”是 Skill，不再建立下级 Agent 组织树。
 
-也就是说，`Agent` 是产品可见的责任主体，`Skill` 是内部执行能力。UI 可以用“部门”帮助用户理解业务边界，但不能把部门画成多层 Agent 组织树。
+因此，法务是一个企业内设法务身份的数字律师 Agent `legal`。合同审查、公司法、隐私数据、产品合规、用工与知识产权、争议分流、AI 治理等是它的 Skill 工作通道，不是律师事务所式的多层律师 Agent 团队。
 
-## 已固化的后端契约
+## 后端真相来源
 
-- `agent-system/digital-employees.registry.json`：产品可见数字员工清单。
-- `agent-system/workflow-packs.registry.json`：每个数字员工可运行的工作流包和 Skill lanes。
-- `agent-system/context-envelope.schema.json`：跨 Agent、跨 Skill、跨阶段上下文流转信封。
-- `agent-system/skill-installations.registry.json`：本地已安装 source pack 和许可证阻断状态。
-- `agent-system/agents.registry.json`：运行时 Agent、路由、模型、profile 和 workflow 真相来源。
+- 数字员工：`agent-system/digital-employees.registry.json`
+- Agent 运行注册：`agent-system/agents.registry.json`
+- 工作流包与 Skill 通道：`agent-system/workflow-packs.registry.json`
+- LOOP 运行时：`agent-system/ai-native-loop.manifest.json`
+- 上下文信封：`agent-system/context-envelope.schema.json`
+- 上下文交接策略：`agent-system/context-handoff.policy.json`
+- Skill 安装与许可证：`agent-system/skill-installations.registry.json`
+- 权限、审批和专业判断：`agent-system/identity.access.registry.json`、`judgment.policy.json`
+- GUI 后端快照：`office-system gui-state`
 
-## 法务形态
+## LOOP 与运行状态
 
-法务不再是“法务部门 Agent + 合同 Agent + 合规 Agent”的多层结构。
+正式 LOOP 是 `Context -> Decide -> Act -> Evaluate` 四个工作节点，由后端确定性控制器决定 Continue、Replan、Retry、Wait Human、Complete、Fail、Cancel 或 Budget Exhausted。
 
-正式形态是一个数字员工：
+GUI 必须直接展示：
 
-- Agent id：`legal`
-- 用户可见名称：数字律师
-- 业务身份：企业内设法务负责人
-- 内部员工：合同审查、公司法、隐私数据、产品合规、用工/IP、争议分流、AI 治理等 Skill lanes
+- 当前节点和节点状态
+- 当前循环次数与进度
+- 最大循环、重试、时间、工具和模型预算
+- 实际工具、模型、Token 和费用使用量
+- 验收结果、失败分类、阻塞原因和等待对象
+- 检查点、恢复位置和最后控制决定
 
-数字律师产出均为企业内部审查草稿。外部函件、签署、产品上线、用工动作、诉讼仲裁等高风险行为必须经过人工专业复核。
+简单任务可以由后端明确跳过 Decide。前端不得自己跳节点、自动完成任务或把等待人工处理显示成运行中。
 
-## 上下文流转要求
+## 上下文交接
 
-UI 工作流不能把大段上下文在节点之间复制粘贴。它必须围绕 context envelope 设计：
+交接使用稳定的 `context_id`、`task_id`、`handoff_id` 和 `context_version`。交接包保存短摘要、事实状态、来源、决定、风险、省略声明、权限和上下文预算；大型文档与产物通过引用传递。
 
-- `goal`：本次任务目标
-- `user_intent`：用户真实意图
-- `constraints`：限制条件
-- `acceptance_criteria`：验收标准
-- `source_refs`：项目、公司、授权来源或外部链接
-- `artifact_refs`：文件、草稿、运行产物
-- `decisions`：已做决定
-- `open_questions`：未决问题
-- `risk_flags`：风险标记
-- `permissions`：租户、项目、用户、角色和允许动作
-- `state_hash`：当前状态摘要
+GUI 必须区分：
 
-UI 可以把这些字段呈现为任务详情、节点上下文、交接卡片、风险面板和证据面板。
+- `pending_acceptance`
+- `needs_context`
+- `accepted`
+- `rejected`
 
-## 本地 Skill 安装状态
+只有接收方身份与 `context_hash` 校验成功后才能调用 `handoff-ack`。未确认的交接不能显示为已完成。
 
-已落地：
+## 人工门禁
 
-- `claude-for-legal-zh`：Apache-2.0，已安装到 `skills/_imported/claude-for-legal-ZH`，通过 `digital-lawyer-workflows` 受控使用。
+高风险专业动作、外部发送、签署、产品上线、用工动作、诉讼仲裁等必须显示人工审批或专业判断状态。私有思维链、密码、密钥和访问令牌不进入 GUI，也不能写入上下文信封。
 
-被阻断：
+## 法务 Skill 状态
 
-- `Legal-Skills-Chinese`：CC BY-NC-ND 4.0，未获得商用许可前不得激活、改编、内置到商用工作流或再分发。
+- `claude-for-legal-zh`：Apache-2.0，已本地安装并由 `digital-lawyer-workflows` 受控调用。
+- `Legal-Skills-Chinese`：CC BY-NC-ND 4.0，当前保持许可证阻断；没有商业授权前不得激活、改编或内置到商用工作流。
 
-## UI 可以开始设计的条件
+## GUI 开工门禁
 
-开始视觉 UI 设计前，以下命令必须通过：
+开始视觉设计前必须通过：
 
 ```bash
 agent-system/bin/install-skill-sources
 agent-system/bin/harness-check
 agent-system/bin/harness-runner --task ui-design-readiness-production --no-write
 agent-system/bin/harness-runner --task all --no-write
+agent-system/tests/smoke.sh
 ```
 
-若其中任意一项失败，优先修后端契约，不进入视觉设计。
+还必须完成：
+
+- Python、Shell 和 JSON 静态检查
+- 新安装、保留现有数据升级、明确覆盖升级三种安装路径验证
+- WSL Hermes 融合验证
+- 健康检查、GUI state 和 Web/PWA 只读接口验证
+- 后端、权限、持久化恢复、上下文交接、发布包的最终审查
+- README 按最新产品状态重写并验证一条命令安装/升级入口
+
+任一门禁失败都先修后端，不进入 GUI 视觉设计，也不推送 GitHub。
