@@ -1,0 +1,68 @@
+import { useCallback, useEffect, useState } from 'react'
+import { api } from './api'
+import { AdminApp } from './features/admin/AdminApp'
+import { UserApp } from './features/user/UserApp'
+import type { AgentStatus, CreateAgentInput, GuiState } from './types'
+
+export default function App() {
+  const [state, setState] = useState<GuiState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState('')
+  const isAdmin = window.location.pathname.startsWith('/admin')
+
+  const refresh = useCallback(async () => {
+    try {
+      setError('')
+      setState(await api.getState())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '暂时无法连接数字办公室。')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 20_000)
+    return () => window.clearInterval(timer)
+  }, [refresh])
+
+  useEffect(() => {
+    if ('serviceWorker' in navigator && import.meta.env.PROD) {
+      void navigator.serviceWorker.register('/service-worker.js')
+    }
+  }, [])
+
+  const mutate = async (label: string, action: () => Promise<unknown>) => {
+    setBusy(label)
+    setError('')
+    try {
+      await action()
+      await refresh()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '操作没有完成。')
+      throw cause
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const actions = {
+    createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) => mutate('正在交给秘书…', () => api.createWorkflow(input)),
+    createAgent: (input: CreateAgentInput) => mutate('正在创建数字员工…', () => api.createAgent(input)),
+    setAgentStatus: (agentId: string, status: AgentStatus, reason?: string) => mutate('正在更新数字员工…', () => api.setAgentStatus(agentId, status, reason)),
+    deleteAgent: (agentId: string) => mutate('正在删除数字员工…', () => api.deleteAgent(agentId)),
+    decideApproval: (approvalId: string, decision: 'approve' | 'reject') => mutate('正在记录决定…', () => api.decideApproval(approvalId, decision)),
+  }
+
+  if (loading && !state) return <div className="boot-screen"><span className="boot-mark">DO</span><strong>正在打开数字办公室</strong></div>
+
+  return <>
+    {error && <div className="global-message error"><span>{error}</span><button onClick={() => void refresh()}>重新连接</button></div>}
+    {busy && <div className="global-message busy">{busy}</div>}
+    {isAdmin
+      ? <AdminApp actions={actions} state={state} />
+      : <UserApp actions={actions} state={state} />}
+  </>
+}

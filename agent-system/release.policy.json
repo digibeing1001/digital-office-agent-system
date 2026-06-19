@@ -59,7 +59,8 @@
       "release manifest",
       "update installer and changelog",
       "local model installer",
-      "skill source manifest"
+      "skill source manifest",
+      "user and administration Web applications"
     ],
     "do_not_ship": [
       "raw enterprise knowledge",

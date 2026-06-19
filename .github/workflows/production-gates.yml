@@ -24,6 +24,18 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+      - name: Build user and admin applications
+        working-directory: web-ui
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
       - name: Validate scripts
         run: |
           bash -n install.sh update agent-system/tests/smoke.sh agent-system/tests/web-pwa-smoke.sh
@@ -44,5 +56,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web-ui/package-lock.json
+      - name: Build user and admin applications
+        working-directory: web-ui
+        run: |
+          npm ci
+          npm run build
       - name: Run clean-install smoke test
         run: agent-system/tests/smoke.sh

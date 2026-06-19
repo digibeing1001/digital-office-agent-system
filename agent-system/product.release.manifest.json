@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "digital-office-product-release-manifest",
   "product_name": "Digital Office",
   "release_channel": "internal",
@@ -41,10 +41,15 @@
       "install_path": "skills",
       "customer_visible": false
     },
-    "gui_backend_contract": {
+    "gui_applications": {
       "included": true,
       "install_path": "agent-system/web/app",
-      "note": "Read-only authenticated Web/PWA shell and GUI state contract are included; final visual GUI design is the next product phase.",
+      "source_path": "web-ui",
+      "surfaces": [
+        "user_application",
+        "admin_center"
+      ],
+      "note": "The production Web/PWA build includes separate user and administration surfaces backed by authenticated, governed API routes.",
       "customer_visible": true
     },
     "update_installer": {

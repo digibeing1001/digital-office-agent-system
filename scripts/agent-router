@@ -54,6 +54,19 @@ def load_registry(path: Path) -> dict[str, Any]:
     if not isinstance(registry.get("agents"), dict):
         print("agent-router: registry must contain an agents object", file=sys.stderr)
         raise SystemExit(2)
+    custom_path = path.parent / "settings" / "custom-agents.registry.json"
+    if custom_path.exists():
+        try:
+            with custom_path.open("r", encoding="utf-8") as handle:
+                custom = json.load(handle)
+            if custom.get("kind") != "digital-office-custom-agents" or not isinstance(custom.get("agents"), dict):
+                raise ValueError("invalid custom Agent registry shape")
+            for agent_id, record in custom["agents"].items():
+                if record.get("status") == "active" and isinstance(record.get("config"), dict):
+                    registry["agents"][agent_id] = record["config"]
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(f"agent-router: invalid custom Agent registry: {custom_path}: {exc}", file=sys.stderr)
+            raise SystemExit(2)
     return registry
 
 

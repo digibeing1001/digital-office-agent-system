@@ -1,7 +1,7 @@
 {
   "version": "1.0.0",
   "task_id": "web-pwa-production",
-  "description": "Verify the Web UI/PWA shell, static assets, read-only API routes, service worker, manifest, and deployment contract.",
+  "description": "Verify the user and administration Web/PWA applications, static assets, governed API routes, service worker, manifest, and deployment contract.",
   "roles": [
     "operations",
     "product",
@@ -15,10 +15,11 @@
       "cwd": "hermes_home",
       "path": "agent-system/docs/gui-contract.md",
       "patterns": [
-        "Web UI and PWA shell",
+        "Web UI and PWA applications",
         "web-config",
         "web-serve",
         "/api/gui-state",
+        "POST /api/agents",
         "manifest.webmanifest",
         "service-worker.js"
       ]
@@ -29,10 +30,11 @@
       "cwd": "hermes_home",
       "path": "README.md",
       "patterns": [
-        "Web UI And PWA",
+        "图形界面",
         "web-config",
         "web-serve",
-        "Install as PWA"
+        "/admin",
+        "PWA"
       ]
     },
     {
@@ -41,8 +43,8 @@
       "cwd": "hermes_home",
       "path": "agent-system/web/app/index.html",
       "patterns": [
-        "Office control room",
-        "/api/gui-state",
+        "Digital Office",
+        "<div id=\"root\"></div>",
         "manifest.webmanifest"
       ]
     },

@@ -7,7 +7,7 @@ This document defines the GUI-facing contract for the Hermes-based Digital Offic
 - Users see Digital Office, not Hermes internals.
 - Hermes runtime, agent profiles, skills, knowledge, rules, memory relay, and local model installers are managed by the product backend.
 - Enterprise production updates must come from a provider-validated Digital Office release channel, not direct upstream pulls.
-- Enterprise deployments force the GUI as the customer entrypoint. Raw Hermes CLI access is hidden by default and reserved for backend automation or admin-enabled support mode.
+- The GUI is the intended customer entrypoint after a deployment is promoted to the pilot or stable channel. Raw Hermes CLI access is hidden by default and reserved for backend automation or admin-enabled support mode.
 - Every backend capability added to this system must have a GUI contract before production release.
 - The `secretary` agent id maps to the existing Hermes default secretary loaded from `~/.hermes/SOUL.md`; it is not a second secretary profile.
 
@@ -41,22 +41,35 @@ The GUI should use `gui-state` as the home-screen snapshot instead of stitching 
 - Generated files under `agent-system/settings/` are runtime state and must not be committed.
 - Persona preferences never override safety, authorization, approval, knowledge authority, production harness, release, or data-sharing policies.
 
-Web UI and PWA shell:
+Web UI and PWA applications:
 
-The first GUI release should run as a browser Web UI with PWA install support. The Web shell is intentionally read-oriented: it serves the installable app frame, returns health, and exposes the same GUI home snapshot that the future frontend will consume. Mutating workflow, approval, knowledge, settings, and Agent actions must still call explicit governed commands or future dedicated API routes with the same authorization, audit, and confirmation rules.
+The release contains two entrypoints backed by one control plane. `/` is the ordinary user application. `/admin` is the administration center. They share authentication, GUI state, authorization, audit, design components, and API contracts, but keep separate navigation and operational responsibilities. Mutating workflow, approval, and Agent actions call narrow governed API routes with the same authorization, audit, and confirmation rules as the CLI control plane.
 
 ```bash
 ~/.hermes/agent-system/bin/office-system web-config --public-url https://office.example.com
 ~/.hermes/agent-system/bin/office-system web-serve --host 127.0.0.1 --port 8787 --public-url https://office.example.com --quiet
 ```
 
-Read-only browser routes:
+Browser routes:
 
 - `GET /api/health`
 - `GET /api/gui-state`
 - `GET /api/web-app`
 - `GET /manifest.webmanifest`
 - `GET /service-worker.js`
+- `POST /api/workflows`
+- `POST /api/agents`
+- `POST /api/agents/{agent_id}/status`
+- `DELETE /api/agents/{agent_id}?confirmed=true`
+- `POST /api/approvals/{approval_id}/decision`
+
+Agent lifecycle rules:
+
+- Only authorized administration roles can create or change custom Agents.
+- Custom Agents must be created from an approved built-in template.
+- Built-in Agents are protected from lifecycle edits and deletion.
+- Permanent deletion requires an archived Agent and explicit confirmation.
+- Tasks, artifacts, and audit history remain addressable after the Agent configuration is deleted.
 
 Deployment guidance:
 

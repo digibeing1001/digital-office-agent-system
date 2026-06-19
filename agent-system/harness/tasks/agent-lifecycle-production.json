@@ -1,0 +1,23 @@
+{
+  "version": "1.0.0",
+  "task_id": "agent-lifecycle-production",
+  "description": "Verify custom digital employees can be created, routed, disabled, restored, archived, and permanently deleted with history-preserving audit records.",
+  "roles": [
+    "admin",
+    "operations"
+  ],
+  "workflow": "agent_lifecycle",
+  "gates": [
+    {
+      "id": "custom_agent_lifecycle_is_governed_and_routable",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 120,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system scripts profiles SOUL.md \"$tmp/\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; office=\"$tmp/agent-system/bin/office-system\"; router=\"$tmp/scripts/agent-router\"; \"$office\" agent-create --agent contract-writer --display-name 'Contract Writer' --role-description 'Drafts plain-language commercial contracts' --template writer --skill verification-loop --keyword contract --requested-by owner-1 --role owner --confirmed > \"$tmp/created.json\"; HERMES_HOME=\"$tmp\" \"$router\" --agent contract-writer --route-json 'draft this contract' > \"$tmp/routed.json\"; \"$office\" agent-status --agent contract-writer --status inactive --requested-by owner-1 --role owner --confirmed > \"$tmp/inactive.json\"; set +e; HERMES_HOME=\"$tmp\" \"$router\" --agent contract-writer --route-json 'draft this contract' >/dev/null 2>&1; code=$?; set -e; test \"$code\" -ne 0; \"$office\" agent-status --agent contract-writer --status active --requested-by owner-1 --role owner --confirmed > \"$tmp/restored.json\"; \"$office\" agent-status --agent contract-writer --status archived --requested-by owner-1 --role owner --confirmed > \"$tmp/archived.json\"; \"$office\" agent-delete --agent contract-writer --requested-by owner-1 --role owner --confirmed > \"$tmp/deleted.json\"; python3 -c 'import json,sys,pathlib; created=json.load(open(sys.argv[1])); routed=json.load(open(sys.argv[2])); deleted=json.load(open(sys.argv[3])); reg=json.load(open(sys.argv[4])); audit=pathlib.Path(sys.argv[5]).read_text(); assert created[\"status\"]==\"active\" and created[\"origin\"]==\"custom\"; assert routed[\"agent\"]==\"contract-writer\"; assert deleted[\"status\"]==\"deleted\" and deleted[\"history_preserved\"] is True; assert \"contract-writer\" not in reg[\"agents\"] and reg[\"tombstones\"][-1][\"agent_id\"]==\"contract-writer\"; assert \"agent_created\" in audit and \"agent_deleted\" in audit' \"$tmp/created.json\" \"$tmp/routed.json\" \"$tmp/deleted.json\" \"$tmp/agent-system/settings/custom-agents.registry.json\" \"$tmp/agent-system/logs/audit-events.jsonl\""
+      ]
+    }
+  ]
+}

@@ -4,7 +4,7 @@ Digital Office 是一套可以装进 Hermes、OpenClaw 或其他 Agent 主机的
 
 你只需要把事情告诉秘书 Agent。秘书会判断该找谁、要不要先问清楚、哪些步骤需要审批，再把工作交给合适的数字员工。写作、研究、产品、设计、开发、规划和企业法务都有各自的数字员工；它们下面不再堆更多 Agent，而是调用一组经过约束的 Skill 完成工作。
 
-当前版本已经完成 GUI 设计前的后端、运行时和生产 harness。最终视觉 GUI 仍是下一阶段，仓库里现有的是 Web/PWA 外壳和稳定的 GUI 数据契约。
+当前版本已经完成第一版可运行 GUI，并把产品分成两个清楚的入口：普通用户使用“数字办公室”完成任务、查看员工、审批和交付物；管理员使用“管理中心”维护 Agent、Skill、运行状态、策略和审计。两套界面共用同一套受控后端，不会各自保存一套互相打架的业务状态。
 
 ## 一分钟理解
 
@@ -58,7 +58,9 @@ Digital Office 把重点放在四件事上：
 - 带来源、事实置信度、省略说明、权限和接收确认的上下文交接
 - 项目知识、公司知识、文件夹权限、审批、通知和审计记录
 - 企业数字律师常用工作流和本地法律 Skill 包
-- Web/PWA 外壳、健康检查和 GUI 状态接口
+- 可安装为 PWA 的用户端与管理后台
+- 用户可创建任务，管理员可创建、停用、归档和删除自定义 Agent
+- 健康检查、权限控制、审计记录和专用 Web 操作接口
 - 新安装、保留原规则安装、明确覆盖安装和一条命令升级
 
 ## 最简单的安装方式
@@ -122,6 +124,12 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 ~/.hermes/agent-system/bin/office-system health
 ```
 
+如果需要调整工作模式、通知、审批严格度等全局偏好，可以通过管理中心操作，也可以使用受控命令：
+
+```bash
+~/.hermes/agent-system/bin/office-system settings-update --work-mode quality --confirmed
+```
+
 ## 为什么任务交接更稳
 
 系统不会默认把完整聊天历史转发给下一个 Agent。每次交接都会记录：
@@ -159,9 +167,14 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 
 本地已安装 Apache-2.0 的 `claude-for-legal-zh`。`Legal-Skills-Chinese` 因 CC BY-NC-ND 4.0 不适合未经授权的商用内置，当前只登记许可证状态，不会激活。
 
-## Web UI And PWA
+## 图形界面
 
-仓库包含可安装的 Web/PWA 外壳和后端契约，但最终视觉 GUI 尚未开始设计。
+图形界面分成两个入口：
+
+- `/`：给普通用户使用的数字办公室，包括我的办公室、任务、数字员工、资料库、审批、交付物、工作记录和设置。
+- `/admin`：给管理员使用的管理中心，包括系统概览、Agent 管理、Skills、运行状态、策略预算、审计和系统维护。
+
+用户可以把任务直接告诉秘书；管理员可以在界面里创建、停用、恢复、归档和删除自定义 Agent。内置 Agent 受保护，永久删除必须先归档并再次确认，历史任务和审计记录仍会保留。
 
 本机预览：
 
@@ -170,23 +183,24 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 ~/.hermes/agent-system/bin/office-system web-serve
 ```
 
-打开终端显示的地址后可以 Install as PWA。监听非本机地址时必须通过 `DIGITAL_OFFICE_WEB_TOKEN` 配置 Bearer Token；系统不会把项目和任务状态裸露到局域网。
+默认打开 `http://127.0.0.1:8787/`，管理后台是 `http://127.0.0.1:8787/admin`。浏览器可以把它安装为 PWA。监听非本机地址时必须通过 `DIGITAL_OFFICE_WEB_TOKEN` 配置 Bearer Token；系统不会把项目和任务状态裸露到局域网。
 
-未来 GUI 将直接读取 `gui-state`，并通过 `settings-update` 更新用户设置。前端不能自己伪造工作流状态。
+前端直接读取 `gui-state`，所有会改变任务、审批或 Agent 的操作都走专用后端接口。前端不能自己伪造工作流状态，也不能调用任意系统命令。
 
 ## 当前完成度
 
-当前是 `0.2.0 internal` 后端就绪版本：
+当前是 `0.3.0 internal` 第一版可用界面：
 
 - Agent 与 Skill 责任模型已统一
 - 法务已对齐为企业数字律师
 - LOOP、上下文交接、权限、审批、恢复和审计契约已落地
 - 完整生产 harness 和 smoke 已通过
 - Hermes/OpenClaw 安装升级路径已具备
-- Web/PWA 后端接口已具备认证边界
-- 最终 GUI 视觉和交互设计尚未开始
+- 用户端和管理后台已经可以正常构建和运行
+- Web/PWA 接口具备认证边界，关键写操作有权限、确认和审计
+- Agent 生命周期已经纳入生产 harness 和 Web 冒烟测试
 
-也就是说，现在适合正式进入 GUI 设计阶段，但还不应把现有 Web 外壳描述成已经完成的商业 GUI 产品。
+也就是说，现在可以用于本机办公、产品演示和内部试用；进入企业稳定发布前，仍需经过试点部署、真实业务数据验证和稳定版发布流程。
 
 ## 给开发者和运维人员
 
@@ -196,6 +210,7 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 agent-system/bin/harness-check
 agent-system/bin/harness-runner --task all --no-write
 agent-system/tests/smoke.sh
+cd web-ui && npm ci && npm run typecheck && npm run build
 ```
 
 重要文档：

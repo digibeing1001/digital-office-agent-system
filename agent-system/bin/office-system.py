@@ -105,6 +105,8 @@ PDF_EXTS = {".pdf"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff"}
 DEFAULT_RESTORE_MAX_MEMBERS = 100_000
 DEFAULT_RESTORE_MAX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024 * 1024
+CUSTOM_AGENT_STATUSES = {"active", "inactive", "archived"}
+AGENT_ADMIN_ROLES = {"owner", "admin", "enterprise_admin", "system_admin"}
 LOOP_STAGES = ["context", "decide", "act", "evaluate"]
 LOOP_STAGE_ALIASES = {
     "perceive": "context",
@@ -362,7 +364,7 @@ def safe_claim(value: str | None, label: str, required: bool = True) -> str:
 
 def registered_agent(root: Path, value: str) -> str:
     agent = safe_component(value, "agent id")
-    registry = read_json(root / "agents.registry.json")
+    registry = effective_agents_registry(root)
     if agent not in registry.get("agents", {}):
         print(f"office-system: unknown agent id: {agent}", file=sys.stderr)
         raise SystemExit(2)
@@ -372,6 +374,53 @@ def registered_agent(root: Path, value: str) -> str:
 def read_json(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def custom_agents_path(root: Path) -> Path:
+    return root / "settings" / "custom-agents.registry.json"
+
+
+def empty_custom_agents_registry() -> dict[str, Any]:
+    return {
+        "version": "1.0.0",
+        "kind": "digital-office-custom-agents",
+        "updated_at": "",
+        "agents": {},
+        "tombstones": [],
+    }
+
+
+def load_custom_agents_registry(root: Path) -> dict[str, Any]:
+    path = custom_agents_path(root)
+    if not path.exists():
+        return empty_custom_agents_registry()
+    registry = read_json(path)
+    if registry.get("kind") != "digital-office-custom-agents" or not isinstance(registry.get("agents"), dict):
+        print("office-system: invalid custom Agent registry", file=sys.stderr)
+        raise SystemExit(2)
+    registry.setdefault("tombstones", [])
+    return registry
+
+
+def effective_agents_registry(root: Path, *, include_inactive: bool = False) -> dict[str, Any]:
+    registry = copy.deepcopy(read_json(root / "agents.registry.json"))
+    custom = load_custom_agents_registry(root)
+    for agent_id, record in custom.get("agents", {}).items():
+        status = str(record.get("status", "inactive"))
+        if status != "active" and not include_inactive:
+            continue
+        config = record.get("config", {})
+        if isinstance(config, dict):
+            registry.setdefault("agents", {})[agent_id] = copy.deepcopy(config)
+    return registry
+
+
+def require_agent_admin(role: str) -> str:
+    role = safe_component(role, "role")
+    if role not in AGENT_ADMIN_ROLES:
+        print("office-system: Agent lifecycle changes require an administrator role", file=sys.stderr)
+        raise SystemExit(3)
+    return role
 
 
 def write_json(path: Path, data: dict[str, Any]) -> None:
@@ -1364,7 +1413,7 @@ def rule_elicit(args: argparse.Namespace) -> int:
 
 def infer_rule_scope(root: Path, *, title: str, body: str, project: str = "", agent: str = "") -> dict[str, Any]:
     text = f"{title}\n{body}".lower()
-    registry = read_json(root / "agents.registry.json")
+    registry = effective_agents_registry(root)
     agents = registry.get("agents", {})
     aliases = registry.get("aliases", {})
     global_terms = [
@@ -3358,7 +3407,7 @@ def agent_invoke(args: argparse.Namespace) -> int:
         return 2
     project = safe_component(args.project, "project id")
     ensure_project(root, project)
-    registry = read_json(root / "agents.registry.json")
+    registry = effective_agents_registry(root)
     agent = safe_component(args.agent, "agent id")
     if agent not in registry.get("agents", {}):
         print(json.dumps({"status": "denied", "error": "unknown agent", "agent_id": agent}, ensure_ascii=False, indent=2, sort_keys=True))
@@ -4457,7 +4506,7 @@ def agent_plugin_report(args: argparse.Namespace) -> int:
     project_id = safe_component(args.project, "project id") if args.project else ""
     if project_id:
         ensure_project(root, project_id)
-    registry = read_json(root / "agents.registry.json")
+    registry = effective_agents_registry(root, include_inactive=True)
     current_agents = sorted(registry.get("agents", {}).keys())
     workflows = manifest.get("workflows", {})
     route_tests = manifest.get("route_tests", [])
@@ -7158,7 +7207,7 @@ def detailed_health(root: Path) -> dict[str, Any]:
     agents_reg = root / 'agents.registry.json'
     if agents_reg.exists():
         try:
-            agents_data = json.loads(agents_reg.read_text(encoding='utf-8'))
+            agents_data = effective_agents_registry(root)
             registered_count = len(agents_data.get('agents', {}))
             components['agents'] = {'status': 'ok', 'registered_count': registered_count}
         except (json.JSONDecodeError, OSError):
@@ -7247,6 +7296,227 @@ def project_summaries(root: Path, limit: int) -> list[dict[str, Any]]:
     return projects[:limit]
 
 
+def custom_agent_dependencies(root: Path, agent_id: str) -> dict[str, list[str]]:
+    active_runs = [
+        str(run.get("run_id", ""))
+        for run in read_run_records(root)
+        if run.get("agent_id") == agent_id and run.get("status") not in {"completed", "cancelled", "stopped", "failed"}
+    ]
+    projects = []
+    for path in sorted((root / "projects").glob("*/project.json")):
+        if path.parent.name == "_template":
+            continue
+        try:
+            project = read_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if agent_id in project.get("agent_roster", []):
+            projects.append(str(project.get("project_id", path.parent.name)))
+    return {"active_runs": active_runs, "projects": projects}
+
+
+def custom_agent_view(agent_id: str, record: dict[str, Any], root: Path | None = None) -> dict[str, Any]:
+    config = record.get("config", {})
+    lifecycle = record.get("lifecycle", {})
+    view = {
+        "agent_id": agent_id,
+        "display_name": config.get("display_name", agent_id),
+        "user_visible_role": record.get("user_visible_role", ""),
+        "status": record.get("status", "inactive"),
+        "origin": "custom",
+        "editable": True,
+        "template_agent_id": record.get("template_agent_id", ""),
+        "profile": config.get("profile", ""),
+        "provider": config.get("provider", ""),
+        "model": config.get("model", ""),
+        "skills": config.get("skills", []),
+        "workflow_packs": record.get("workflow_packs", []),
+        "created_at": lifecycle.get("created_at", ""),
+        "updated_at": lifecycle.get("updated_at", ""),
+        "created_by": lifecycle.get("created_by", ""),
+    }
+    if root is not None:
+        view["dependencies"] = custom_agent_dependencies(root, agent_id)
+    return view
+
+
+def agent_lifecycle_create(args: argparse.Namespace) -> int:
+    root = system_root()
+    actor_role = require_agent_admin(args.role)
+    if not args.confirmed:
+        print("office-system: agent-create requires --confirmed", file=sys.stderr)
+        return 2
+    agent_id = safe_component(args.agent, "agent id")
+    display_name = safe_claim(args.display_name, "Agent display name")
+    visible_role = safe_claim(args.role_description, "Agent role description")
+    template_id = safe_component(args.template, "template Agent id")
+    base_registry = read_json(root / "agents.registry.json")
+    template = base_registry.get("agents", {}).get(template_id)
+    if not isinstance(template, dict):
+        print(f"office-system: unknown built-in Agent template: {template_id}", file=sys.stderr)
+        return 2
+    if agent_id in base_registry.get("agents", {}):
+        print("office-system: built-in Agent ids cannot be replaced", file=sys.stderr)
+        return 2
+    requested_skills = [safe_component(item, "skill id") for item in (args.skill or [])]
+    requested_keywords = [safe_claim(item, "routing keyword") for item in (args.keyword or [])]
+    path = custom_agents_path(root)
+    with JsonFileLock(path.with_name(f".{path.name}.lock")):
+        custom = load_custom_agents_registry(root)
+        if agent_id in custom.get("agents", {}):
+            print(f"office-system: custom Agent already exists: {agent_id}", file=sys.stderr)
+            return 2
+        config = copy.deepcopy(template)
+        config["display_name"] = display_name
+        config["source_template"] = template_id
+        config["custom_agent"] = True
+        config["skills"] = list(dict.fromkeys([*config.get("skills", []), *requested_skills]))
+        if requested_keywords:
+            config.setdefault("routing", {})["keywords"] = [
+                {"term": keyword, "weight": 6} for keyword in requested_keywords
+            ]
+        record = {
+            "version": "1.0.0",
+            "status": "active",
+            "template_agent_id": template_id,
+            "user_visible_role": visible_role,
+            "workflow_packs": [safe_component(item, "workflow pack") for item in (args.workflow_pack or [])],
+            "config": config,
+            "lifecycle": {
+                "created_at": now_iso(),
+                "updated_at": now_iso(),
+                "created_by": safe_claim(args.requested_by, "requesting user"),
+                "updated_by": safe_claim(args.requested_by, "requesting user"),
+            },
+        }
+        custom.setdefault("agents", {})[agent_id] = record
+        custom["updated_at"] = now_iso()
+        write_json_unlocked(path, custom)
+    audit = append_audit_event(
+        root,
+        "agent_created",
+        actor_id=args.requested_by,
+        actor_role=actor_role,
+        agent_id=agent_id,
+        resource_type="agent",
+        resource_id=agent_id,
+        outcome="created",
+        extra={"template_agent_id": template_id, "skills": requested_skills},
+    )
+    payload = custom_agent_view(agent_id, record, root)
+    payload["audit_event_id"] = audit["event_id"]
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def agent_lifecycle_status(args: argparse.Namespace) -> int:
+    root = system_root()
+    actor_role = require_agent_admin(args.role)
+    if not args.confirmed:
+        print("office-system: agent-status requires --confirmed", file=sys.stderr)
+        return 2
+    agent_id = safe_component(args.agent, "agent id")
+    status = safe_component(args.status, "Agent status")
+    if status not in CUSTOM_AGENT_STATUSES:
+        print(f"office-system: unsupported Agent status: {status}", file=sys.stderr)
+        return 2
+    path = custom_agents_path(root)
+    with JsonFileLock(path.with_name(f".{path.name}.lock")):
+        custom = load_custom_agents_registry(root)
+        record = custom.get("agents", {}).get(agent_id)
+        if not isinstance(record, dict):
+            print("office-system: only custom Agents can change lifecycle status", file=sys.stderr)
+            return 2
+        previous = str(record.get("status", "inactive"))
+        if previous == status:
+            print(json.dumps(custom_agent_view(agent_id, record, root), ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
+        if status == "archived" and custom_agent_dependencies(root, agent_id)["active_runs"]:
+            print("office-system: stop or complete active Agent runs before archiving", file=sys.stderr)
+            return 4
+        record["status"] = status
+        record.setdefault("lifecycle", {})["updated_at"] = now_iso()
+        record["lifecycle"]["updated_by"] = safe_claim(args.requested_by, "requesting user")
+        record["lifecycle"]["status_reason"] = safe_claim(args.reason, "status reason", required=False)
+        custom["updated_at"] = now_iso()
+        write_json_unlocked(path, custom)
+    audit = append_audit_event(
+        root,
+        "agent_status_changed",
+        actor_id=args.requested_by,
+        actor_role=actor_role,
+        agent_id=agent_id,
+        resource_type="agent",
+        resource_id=agent_id,
+        outcome=status,
+        reason=args.reason or "",
+        extra={"previous_status": previous, "status": status},
+    )
+    payload = custom_agent_view(agent_id, record, root)
+    payload["audit_event_id"] = audit["event_id"]
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def agent_lifecycle_delete(args: argparse.Namespace) -> int:
+    root = system_root()
+    actor_role = require_agent_admin(args.role)
+    if not args.confirmed:
+        print("office-system: agent-delete requires --confirmed", file=sys.stderr)
+        return 2
+    agent_id = safe_component(args.agent, "agent id")
+    path = custom_agents_path(root)
+    with JsonFileLock(path.with_name(f".{path.name}.lock")):
+        custom = load_custom_agents_registry(root)
+        record = custom.get("agents", {}).get(agent_id)
+        if not isinstance(record, dict):
+            print("office-system: only custom Agents can be permanently deleted", file=sys.stderr)
+            return 2
+        if record.get("status") != "archived":
+            print("office-system: archive the Agent before permanent deletion", file=sys.stderr)
+            return 4
+        dependencies = custom_agent_dependencies(root, agent_id)
+        if dependencies["active_runs"]:
+            print("office-system: Agent still has active workflow runs", file=sys.stderr)
+            return 4
+        deleted_at = now_iso()
+        custom["agents"].pop(agent_id)
+        custom.setdefault("tombstones", []).append(
+            {
+                "agent_id": agent_id,
+                "display_name": record.get("config", {}).get("display_name", agent_id),
+                "deleted_at": deleted_at,
+                "deleted_by": safe_claim(args.requested_by, "requesting user"),
+                "history_preserved": True,
+            }
+        )
+        custom["updated_at"] = deleted_at
+        write_json_unlocked(path, custom)
+    audit = append_audit_event(
+        root,
+        "agent_deleted",
+        actor_id=args.requested_by,
+        actor_role=actor_role,
+        agent_id=agent_id,
+        resource_type="agent",
+        resource_id=agent_id,
+        outcome="deleted",
+        reason=args.reason or "",
+        extra={"history_preserved": True, "project_references": dependencies["projects"]},
+    )
+    print(json.dumps({"status": "deleted", "agent_id": agent_id, "history_preserved": True, "audit_event_id": audit["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def agent_lifecycle_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    items = agent_summaries(root)
+    if not args.include_archived:
+        items = [item for item in items if item.get("status") != "archived"]
+    print(json.dumps({"kind": "digital-office-agent-lifecycle-list", "count": len(items), "items": items}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def agent_summaries(root: Path) -> list[dict[str, Any]]:
     registry = read_json(root / "agents.registry.json")
     agents = []
@@ -7259,8 +7529,16 @@ def agent_summaries(root: Path) -> list[dict[str, Any]]:
                 "portable_role": agent.get("portable_role", ""),
                 "orchestration_roles": agent.get("orchestration_roles", []),
                 "skills": agent.get("skills", []),
+                "provider": agent.get("provider", ""),
+                "model": agent.get("model", ""),
+                "status": "active",
+                "origin": "built_in",
+                "editable": False,
             }
         )
+    custom = load_custom_agents_registry(root)
+    for agent_id, record in sorted(custom.get("agents", {}).items()):
+        agents.append(custom_agent_view(agent_id, record, root))
     return agents
 
 
@@ -7281,6 +7559,28 @@ def digital_employee_summaries(root: Path) -> list[dict[str, Any]]:
                 "represents_department_owner": bool(employee.get("represents_department_owner", False)),
                 "workflow_packs": employee.get("workflow_packs", []),
                 "skill_staff": employee.get("skill_staff", []),
+                "status": "active",
+                "origin": "built_in",
+                "editable": False,
+            }
+        )
+    custom = load_custom_agents_registry(root)
+    for employee_id, record in sorted(custom.get("agents", {}).items()):
+        config = record.get("config", {})
+        employees.append(
+            {
+                "employee_id": employee_id,
+                "agent_id": employee_id,
+                "display_name": config.get("display_name", employee_id),
+                "display_name_zh": config.get("display_name", employee_id),
+                "user_visible_role": record.get("user_visible_role", ""),
+                "represents_department_owner": True,
+                "workflow_packs": record.get("workflow_packs", []),
+                "skill_staff": config.get("skills", []),
+                "status": record.get("status", "inactive"),
+                "origin": "custom",
+                "editable": True,
+                "template_agent_id": record.get("template_agent_id", ""),
             }
         )
     return employees
@@ -7389,7 +7689,8 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "project_knowledge", "status": "ready", "commands": ["knowledge-add", "knowledge-add-text", "rag-index", "rag-search"]},
         {"id": "knowledge_spaces", "status": "ready", "commands": ["knowledge-tree", "knowledge-folder-create", "knowledge-item-add", "knowledge-share", "knowledge-scope-resolve", "knowledge-access-check"]},
         {"id": "role_workbenches", "status": "ready", "commands": ["workbench-state"]},
-        {"id": "agent_registry", "status": "ready", "commands": ["agent-plugin-report", "agent-plugin-decision", "agent-plugin-activate"]},
+        {"id": "agent_registry", "status": "ready", "commands": ["agent-list", "agent-create", "agent-status", "agent-delete", "agent-plugin-report", "agent-plugin-decision", "agent-plugin-activate"]},
+        {"id": "agent_lifecycle", "status": "ready", "commands": ["agent-list", "agent-create", "agent-status", "agent-delete"]},
         {"id": "digital_employee_registry", "status": "ready", "commands": ["gui-state"]},
         {"id": "workflow_packs", "status": "ready", "commands": ["gui-state", "workflow-start"]},
         {"id": "context_envelope", "status": "ready", "commands": ["handoff-create", "handoff-ack", "checkpoint-create", "gui-state"]},
@@ -7597,13 +7898,20 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
                 {"method": "GET", "path": "/api/gui-state", "description": "Return the home-screen GUI state snapshot."},
                 {"method": "GET", "path": "/api/web-app", "description": "Return this Web/PWA configuration contract."},
             ],
+            "mutation_routes": [
+                {"method": "POST", "path": "/api/workflows", "description": "Create a governed workflow through the secretary."},
+                {"method": "POST", "path": "/api/agents", "description": "Create a template-based custom digital employee."},
+                {"method": "POST", "path": "/api/agents/{agent_id}/status", "description": "Activate, disable, archive, or restore a custom Agent."},
+                {"method": "DELETE", "path": "/api/agents/{agent_id}?confirmed=true", "description": "Permanently remove an archived custom Agent while preserving history."},
+                {"method": "POST", "path": "/api/approvals/{approval_id}/decision", "description": "Approve or reject a pending approval."},
+            ],
             "authentication": "Bearer token from DIGITAL_OFFICE_WEB_TOKEN is required for every non-loopback binding. Loopback development may omit the token.",
-            "mutation_policy": "Mutating GUI actions must call explicit governed commands or future dedicated API routes. Do not expose a generic remote shell/CLI execution endpoint.",
+            "mutation_policy": "Mutating GUI actions use narrow dedicated API routes backed by governed office-system commands. No generic remote shell or arbitrary command endpoint is exposed.",
         },
         "pwa": {
             "installable_shell": checks.get("pwa_manifest") and checks.get("service_worker") and checks.get("web_index"),
             "offline_shell": True,
-            "cache_name": "digital-office-shell-v1",
+            "cache_name": "digital-office-shell-v2",
         },
         "deployment": {
             "recommended": "Serve behind HTTPS reverse proxy such as Caddy or Nginx. Bind web-serve to 127.0.0.1 for reverse proxy deployments, or to 0.0.0.0 only on trusted LAN/VPN networks.",
@@ -7629,6 +7937,42 @@ def web_json_response(handler: http.server.BaseHTTPRequestHandler, status: int, 
         handler.send_header(name, value)
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def run_office_json_command(root: Path, command: list[str]) -> tuple[int, dict[str, Any]]:
+    env = os.environ.copy()
+    env["DIGITAL_OFFICE_SYSTEM_HOME"] = str(root)
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), *command],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return 1, {
+            "status": "error",
+            "error": "The requested action timed out.",
+            "next_actions": ["Check runtime health and retry the action."],
+        }
+    output = completed.stdout.strip()
+    if output:
+        try:
+            payload = json.loads(output)
+        except json.JSONDecodeError:
+            payload = {"status": "error", "summary": output[-2000:]}
+    else:
+        payload = {
+            "status": "error" if completed.returncode else "success",
+            "summary": completed.stderr.strip() or "Command completed without output.",
+        }
+    if completed.returncode:
+        payload.setdefault("status", "error")
+        payload.setdefault("error", completed.stderr.strip() or "The requested action failed.")
+        payload.setdefault("next_actions", ["Review the request and retry."])
+    return completed.returncode, payload
 
 
 def web_serve(args: argparse.Namespace) -> int:
@@ -7692,10 +8036,127 @@ def web_serve(args: argparse.Namespace) -> int:
                 self.send_error(405)
                 return
             self.send_response(204)
-            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
             self.send_header("Access-Control-Max-Age", "600")
             self.end_headers()
+
+        def request_scope(self) -> tuple[str, str, str, str]:
+            tenant = default_scope["tenant"] or "local"
+            deployment = default_scope["deployment"] or "local"
+            user = default_scope["user"] or "local-user"
+            role = default_scope["role"] or ("owner" if loopback_host else "")
+            return tenant, deployment, user, role
+
+        def read_json_body(self) -> dict[str, Any]:
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError as exc:
+                raise ValueError("Invalid Content-Length header.") from exc
+            if length <= 0 or length > 1_048_576:
+                raise ValueError("Request body must be JSON and no larger than 1 MB.")
+            try:
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError("Request body must contain valid UTF-8 JSON.") from exc
+            if not isinstance(payload, dict):
+                raise ValueError("Request body must be a JSON object.")
+            return payload
+
+        def command_response(self, command: list[str], *, success_status: int = 200) -> None:
+            code, payload = run_office_json_command(root, command)
+            status = success_status if code == 0 else 403 if code == 3 else 409 if code == 4 else 400
+            web_json_response(self, status, payload, headers={"Cache-Control": "no-store"})
+
+        def do_POST(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if not parsed.path.startswith("/api/"):
+                web_json_response(self, 404, {"status": "not_found", "path": parsed.path})
+                return
+            if not self.api_authorized():
+                web_json_response(self, 401, {"status": "unauthorized"}, headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"})
+                return
+            try:
+                body = self.read_json_body()
+            except ValueError as exc:
+                web_json_response(self, 400, {"status": "error", "error": str(exc)})
+                return
+            tenant, deployment, user, role = self.request_scope()
+            if not role:
+                web_json_response(self, 403, {"status": "denied", "error": "The Web server must be started with an authorized --role for mutating actions."})
+                return
+
+            if parsed.path == "/api/workflows":
+                task = str(body.get("task", "")).strip()
+                if not task:
+                    web_json_response(self, 400, {"status": "error", "error": "task is required"})
+                    return
+                generated_title = str(body.get("title", "")).strip() or (task[:48] + ("..." if len(task) > 48 else ""))
+                command = ["workflow-start", "--tenant", tenant, "--deployment", deployment, "--user", user, "--role", role, "--task", task, "--title", generated_title, "--priority", str(body.get("priority", "normal"))]
+                for field, flag in (("project_id", "--project"), ("agent_id", "--agent"), ("workflow", "--workflow"), ("idempotency_key", "--idempotency-key")):
+                    value = str(body.get(field, "")).strip()
+                    if value:
+                        command.extend([flag, value])
+                self.command_response(command, success_status=201)
+                return
+
+            if parsed.path == "/api/agents":
+                command = [
+                    "agent-create",
+                    "--agent", str(body.get("agent_id", "")),
+                    "--display-name", str(body.get("display_name", "")),
+                    "--role-description", str(body.get("role_description", "")),
+                    "--template", str(body.get("template_agent_id", "")),
+                    "--requested-by", user,
+                    "--role", role,
+                    "--confirmed",
+                ]
+                for value in body.get("skills", []) if isinstance(body.get("skills", []), list) else []:
+                    command.extend(["--skill", str(value)])
+                for value in body.get("keywords", []) if isinstance(body.get("keywords", []), list) else []:
+                    command.extend(["--keyword", str(value)])
+                for value in body.get("workflow_packs", []) if isinstance(body.get("workflow_packs", []), list) else []:
+                    command.extend(["--workflow-pack", str(value)])
+                self.command_response(command, success_status=201)
+                return
+
+            status_match = re.fullmatch(r"/api/agents/([^/]+)/status", parsed.path)
+            if status_match:
+                command = ["agent-status", "--agent", urllib.parse.unquote(status_match.group(1)), "--status", str(body.get("status", "")), "--requested-by", user, "--role", role, "--confirmed"]
+                if body.get("reason"):
+                    command.extend(["--reason", str(body["reason"])])
+                self.command_response(command)
+                return
+
+            approval_match = re.fullmatch(r"/api/approvals/([^/]+)/decision", parsed.path)
+            if approval_match:
+                command = ["approval-decision", "--approval-id", urllib.parse.unquote(approval_match.group(1)), "--decision", str(body.get("decision", "")), "--decided-by", user, "--role", role, "--confirmed"]
+                if body.get("message"):
+                    command.extend(["--message", str(body["message"])])
+                self.command_response(command)
+                return
+
+            web_json_response(self, 404, {"status": "not_found", "path": parsed.path})
+
+        def do_DELETE(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            if not parsed.path.startswith("/api/"):
+                web_json_response(self, 404, {"status": "not_found", "path": parsed.path})
+                return
+            if not self.api_authorized():
+                web_json_response(self, 401, {"status": "unauthorized"}, headers={"WWW-Authenticate": "Bearer", "Cache-Control": "no-store"})
+                return
+            tenant, deployment, user, role = self.request_scope()
+            del tenant, deployment
+            if not role:
+                web_json_response(self, 403, {"status": "denied", "error": "The Web server must be started with an authorized --role for mutating actions."})
+                return
+            agent_match = re.fullmatch(r"/api/agents/([^/]+)", parsed.path)
+            query = urllib.parse.parse_qs(parsed.query)
+            if agent_match and query.get("confirmed", [""])[0].lower() == "true":
+                self.command_response(["agent-delete", "--agent", urllib.parse.unquote(agent_match.group(1)), "--requested-by", user, "--role", role, "--confirmed"])
+                return
+            web_json_response(self, 400 if agent_match else 404, {"status": "error", "error": "Permanent deletion requires confirmed=true."} if agent_match else {"status": "not_found", "path": parsed.path})
 
         def translate_path(self, path: str) -> str:
             parsed = urllib.parse.urlparse(path)
@@ -8759,6 +9220,40 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--confirmed", action="store_true")
     p.add_argument("--timeout", type=int, default=30)
     p.set_defaults(func=telemetry_send)
+
+    p = sub.add_parser("agent-list")
+    p.add_argument("--include-archived", action="store_true")
+    p.set_defaults(func=agent_lifecycle_list)
+
+    p = sub.add_parser("agent-create")
+    p.add_argument("--agent", required=True)
+    p.add_argument("--display-name", required=True)
+    p.add_argument("--role-description", required=True)
+    p.add_argument("--template", required=True)
+    p.add_argument("--skill", action="append")
+    p.add_argument("--keyword", action="append")
+    p.add_argument("--workflow-pack", action="append")
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=agent_lifecycle_create)
+
+    p = sub.add_parser("agent-status")
+    p.add_argument("--agent", required=True)
+    p.add_argument("--status", choices=sorted(CUSTOM_AGENT_STATUSES), required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=agent_lifecycle_status)
+
+    p = sub.add_parser("agent-delete")
+    p.add_argument("--agent", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=agent_lifecycle_delete)
 
     p = sub.add_parser("backup")
     p.add_argument("--output")
