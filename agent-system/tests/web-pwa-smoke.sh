@@ -219,5 +219,8 @@ grep -q "digital-office-shell-v2" "$WORK_DIR/service-worker.js" || fail "service
 grep -q '<div id="root"></div>' "$WORK_DIR/index.html" || fail "user application root not served"
 grep -q '<div id="root"></div>' "$WORK_DIR/admin.html" || fail "admin application route not served"
 grep -q '/assets/index-' "$WORK_DIR/index.html" || fail "production web assets not linked"
+grep -q 'sidebar-projects' "$SOURCE_ROOT"/agent-system/web/app/assets/index-*.css || fail "project tree styles missing from production assets"
+grep -q 'conversation-tree-link' "$SOURCE_ROOT"/agent-system/web/app/assets/index-*.css || fail "conversation tree styles missing from production assets"
+grep -q '返回项目列表' "$SOURCE_ROOT"/agent-system/web/app/assets/index-*.js || fail "project back navigation missing from production assets"
 
 echo "web-pwa-smoke-ok"

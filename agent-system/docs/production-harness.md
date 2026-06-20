@@ -105,8 +105,16 @@ Plan:
 Execute:
 
 - dispatch through `scripts/agent-router`
+- select the installed host adapter or direct model API adapter explicitly
+- fail closed when an API provider, model, or credential is missing; never silently simulate a successful call
 - keep Agent work inside the resolved workflow steps
 - capture observations, artifacts, handoffs, command outputs, and gate results
+
+Direct model API calls are tested against a local fake provider in
+`agent-system/tests/model-gateway-smoke.py`. The test covers all supported wire
+protocols, retryable rate limits, secret redaction, private runtime settings,
+and the complete router-to-gateway path without spending tokens or requiring an
+external account.
 
 Reflect:
 

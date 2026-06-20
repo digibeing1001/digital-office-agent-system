@@ -115,8 +115,9 @@ bash -n agent-system/tests/smoke.sh
 bash -n agent-system/tests/web-pwa-smoke.sh
 bash -n digital-office-gui
 bash -n agent-system/bin/digital-office-gui
-python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
+python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/model-gateway agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
 python3 -m py_compile agent-system/bin/install-skill-sources
+python3 agent-system/tests/model-gateway-smoke.py
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   json_files="$(git ls-files "*.json")"
 else
@@ -139,6 +140,8 @@ critical_files = [
     "agent-system/ai-native-loop.manifest.json",
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
+    "agent-system/model-providers.registry.json",
+    "agent-system/model-runtime.example.json",
     "agent-system/digital-employees.registry.json",
     "agent-system/workflow-packs.registry.json",
     "agent-system/context-envelope.schema.json",
@@ -153,6 +156,9 @@ critical_files = [
     "agent-system/onboarding.presets.json",
     "agent-system/secretary.capabilities.json",
     "agent-system/bin/office-system.py",
+    "agent-system/bin/model-gateway",
+    "agent-system/tests/model-gateway-smoke.py",
+    "agent-system/harness/tasks/model-api-gateway-production.json",
     "agent-system/bin/digital-office-gui",
     "agent-system/docs/gui-contract.md",
     "agent-system/docs/digital-lawyer.zh-CN.md",

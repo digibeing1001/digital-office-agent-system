@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Archive, ArrowRight, CheckCircle2, FileCheck2, FolderKanban, History, MessageSquarePlus, Plus, ShieldCheck, UploadCloud } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Archive, ArrowLeft, CheckCircle2, FileCheck2, FolderKanban, History, MessageSquarePlus, Plus, ShieldCheck, UploadCloud } from 'lucide-react'
 import { EmptyState, Field, Modal, PageHeading, StatusBadge } from '../../components/ui'
 import { displayAgentName, formatTime, statusLabels } from '../../lib/presentation'
 import type { AppActions, GuiState, ProjectSummary } from '../../types'
@@ -24,13 +24,15 @@ function projectDeliverables(state: GuiState | null, projectId: string) {
   return (state?.tasks.recent || []).filter((task) => task.project_id === projectId && ['completed', 'delivered'].includes(task.status))
 }
 
-export function ProjectsPage({ state, actions }: { state: GuiState | null; actions: AppActions }) {
+export function ProjectsPage({ state, actions, selectedId, selectedConversationId, onSelectProject, onOpenConversation, createProjectKey }: { state: GuiState | null; actions: AppActions; selectedId: string; selectedConversationId: string; onSelectProject: (projectId: string) => void; onOpenConversation: (conversationId: string) => void; createProjectKey: number }) {
   const projects = state?.projects.items || []
-  const [selectedId, setSelectedId] = useState(projects[0]?.project_id || '')
-  const [selectedConversationId, setSelectedConversationId] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
-  const selected = projects.find((project) => project.project_id === selectedId) || projects[0]
+  const selected = projects.find((project) => project.project_id === selectedId)
+
+  useEffect(() => {
+    if (createProjectKey > 0) setShowCreate(true)
+  }, [createProjectKey])
 
   return <div className="standard-page projects-page">
     <PageHeading title="项目" description="每一件正式工作都放进一个项目里。项目会保存对话、资料、任务过程和交付物，后面继续做时不会丢上下文。" action={<button className="primary-button" onClick={() => setShowCreate(true)}><Plus size={17} />新建项目</button>} />
@@ -40,16 +42,16 @@ export function ProjectsPage({ state, actions }: { state: GuiState | null; actio
         {projects.map((project) => {
           const knowledge = state?.knowledge.project_entries?.[project.project_id]?.count || 0
           const active = projectTasks(state, project.project_id).filter((run) => !['completed', 'cancelled', 'stopped'].includes(run.status)).length
-          return <button className={project.project_id === selected?.project_id ? 'project-list-item active' : 'project-list-item'} key={project.project_id} onClick={() => setSelectedId(project.project_id)}>
+          return <button className={project.project_id === selected?.project_id ? 'project-list-item active' : 'project-list-item'} key={project.project_id} onClick={() => onSelectProject(project.project_id)}>
             <span className="project-icon"><FolderKanban size={17} /></span>
             <span><strong>{project.name}</strong><small>{active} 个进行中对话 · {knowledge} 份资料</small></span>
           </button>
         })}
         {!projects.length && <EmptyState title="还没有项目" body="先把想做的事告诉秘书，秘书会帮你建一个项目。" />}
       </section>
-      {selected ? <ProjectDetail actions={actions} onOpenConversation={setSelectedConversationId} onUpload={() => setShowUpload(true)} project={selected} selectedConversationId={selectedConversationId} state={state} /> : <section className="project-empty-panel"><EmptyState title="请选择一个项目" body="项目会把相关对话、资料和交付物放在一起。" /></section>}
+      {selected ? <ProjectDetail actions={actions} onOpenConversation={onOpenConversation} onUpload={() => setShowUpload(true)} project={selected} selectedConversationId={selectedConversationId} state={state} /> : <section className="project-empty-panel"><EmptyState title="请选择一个项目" body="从左侧项目列表或侧边栏进入，项目会把相关对话、资料和交付物放在一起。" /></section>}
     </div>
-    {showCreate && <CreateProjectDialog actions={actions} onClose={() => setShowCreate(false)} onCreated={(projectId) => { setSelectedId(projectId); setShowCreate(false) }} />}
+    {showCreate && <CreateProjectDialog actions={actions} onClose={() => setShowCreate(false)} onCreated={(projectId) => { onSelectProject(projectId); setShowCreate(false) }} />}
     {showUpload && selected && <KnowledgeUploadDialog actions={actions} defaultProjectId={selected.project_id} defaultScope="project" onClose={() => setShowUpload(false)} state={state} />}
   </div>
 }
@@ -142,7 +144,7 @@ function ConversationView({ run, state, onBack }: { run: ReturnType<typeof proje
   const relatedTasks = (state?.tasks.recent || []).filter((task) => task.workflow_run_id === run.run_id)
 
   return <section className="plain-card conversation-view">
-    <header><div><h3>{run.title || '项目对话'}</h3><span>{displayAgentName(agent)} · {statusLabels[run.status] || run.status}</span></div><button className="text-button" onClick={onBack}>返回项目看板</button></header>
+    <header><div><h3>{run.title || '项目对话'}</h3><span>{displayAgentName(agent)} · {statusLabels[run.status] || run.status}</span></div><button className="secondary-button conversation-back" onClick={onBack}><ArrowLeft size={16} />返回项目看板</button></header>
     <div className="conversation-body">
       <div className="chat-bubble user">我把这项工作交给秘书，并要求放进当前项目。</div>
       <div className="chat-bubble secretary">秘书已经理解目标，并把工作安排给 {displayAgentName(agent)}。资料、过程和交付物都会保存在这个项目里。</div>

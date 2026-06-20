@@ -4,6 +4,11 @@
   "description": "Portable production-quality gates for product, vibe design, and vibe coding workflows. The gates are role-based and can migrate across digital office variants.",
   "inspired_by": [
     {
+      "name": "OpenDesign",
+      "source": "https://github.com/manalkaff/opendesign",
+      "lesson": "Keep the front-door workflow, specialist Skills, and verification portable across model hosts and load specialist context only when needed."
+    },
+    {
       "name": "OpenHands",
       "source": "https://github.com/All-Hands-AI/OpenHands",
       "lesson": "Use an explicit runtime harness with action execution, observation, and feedback loops instead of one-shot coding prompts."

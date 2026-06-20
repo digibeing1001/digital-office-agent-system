@@ -7795,6 +7795,29 @@ def skill_installation_summaries(root: Path) -> list[dict[str, Any]]:
     return items
 
 
+def model_runtime_summary(root: Path) -> dict[str, Any]:
+    gateway = root / "bin" / "model-gateway"
+    if not gateway.exists():
+        return {"status": "missing", "providers": [], "runtime": {"default_mode": "host", "agents": {}}}
+    try:
+        proc = subprocess.run([str(gateway), "status"], text=True, capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"status": "error", "providers": [], "runtime": {}, "error": str(exc)}
+    if proc.returncode != 0:
+        return {"status": "error", "providers": [], "runtime": {}, "error": (proc.stderr or proc.stdout)[-1000:]}
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return {"status": "error", "providers": [], "runtime": {}, "error": "model gateway returned invalid JSON"}
+    return {
+        "status": payload.get("status", "ready"),
+        "providers": payload.get("providers", []),
+        "runtime": payload.get("runtime", {}),
+        "secret_storage": "environment_only",
+        "configure_command": "model-gateway configure --agent AGENT --mode direct_api --provider PROVIDER --model MODEL --confirmed",
+    }
+
+
 def gui_capabilities() -> list[dict[str, Any]]:
     return [
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
@@ -7802,6 +7825,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "web_ui_pwa", "status": "ready", "commands": ["digital-office-gui", "web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
         {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
+        {"id": "direct_model_api_gateway", "status": "ready", "commands": ["model-gateway status", "model-gateway configure", "model-gateway invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
         {"id": "workflow_runtime_controls", "status": "ready", "commands": ["workflow-control", "workflow-node-context"]},
         {"id": "runtime_replay_and_checkpoints", "status": "ready", "commands": ["run-ledger-add", "run-ledger-list", "run-ledger-verify", "checkpoint-create", "checkpoint-list"]},
@@ -7876,6 +7900,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
     context_contract = context_contract_summary(root)
     loop_runtime = loop_runtime_summary(root)
     skill_installations = skill_installation_summaries(root)
+    model_runtime = model_runtime_summary(root)
     projects = project_summaries(root, 1000)
     employee_performance = employee_performance_summaries(digital_employees, runs, tasks)
     employee_suggestions = employee_gap_suggestions(digital_employees, runs, tasks)
@@ -7929,6 +7954,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
         "workflow_packs": {"count": len(workflow_packs), "items": workflow_packs},
         "context_contract": context_contract,
         "loop_runtime": loop_runtime,
+        "model_runtime": model_runtime,
         "skill_installations": {
             "count": len(skill_installations),
             "by_status": status_counts(skill_installations),

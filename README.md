@@ -63,6 +63,7 @@ Digital Office 把重点放在四件事上：
 - 数字员工页面可查看每个 Agent 的介绍、能力、调用次数、Token 消耗、成功失败和系统建议补齐的岗位
 - 管理员可创建、停用、归档和删除自定义 Agent
 - 健康检查、权限控制、审计记录和专用 Web 操作接口
+- 同时支持已安装的 Agent 主机与 OpenAI、Anthropic、Gemini、OpenAI 兼容模型 API
 - 新安装、保留原规则安装、明确覆盖安装和一条命令升级
 
 ## 最简单的安装方式
@@ -125,6 +126,34 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 ~/.hermes/scripts/agent-router --health
 ~/.hermes/agent-system/bin/office-system health
 ```
+
+### 不安装本地 Agent，直接接大模型 API
+
+先把密钥和默认模型写进 `~/.hermes/agent-system/.env`。密钥只保存在本机环境文件中，不会写进项目、交接包或 Web 接口。例如：
+
+```bash
+OPENAI_API_KEY=你的密钥
+DIGITAL_OFFICE_OPENAI_MODEL=你的模型编号
+```
+
+然后把某个数字员工切换到 API 模式：
+
+```bash
+~/.hermes/agent-system/bin/model-gateway configure \
+  --agent legal \
+  --mode direct_api \
+  --provider openai \
+  --model 你的模型编号 \
+  --confirmed
+```
+
+可以用下面的命令查看哪些模型接口已连接。输出只显示缺少的环境变量名称，不会显示密钥：
+
+```bash
+~/.hermes/agent-system/bin/model-gateway status
+```
+
+没有配置 API 的数字员工会继续沿用原来的 Hermes 主机，不会因为升级而改变。
 
 如果需要调整工作模式、通知、审批严格度等全局偏好，可以通过管理中心操作，也可以使用受控命令：
 

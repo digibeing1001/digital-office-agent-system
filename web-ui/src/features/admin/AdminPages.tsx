@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, Archive, Box, CheckCircle2, Database, HardDrive, Plus, Power, RotateCcw, ShieldCheck, Trash2, TriangleAlert, Wrench } from 'lucide-react'
+import { Activity, Archive, Box, CheckCircle2, Cpu, Database, HardDrive, Plus, Power, RotateCcw, ShieldCheck, Trash2, TriangleAlert, Wrench } from 'lucide-react'
 import { EmptyState, Field, Modal, PageHeading, StatusBadge } from '../../components/ui'
 import { displayAgentName, displayAgentRole, formatTime, statusLabels } from '../../lib/presentation'
 import type { AgentSummary, AppActions, CreateAgentInput, GuiState } from '../../types'
@@ -76,8 +76,11 @@ export function AdminAudit({ state }: { state: GuiState | null }) {
 }
 
 export function AdminSystem({ state }: { state: GuiState | null }) {
+  const providers = state?.model_runtime.providers || []
+  const configuredProviders = providers.filter((provider) => provider.configured).length
   return <div className="admin-page"><PageHeading title="系统维护" description="查看安装版本、备份、更新和运行环境。" />
     <div className="admin-columns"><section className="admin-section"><header><h2>安装与更新</h2><StatusBadge tone="green">内部版本</StatusBadge></header><div className="maintenance-block"><HardDrive size={28} /><div><strong>Digital Office 0.3</strong><span>使用受管理的 update 命令更新，个人数据和运行记录不会被覆盖。</span><code>~/.hermes/update</code></div></div></section><section className="admin-section"><header><h2>数据保护</h2><span>本地运行</span></header><div className="maintenance-block"><Archive size={28} /><div><strong>备份与恢复</strong><span>备份包含项目、任务、审批、运行记录和设置。恢复需要管理员确认。</span><code>office-system backup</code></div></div></section></div>
+    <section className="admin-section"><header><h2>模型接入</h2><span>{configuredProviders}/{providers.length} 个 API 已就绪</span></header><div className="provider-grid">{providers.map((provider) => <div className="provider-row" key={provider.provider_id}><Cpu size={18} /><div><strong>{provider.display_name}</strong><span>{provider.configured ? `${provider.protocol} · 可由数字员工直接调用` : `需要配置 ${provider.missing.join('、')}`}</span></div><StatusBadge tone={provider.configured ? 'green' : 'gray'}>{provider.configured ? '已连接' : '未配置'}</StatusBadge></div>)}</div></section>
     <section className="admin-section"><header><h2>后端能力</h2><span>{state?.capabilities.length || 0} 项</span></header><div className="capability-grid">{state?.capabilities.map((capability) => <div key={capability.id}><StatusBadge tone="green">可用</StatusBadge><strong>{capability.id.replaceAll('_', ' ')}</strong></div>)}</div></section>
   </div>
 }

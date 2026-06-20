@@ -5,7 +5,7 @@ import { formatTime } from '../../lib/presentation'
 import type { AppActions, GuiState } from '../../types'
 import { KnowledgeUploadDialog } from './KnowledgeUploadDialog'
 
-export function KnowledgePage({ state, actions }: { state: GuiState | null; actions: AppActions }) {
+export function KnowledgePage({ state, actions, onOpenProject }: { state: GuiState | null; actions: AppActions; onOpenProject: (projectId: string) => void }) {
   const [showUpload, setShowUpload] = useState(false)
   const [activeTab, setActiveTab] = useState<'company' | 'projects' | 'personal'>('company')
   const projectEntryTotal = useMemo(() => Object.values(state?.knowledge.project_entries || {}).reduce((total, item) => total + item.count, 0), [state])
@@ -29,7 +29,7 @@ export function KnowledgePage({ state, actions }: { state: GuiState | null; acti
       <div className="document-list">
         {(state?.projects.items || []).map((project) => {
           const entries = state?.knowledge.project_entries?.[project.project_id]
-          return <div className="document-row" key={project.project_id}><span className="file-symbol"><FolderKanban size={17} /></span><div><strong>{project.name}</strong><span>{entries?.count || 0} 份资料 · 进入项目文件夹可继续管理</span></div></div>
+          return <button className="document-row document-row-button" key={project.project_id} onClick={() => onOpenProject(project.project_id)}><span className="file-symbol"><FolderKanban size={17} /></span><div><strong>{project.name}</strong><span>{entries?.count || 0} 份资料 · 进入项目可继续管理</span></div></button>
         })}
         {!state?.projects.items.length && <EmptyState title="还没有项目知识库" body="创建项目后，这里会自动出现对应项目资料。" />}
       </div>
@@ -60,8 +60,11 @@ export function SettingsPage({ state }: { state: GuiState | null }) {
     localStorage.setItem('digital-office-notifications', next ? 'on' : 'off')
   }
 
+  const modelProviders = state?.model_runtime.providers || []
+  const readyModels = modelProviders.filter((provider) => provider.configured).length
+
   return <div className="standard-page narrow-page"><PageHeading title="设置" description="调整你的使用习惯。安全、权限和系统策略由管理中心统一管理。" />
     <section className="settings-section"><h2>本机界面偏好</h2><div className="settings-row"><div><strong>工作偏好</strong><span>平衡质量、速度和成本</span></div><select value={workMode} onChange={(event) => updateWorkMode(event.target.value)}><option value="balanced">平衡</option><option value="quality">质量优先</option><option value="fast">速度优先</option></select></div><div className="settings-row"><div><strong>通知</strong><span>任务完成、审批和异常时提醒</span></div><button className={notifications ? 'toggle active' : 'toggle'} aria-label={notifications ? '关闭通知' : '开启通知'} aria-pressed={notifications} onClick={toggleNotifications}><span /></button></div></section>
-    <section className="settings-section"><h2>连接状态</h2><div className="settings-row"><div><strong>数字办公室后端</strong><span>{state?.generated_at ? `上次更新 ${formatTime(state.generated_at)}` : '等待连接'}</span></div><StatusBadge tone={state?.health.status === 'ok' ? 'green' : 'amber'}>{state?.health.status === 'ok' ? '正常' : '需要检查'}</StatusBadge></div><div className="settings-row"><div><strong>个人设置</strong><span>{state?.settings.configured ? '已经配置' : '尚未完成首次设置'}</span></div><Settings size={18} /></div></section>
+    <section className="settings-section"><h2>连接状态</h2><div className="settings-row"><div><strong>数字办公室后端</strong><span>{state?.generated_at ? `上次更新 ${formatTime(state.generated_at)}` : '等待连接'}</span></div><StatusBadge tone={state?.health.status === 'ok' ? 'green' : 'amber'}>{state?.health.status === 'ok' ? '正常' : '需要检查'}</StatusBadge></div><div className="settings-row"><div><strong>大模型</strong><span>{readyModels ? `${readyModels} 个 API 已连接，也可以继续使用本地 Agent` : '当前使用本地 Agent，可在管理中心接入模型 API'}</span></div><StatusBadge tone={readyModels ? 'green' : 'gray'}>{readyModels ? '已连接' : '本地模式'}</StatusBadge></div><div className="settings-row"><div><strong>个人设置</strong><span>{state?.settings.configured ? '已经配置' : '尚未完成首次设置'}</span></div><Settings size={18} /></div></section>
   </div>
 }

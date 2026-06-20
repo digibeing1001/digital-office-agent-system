@@ -277,6 +277,7 @@ fi
 chmod +x "$INSTALL_ROOT/scripts/agent-router"
 chmod +x "$INSTALL_ROOT/agent-system/bin/office-system"
 chmod +x "$INSTALL_ROOT/agent-system/bin/digital-office-gui"
+chmod +x "$INSTALL_ROOT/agent-system/bin/model-gateway"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-check"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-runner"
 chmod +x "$INSTALL_ROOT/agent-system/bin/install-skill-sources"

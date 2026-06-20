@@ -111,9 +111,23 @@ professional review.
 `agent-system/agents.registry.json` is the canonical agent roster. It defines
 agents, profiles, models, providers, route keywords, workflows, and route tests.
 
-`scripts/agent-router` is only the executor. It reads the registry, resolves an
-agent or workflow, logs route events without storing raw prompts, and launches
-Hermes with the selected profile/model/provider.
+`scripts/agent-router` is the provider-neutral execution switch. It reads the
+registry, resolves an Agent or workflow, logs route events without storing raw
+prompts, then dispatches either to the installed host runtime or to
+`agent-system/bin/model-gateway` for a direct model API call. Existing installs
+default to the host runtime; an Agent changes runtime only through an explicit
+entry in `settings/model-runtime.json`.
+
+The model gateway supports OpenAI Responses, Anthropic Messages, Gemini
+generateContent, and OpenAI-compatible chat-completions APIs. Provider metadata
+lives in `model-providers.registry.json`; API keys stay in environment variables
+or the ignored `.env` file. The runtime file contains only Agent, provider, and
+model selection. It never stores a secret.
+
+This follows the portable pattern used by OpenDesign: keep the front-door
+orchestration and specialist Skills model-agnostic, load role instructions only
+when the Agent runs, and verify work through a separate harness. OpenDesign is
+an architectural reference here, not a model transport dependency.
 
 Routing stays role-first. A request may mention a business department, but the
 router resolves it into portable orchestration roles and concrete workflow

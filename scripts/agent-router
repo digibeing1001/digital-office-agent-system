@@ -527,6 +527,99 @@ def hermes_binary() -> str:
     )
 
 
+def model_gateway(home: Path) -> str:
+    return os.environ.get("DIGITAL_OFFICE_MODEL_GATEWAY") or str(home / "agent-system" / "bin" / "model-gateway")
+
+
+def model_runtime_config(home: Path) -> dict[str, Any]:
+    configured = os.environ.get("DIGITAL_OFFICE_MODEL_RUNTIME")
+    path = Path(configured).expanduser() if configured else home / "agent-system" / "settings" / "model-runtime.json"
+    if not path.exists():
+        return {"default_mode": "host", "agents": {}}
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"agent-router: invalid model runtime configuration: {path}: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    if value.get("kind") != "digital-office-model-runtime" or not isinstance(value.get("agents"), dict):
+        print(f"agent-router: invalid model runtime configuration shape: {path}", file=sys.stderr)
+        raise SystemExit(2)
+    return value
+
+
+def effective_runtime(home: Path, agent_name: str, cfg: dict[str, Any], requested_mode: str) -> dict[str, str]:
+    runtime = model_runtime_config(home)
+    override = runtime.get("agents", {}).get(agent_name, {})
+    if not isinstance(override, dict):
+        override = {}
+    execution = cfg.get("execution", {}) if isinstance(cfg.get("execution"), dict) else {}
+    mode = requested_mode or str(override.get("mode") or execution.get("mode") or runtime.get("default_mode") or "host")
+    provider = str(override.get("provider") or execution.get("provider") or cfg.get("provider", ""))
+    model = str(override.get("model") or execution.get("model") or cfg.get("model", ""))
+    if mode == "auto":
+        mode = "direct_api" if override.get("provider") and override.get("model") else "host"
+    if mode not in {"host", "direct_api"}:
+        print(f"agent-router: unsupported execution mode for {agent_name}: {mode}", file=sys.stderr)
+        raise SystemExit(2)
+    return {"mode": mode, "provider": provider, "model": model}
+
+
+def skill_instruction_blocks(home: Path, cfg: dict[str, Any]) -> list[str]:
+    ordered = [
+        cfg.get("primary_skill"),
+        *cfg.get("default_skill_chain", []),
+        *cfg.get("skills", []),
+    ]
+    names = list(dict.fromkeys(str(item) for item in ordered if item))
+    blocks: list[str] = []
+    total_characters = 0
+    for name in names:
+        path = home / "skills" / name / "SKILL.md"
+        if not path.exists():
+            continue
+        body = path.read_text(encoding="utf-8", errors="replace")[:18000]
+        if not body.strip():
+            continue
+        if total_characters + len(body) > 32000:
+            body = body[: max(0, 32000 - total_characters)]
+        if not body:
+            break
+        blocks.append(f"Skill procedure: {name}\n{body}")
+        total_characters += len(body)
+        if len(blocks) >= 2 or total_characters >= 32000:
+            break
+    return blocks
+
+
+def profile_system_prompt(home: Path, agent_name: str, cfg: dict[str, Any]) -> str:
+    profile = str(cfg.get("profile", ""))
+    candidates = []
+    if profile not in {"", "default", "__default__"}:
+        candidates.append(home / "profiles" / profile / "SOUL.md")
+    candidates.extend([home / "SOUL.md", home / "AGENTS.md"])
+    soul = ""
+    for candidate in candidates:
+        if candidate.exists():
+            soul = candidate.read_text(encoding="utf-8", errors="replace")[:50000]
+            break
+    skills = [str(item) for item in cfg.get("skills", []) if str(item)]
+    header = [
+        f"You are the Digital Office Agent '{agent_name}'.",
+        f"Role boundary: {cfg.get('portable_role', agent_name)}.",
+        "Work through the supplied project context. Treat Skills as callable specialist procedures, not subordinate Agents.",
+        "Preserve facts, decisions, evidence references, open questions, and acceptance criteria in every handoff.",
+    ]
+    if skills:
+        header.append("Available Skills: " + ", ".join(skills))
+    if soul:
+        header.extend(["", "Profile instructions:", soul])
+    skill_blocks = skill_instruction_blocks(home, cfg)
+    if skill_blocks:
+        header.extend(["", "Load these specialist procedures for this run only:", *skill_blocks])
+    return "\n".join(header)
+
+
 def switch_notice(
     registry: dict[str, Any],
     agent_name: str,
@@ -534,20 +627,23 @@ def switch_notice(
     workflow_name: str,
     step_index: int,
     step_count: int,
+    runtime: dict[str, str] | None = None,
 ) -> str:
     template = registry.get("defaults", {}).get(
         "notification_template",
         "AGENT_SWITCH: {agent} ({profile}) / model: {model} / provider: {provider} / workflow: {workflow} step {step_index}/{step_count}",
     )
-    return template.format(
+    active = runtime or {"provider": str(cfg["provider"]), "model": str(cfg["model"])}
+    notice = template.format(
         agent=agent_name,
         profile=cfg["profile"],
-        model=cfg["model"],
-        provider=cfg["provider"],
+        model=active["model"],
+        provider=active["provider"],
         workflow=workflow_name,
         step_index=step_index,
         step_count=step_count,
     )
+    return f"{notice} / runtime: {active.get('mode', 'host')}"
 
 
 def prompt_for_step(
@@ -598,18 +694,35 @@ def prompt_for_step(
     return "\n".join(parts)
 
 
-def run_step(prompt: str, cfg: dict[str, Any]) -> subprocess.CompletedProcess[str]:
-    cmd = [hermes_binary()]
-    if cfg.get("profile") not in {"__default__", "default", ""}:
-        cmd.extend(["-p", cfg["profile"]])
-    cmd.extend(["-m", cfg["model"], "--provider", cfg["provider"], "-z", prompt])
+def run_step(prompt: str, cfg: dict[str, Any], home: Path, agent_name: str, runtime: dict[str, str]) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["HERMES_AGENT_ROUTER_BYPASS"] = "1"
-    # 5-minute timeout to prevent indefinite hangs on model inference or network issues
-    return subprocess.run(cmd, text=True, capture_output=True, env=env, timeout=300)
+    stdin_payload: str | None = None
+    if runtime["mode"] == "direct_api":
+        gateway = model_gateway(home)
+        if not Path(gateway).exists() and not shutil.which(gateway):
+            return subprocess.CompletedProcess([gateway], 2, "", f"agent-router: model gateway not found: {gateway}\n")
+        cmd = [
+            gateway,
+            "invoke",
+            "--provider",
+            runtime["provider"],
+            "--model",
+            runtime["model"],
+            "--system",
+            profile_system_prompt(home, agent_name, cfg),
+        ]
+        stdin_payload = prompt
+    else:
+        cmd = [hermes_binary()]
+        if cfg.get("profile") not in {"__default__", "default", ""}:
+            cmd.extend(["-p", cfg["profile"]])
+        cmd.extend(["-m", runtime["model"], "--provider", runtime["provider"], "-z", prompt])
+    # Five minutes bounds model inference and network stalls for both adapters.
+    return subprocess.run(cmd, text=True, input=stdin_payload, capture_output=True, env=env, timeout=300)
 
 
-def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, Any]) -> int:
+def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, Any], home: Path, requested_mode: str) -> int:
     judgment = route_info.get("judgment", {})
     if judgment.get("decision") == "pause":
         print("HUMAN_JUDGMENT_REQUIRED: Agent dispatch paused before execution.")
@@ -626,9 +739,10 @@ def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, A
     steps = route_info["steps"]
     for index, agent_name in enumerate(steps, start=1):
         cfg = registry["agents"][agent_name]
-        print(switch_notice(registry, agent_name, cfg, workflow_name, index, len(steps)), flush=True)
+        runtime = effective_runtime(home, agent_name, cfg, requested_mode)
+        print(switch_notice(registry, agent_name, cfg, workflow_name, index, len(steps), runtime), flush=True)
         step_prompt = prompt_for_step(prompt, registry, workflow_name, agent_name, index, len(steps), outputs)
-        proc = run_step(step_prompt, cfg)
+        proc = run_step(step_prompt, cfg, home, agent_name, runtime)
         if proc.stdout:
             print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
             outputs.append(proc.stdout)
@@ -741,6 +855,7 @@ def parse_args(registry: dict[str, Any]) -> argparse.Namespace:
     parser.add_argument("--route-json", action="store_true")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--health", action="store_true")
+    parser.add_argument("--runtime", choices=["host", "direct_api", "auto"], default="")
     parser.add_argument("prompt", nargs="*")
     return parser.parse_args()
 
@@ -780,7 +895,7 @@ def main() -> int:
         )
         return 0
 
-    return execute_route(prompt, route_info, registry)
+    return execute_route(prompt, route_info, registry, home, args.runtime)
 
 
 if __name__ == "__main__":

@@ -141,6 +141,21 @@ export interface GuiState {
   runtime_replay: { recent_runs: RuntimeSummary[]; eval_suites: string[] }
   audit: { recent: Array<Record<string, unknown>> }
   loop_runtime: { work_nodes: string[]; controller_decisions: string[]; default_budgets: Record<string, number> }
+  model_runtime: {
+    status: string
+    secret_storage: string
+    providers: Array<{
+      provider_id: string
+      display_name: string
+      protocol: string
+      configured: boolean
+      missing: string[]
+      api_key_env: string
+      model_env: string
+      model: string
+    }>
+    runtime: { default_mode: 'host' | 'direct_api' | 'auto'; agents: Record<string, { mode: string; provider: string; model: string }> }
+  }
 }
 
 export interface CreateAgentInput {
