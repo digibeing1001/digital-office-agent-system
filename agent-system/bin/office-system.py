@@ -7799,7 +7799,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
     return [
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
         {"id": "first_run_onboarding", "status": "ready", "commands": ["onboarding-options", "onboarding-apply"]},
-        {"id": "web_ui_pwa", "status": "ready", "commands": ["web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
+        {"id": "web_ui_pwa", "status": "ready", "commands": ["digital-office-gui", "web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
         {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},

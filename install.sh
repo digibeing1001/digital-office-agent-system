@@ -237,6 +237,7 @@ cp "$SOURCE_DIR/README.zh-CN.md" "$INSTALL_ROOT/README.zh-CN.md"
 cp "$SOURCE_DIR/CHANGELOG.md" "$INSTALL_ROOT/CHANGELOG.md"
 cp "$SOURCE_DIR/install.sh" "$INSTALL_ROOT/install.sh"
 cp "$SOURCE_DIR/update" "$INSTALL_ROOT/update"
+cp "$SOURCE_DIR/digital-office-gui" "$INSTALL_ROOT/digital-office-gui"
 
 mkdir -p \
   "$INSTALL_ROOT/agent-system/logs" \
@@ -275,6 +276,7 @@ fi
 
 chmod +x "$INSTALL_ROOT/scripts/agent-router"
 chmod +x "$INSTALL_ROOT/agent-system/bin/office-system"
+chmod +x "$INSTALL_ROOT/agent-system/bin/digital-office-gui"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-check"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-runner"
 chmod +x "$INSTALL_ROOT/agent-system/bin/install-skill-sources"
@@ -283,6 +285,7 @@ chmod +x "$INSTALL_ROOT/agent-system/bin/update-system"
 chmod +x "$INSTALL_ROOT/agent-system/bin/product-update"
 chmod +x "$INSTALL_ROOT/install.sh"
 chmod +x "$INSTALL_ROOT/update"
+chmod +x "$INSTALL_ROOT/digital-office-gui"
 
 if [ "$RUN_CHECKS" -eq 1 ]; then
   "$INSTALL_ROOT/agent-system/bin/install-skill-sources"

@@ -14,4 +14,16 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 ~/.hermes/update
 ```
 
+启动图形界面：
+
+```bash
+~/.hermes/digital-office-gui
+```
+
+打开管理后台：
+
+```bash
+~/.hermes/digital-office-gui --admin
+```
+
 安装器会区分程序文件和运行数据。已有个人规则或现有 Hermes/OpenClaw 数据时，它会要求明确选择保留还是覆盖，不会静默替用户做决定。

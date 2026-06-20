@@ -69,6 +69,10 @@ PY
 
 OFFICE="$SOURCE_ROOT/agent-system/bin/office-system"
 [ -x "$OFFICE" ] || fail "office-system not executable: $OFFICE"
+[ -x "$SOURCE_ROOT/digital-office-gui" ] || fail "digital-office-gui not executable: $SOURCE_ROOT/digital-office-gui"
+[ -x "$SOURCE_ROOT/agent-system/bin/digital-office-gui" ] || fail "digital-office-gui bin not executable"
+"$SOURCE_ROOT/digital-office-gui" --help >/dev/null
+"$SOURCE_ROOT/agent-system/bin/digital-office-gui" --help >/dev/null
 
 cp -a "$SOURCE_ROOT/agent-system" "$WORK_DIR/agent-system"
 cp -a "$SOURCE_ROOT/skills" "$WORK_DIR/skills"

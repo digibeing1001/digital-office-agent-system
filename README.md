@@ -182,14 +182,26 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 
 管理员可以在界面里创建、停用、恢复、归档和删除自定义 Agent。内置 Agent 受保护，永久删除必须先归档并再次确认，历史任务和审计记录仍会保留。
 
-本机预览：
+本机启动：
 
 ```bash
-~/.hermes/agent-system/bin/office-system web-config
-~/.hermes/agent-system/bin/office-system web-serve
+~/.hermes/digital-office-gui
 ```
 
-默认打开 `http://127.0.0.1:8787/`，管理后台是 `http://127.0.0.1:8787/admin`。浏览器可以把它安装为 PWA。监听非本机地址时必须通过 `DIGITAL_OFFICE_WEB_TOKEN` 配置 Bearer Token；系统不会把项目和任务状态裸露到局域网。
+这条命令会启动本机 GUI，并尽量自动打开浏览器。默认打开 `http://127.0.0.1:8787/`，管理后台是 `http://127.0.0.1:8787/admin`。常用方式：
+
+```bash
+# 打开普通用户界面
+~/.hermes/digital-office-gui
+
+# 打开管理后台
+~/.hermes/digital-office-gui --admin
+
+# 后台常驻运行
+~/.hermes/digital-office-gui --background
+```
+
+浏览器可以把它安装为 PWA。监听非本机地址时必须通过 `DIGITAL_OFFICE_WEB_TOKEN` 或 `--token` 配置 Bearer Token；系统不会把项目和任务状态裸露到局域网。需要高级部署时，可以先用 `~/.hermes/agent-system/bin/office-system web-config` 查看配置契约，再用 `~/.hermes/agent-system/bin/office-system web-serve` 接 Caddy、Nginx 或 systemd。
 
 前端直接读取 `gui-state`，所有会改变任务、审批或 Agent 的操作都走专用后端接口。前端不能自己伪造工作流状态，也不能调用任意系统命令。
 

@@ -92,6 +92,7 @@ else
   copy_required_path "SOUL.md"
   copy_required_path "README.md"
   copy_required_path "README.zh-CN.md"
+  copy_required_path "digital-office-gui"
   copy_required_path "agent-system"
   if [ ! -f "$SOURCE_ROOT/scripts/agent-router" ]; then
     fail "missing required installed script: scripts/agent-router"
@@ -112,6 +113,8 @@ cd "$WORK_DIR/repo"
 
 bash -n agent-system/tests/smoke.sh
 bash -n agent-system/tests/web-pwa-smoke.sh
+bash -n digital-office-gui
+bash -n agent-system/bin/digital-office-gui
 python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
 python3 -m py_compile agent-system/bin/install-skill-sources
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -132,6 +135,7 @@ critical_files = [
     "SOUL.md",
     "README.md",
     "README.zh-CN.md",
+    "digital-office-gui",
     "agent-system/ai-native-loop.manifest.json",
     "agent-system/agent-requests/config.example.json",
     "agent-system/agents.registry.json",
@@ -149,6 +153,7 @@ critical_files = [
     "agent-system/onboarding.presets.json",
     "agent-system/secretary.capabilities.json",
     "agent-system/bin/office-system.py",
+    "agent-system/bin/digital-office-gui",
     "agent-system/docs/gui-contract.md",
     "agent-system/docs/digital-lawyer.zh-CN.md",
     "agent-system/docs/ui-design-readiness.zh-CN.md",
@@ -230,8 +235,12 @@ else
 fi
 ROUTER="$HOME_DIR/scripts/agent-router"
 OFFICE="$HOME_DIR/agent-system/bin/office-system"
+GUI="$HOME_DIR/digital-office-gui"
+GUI_BIN="$HOME_DIR/agent-system/bin/digital-office-gui"
 
 "$ROUTER" --health >/dev/null
+"$GUI" --help >/dev/null
+"$GUI_BIN" --help >/dev/null
 "$HOME_DIR/agent-system/bin/install-skill-sources" >/dev/null
 "$OFFICE" health >/dev/null
 "$HOME_DIR/agent-system/bin/harness-check" >/dev/null
