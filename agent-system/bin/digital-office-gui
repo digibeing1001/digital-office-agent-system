@@ -6,7 +6,8 @@ SYSTEM_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
 OFFICE="$SCRIPT_DIR/office-system"
 
 HOST="127.0.0.1"
-PORT="8787"
+PORT="${DIGITAL_OFFICE_GUI_PORT:-8787}"
+PORT_EXPLICIT=0
 OPEN_BROWSER=1
 BACKGROUND=0
 QUIET=0
@@ -24,7 +25,7 @@ Start the Digital Office GUI in one command.
 
 Options:
   --host HOST          Bind address. Default: 127.0.0.1
-  --port PORT          Port. Default: 8787
+  --port PORT          Require a specific port. Default: auto from 8787
   --admin              Open the admin console instead of the user office
   --background         Keep the GUI server running in the background
   --no-open            Start the server without opening a browser
@@ -50,6 +51,7 @@ while [ "$#" -gt 0 ]; do
       ;;
     --port)
       PORT="${2:-}"
+      PORT_EXPLICIT=1
       shift 2
       ;;
     --admin)
@@ -121,11 +123,6 @@ case "$open_host" in
     ;;
 esac
 
-base_url="${PUBLIC_URL:-http://$open_host:$PORT}"
-base_url="${base_url%/}"
-open_url="$base_url$ROUTE"
-health_url="http://$open_host:$PORT/healthz"
-
 open_browser() {
   local url="$1"
   if [ -n "${BROWSER:-}" ] && command -v "$BROWSER" >/dev/null 2>&1; then
@@ -151,6 +148,76 @@ open_browser() {
   return 1
 }
 
+port_available() {
+  python3 - "$HOST" "$1" <<'PY'
+import socket
+import sys
+
+host, port = sys.argv[1], int(sys.argv[2])
+family = socket.AF_INET6 if ":" in host else socket.AF_INET
+sock = socket.socket(family, socket.SOCK_STREAM)
+try:
+    sock.bind((host, port))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+}
+
+digital_office_ready_at() {
+  python3 - "$open_host" "$1" <<'PY'
+import json
+import sys
+import urllib.request
+
+host, port = sys.argv[1], int(sys.argv[2])
+try:
+    with urllib.request.urlopen(f"http://{host}:{port}/healthz", timeout=1) as response:
+        health = json.load(response)
+    with urllib.request.urlopen(f"http://{host}:{port}/manifest.webmanifest", timeout=1) as response:
+        manifest = json.load(response)
+except Exception:
+    raise SystemExit(1)
+is_office = health.get("status") in {"ok", "degraded"} and manifest.get("short_name") == "Digital Office"
+raise SystemExit(0 if is_office else 1)
+PY
+}
+
+requested_port="$PORT"
+if ! port_available "$PORT"; then
+  if digital_office_ready_at "$PORT"; then
+    existing_office=1
+  elif [ "$PORT_EXPLICIT" -eq 1 ]; then
+    echo "digital-office-gui: port $PORT is already in use. Omit --port to choose an available port automatically." >&2
+    exit 2
+  else
+    existing_office=0
+    last_port=$((PORT + 100))
+    if [ "$last_port" -gt 65535 ]; then
+      last_port=65535
+    fi
+    for candidate in $(seq "$((PORT + 1))" "$last_port"); do
+      if port_available "$candidate"; then
+        PORT="$candidate"
+        break
+      fi
+    done
+    if [ "$PORT" = "$requested_port" ]; then
+      echo "digital-office-gui: no available port found between $requested_port and $last_port." >&2
+      exit 1
+    fi
+    echo "Port $requested_port is busy; using $PORT instead."
+  fi
+else
+  existing_office=0
+fi
+
+base_url="${PUBLIC_URL:-http://$open_host:$PORT}"
+base_url="${base_url%/}"
+open_url="$base_url$ROUTE"
+health_url="http://$open_host:$PORT/healthz"
+
 health_ready() {
   python3 - "$health_url" <<'PY'
 import json
@@ -162,7 +229,7 @@ try:
         payload = json.load(response)
 except Exception:
     raise SystemExit(1)
-raise SystemExit(0 if payload.get("status") == "ok" else 1)
+raise SystemExit(0 if payload.get("status") in {"ok", "degraded"} else 1)
 PY
 }
 
@@ -195,7 +262,7 @@ if [ "$QUIET" -eq 1 ]; then
   server_args+=(--quiet)
 fi
 
-if health_ready >/dev/null 2>&1; then
+if [ "$existing_office" -eq 1 ]; then
   echo "Digital Office GUI is already running: $open_url"
   if [ "$OPEN_BROWSER" -eq 1 ]; then
     open_browser "$open_url" || echo "Open this URL in your browser: $open_url"

@@ -188,7 +188,7 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 ~/.hermes/digital-office-gui
 ```
 
-这条命令会启动本机 GUI，并尽量自动打开浏览器。默认打开 `http://127.0.0.1:8787/`，管理后台是 `http://127.0.0.1:8787/admin`。常用方式：
+这条命令会启动本机 GUI，并尽量自动打开浏览器。系统会优先使用 `http://127.0.0.1:8787/`；如果端口已被其他程序占用，会自动寻找下一个可用端口并打开正确地址。常用方式：
 
 ```bash
 # 打开普通用户界面

@@ -4,7 +4,9 @@ set -euo pipefail
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WORK_DIR="$(mktemp -d)"
 WEB_PID=""
-trap 'if [ -n "${WEB_PID:-}" ] && kill -0 "$WEB_PID" >/dev/null 2>&1; then kill "$WEB_PID" >/dev/null 2>&1 || true; wait "$WEB_PID" 2>/dev/null || true; fi; rm -rf "$WORK_DIR"' EXIT
+CONFLICT_PID=""
+GUI_PID=""
+trap 'for pid in "${WEB_PID:-}" "${CONFLICT_PID:-}" "${GUI_PID:-}"; do if [ -n "$pid" ] && kill -0 "$pid" >/dev/null 2>&1; then kill "$pid" >/dev/null 2>&1 || true; wait "$pid" 2>/dev/null || true; fi; done; rm -rf "$WORK_DIR"' EXIT
 
 fail() {
   echo "FAIL: $*" >&2
@@ -86,6 +88,59 @@ test -f "$SOURCE_ROOT/agent-system/web/app/service-worker.js" || fail "missing s
 json_assert "$WORK_DIR/web-config.json" 'data["kind"] == "digital-office-web-app-config" and data["pwa"]["installable_shell"] is True'
 json_assert "$WORK_DIR/web-config.json" 'any(route["path"] == "/api/gui-state" for route in data["api"]["read_routes"])'
 json_assert "$WORK_DIR/web-config.json" '"Bearer token" in data["api"]["authentication"]'
+
+read -r CONFLICT_PORT NEXT_PORT < <(python3 - <<'PY'
+import socket
+
+for port in range(20000, 60000):
+    sockets = []
+    try:
+        for candidate in (port, port + 1):
+            sock = socket.socket()
+            sock.bind(("127.0.0.1", candidate))
+            sockets.append(sock)
+    except OSError:
+        continue
+    finally:
+        for sock in sockets:
+            sock.close()
+    print(port, port + 1)
+    break
+else:
+    raise SystemExit("no consecutive test ports available")
+PY
+)
+
+python3 -m http.server "$CONFLICT_PORT" --bind 127.0.0.1 >"$WORK_DIR/conflict.log" 2>&1 &
+CONFLICT_PID=$!
+conflict_ready=0
+for _ in $(seq 1 50); do
+  if fetch "http://127.0.0.1:$CONFLICT_PORT/" "$WORK_DIR/conflict.html" >/dev/null 2>&1; then
+    conflict_ready=1
+    break
+  fi
+  sleep 0.1
+done
+[ "$conflict_ready" -eq 1 ] || fail "conflict test server did not become ready"
+
+set +e
+"$WORK_DIR/agent-system/bin/digital-office-gui" --background --no-open --port "$CONFLICT_PORT" --quiet >"$WORK_DIR/gui-explicit.out" 2>&1
+explicit_port_code=$?
+set -e
+[ "$explicit_port_code" -eq 2 ] || fail "explicit occupied GUI port was not rejected"
+grep -q "port $CONFLICT_PORT is already in use" "$WORK_DIR/gui-explicit.out" || fail "explicit port conflict was not explained"
+
+DIGITAL_OFFICE_GUI_PORT="$CONFLICT_PORT" "$WORK_DIR/agent-system/bin/digital-office-gui" --background --no-open --quiet >"$WORK_DIR/gui-auto.out" 2>&1
+grep -q "Port $CONFLICT_PORT is busy; using $NEXT_PORT instead" "$WORK_DIR/gui-auto.out" || fail "GUI did not report its automatically selected port"
+GUI_PID="$(cat "$WORK_DIR/agent-system/tmp/digital-office-gui.pid")"
+fetch "http://127.0.0.1:$NEXT_PORT/healthz" "$WORK_DIR/gui-auto-health.json"
+json_assert "$WORK_DIR/gui-auto-health.json" 'data["status"] == "ok"'
+kill "$GUI_PID" >/dev/null 2>&1 || true
+wait "$GUI_PID" 2>/dev/null || true
+GUI_PID=""
+kill "$CONFLICT_PID" >/dev/null 2>&1 || true
+wait "$CONFLICT_PID" 2>/dev/null || true
+CONFLICT_PID=""
 
 set +e
 timeout 2 "$OFFICE" web-serve --host 0.0.0.0 --port 0 --quiet >"$WORK_DIR/non-loopback.out" 2>"$WORK_DIR/non-loopback.err"

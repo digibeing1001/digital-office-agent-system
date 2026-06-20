@@ -20,6 +20,8 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 ~/.hermes/digital-office-gui
 ```
 
+系统会优先使用 `127.0.0.1:8787`。如果该端口已被其他程序占用，会自动避让并打开实际可用的地址。
+
 打开管理后台：
 
 ```bash
