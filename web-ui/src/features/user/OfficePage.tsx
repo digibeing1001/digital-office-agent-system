@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, FolderKanban, Inbox, Sparkles, UploadCloud } from 'lucide-react'
+import { ArrowRight, BrainCircuit, CheckCircle2, Cpu, Database, FolderKanban, Inbox, Layers3, Radio, Sparkles, UploadCloud } from 'lucide-react'
 import { DraggableBoard } from '../../components/DraggableBoard'
 import { ResizableWorkspace } from '../../components/ResizableWorkspace'
 import { EmptyState } from '../../components/ui'
@@ -10,12 +10,30 @@ function projectName(state: GuiState | null, projectId: string) {
   return state?.projects.items.find((project) => project.project_id === projectId)?.name || projectId || '未归属项目'
 }
 
+const loopStages = ['感知', '推理', '规划', '执行', '反思', '迭代']
+
+function loopStageIndex(stage = '') {
+  const value = stage.toLowerCase()
+  if (/perceive|intake|context|sense/.test(value)) return 0
+  if (/reason|analy|think/.test(value)) return 1
+  if (/plan|route|schedule/.test(value)) return 2
+  if (/execute|tool|act|run/.test(value)) return 3
+  if (/reflect|review|verify|evaluate/.test(value)) return 4
+  if (/iterate|complete|deliver|learn/.test(value)) return 5
+  return -1
+}
+
 export function OfficePage({ state, actions, demoMode, onOpenPage }: { state: GuiState | null; actions: AppActions; demoMode: boolean; onOpenPage: (page: string) => void }) {
   const activeRuns = (state?.workflows.recent || []).filter((run) => !['completed', 'cancelled', 'stopped'].includes(run.status))
   const pendingApprovals = (state?.approvals.recent || []).filter((approval) => approval.status === 'pending')
   const recentProjects = (state?.projects.items || []).slice(0, 6)
   const recentDeliverables = (state?.tasks.recent || []).filter((task) => ['completed', 'delivered'].includes(task.status)).slice(0, 5)
   const activeProjects = recentProjects.filter((project) => project.status === 'active').length
+  const latestRuntime = state?.runtime_replay.recent_runs?.[0]
+  const currentLoopStage = loopStageIndex(latestRuntime?.current_stage)
+  const configuredModels = (state?.model_runtime.providers || []).filter((provider) => provider.configured && provider.enabled).length
+  const readyLocalRuntimes = (state?.model_runtime.local_runtimes || []).filter((runtime) => runtime.ready).length
+  const installedSkills = state?.skill_installations.count || 0
 
   const boardItems = [
     {
@@ -64,13 +82,26 @@ export function OfficePage({ state, actions, demoMode, onOpenPage }: { state: Gu
       <div><strong>项目动态</strong><span>拖动卡片调整顺序</span></div>
       <button className="text-button" onClick={() => onOpenPage('projects')}>项目中心 <ArrowRight size={15} /></button>
     </header>
+    <section className="office-system-card" aria-label="智能底座状态">
+      <header><div><span className="system-live-dot" /><strong>智能底座</strong></div><span>{latestRuntime ? `第 ${latestRuntime.cycle_index + 1} 轮` : '待命'}</span></header>
+      <div className="system-capabilities">
+        <div><Layers3 size={15} /><strong>{installedSkills}</strong><span>可用技能</span></div>
+        <div><BrainCircuit size={15} /><strong>{configuredModels}</strong><span>在线模型</span></div>
+        <div><Cpu size={15} /><strong>{readyLocalRuntimes}</strong><span>本地环境</span></div>
+        <div><Database size={15} /><strong>{state?.knowledge.rag_index_configured ? '已启用' : '待配置'}</strong><span>知识检索</span></div>
+      </div>
+      <div className="loop-track" aria-label="Loop 工作阶段">
+        {loopStages.map((stage, index) => <div className={`${index === currentLoopStage ? 'active' : ''} ${index < currentLoopStage ? 'passed' : ''}`} key={stage}><span>{index + 1}</span><small>{stage}</small></div>)}
+      </div>
+      <footer><Radio size={13} /><span>{latestRuntime ? `当前阶段：${latestRuntime.current_stage} · ${latestRuntime.ledger_events} 条可追溯记录` : '收到任务后，系统会按六阶段受控推进'}</span></footer>
+    </section>
     <DraggableBoard items={boardItems} storageKey="digital-office-home" variant="rail" />
   </div>
 
   return <div className="office-dashboard office-workspace-page">
     {demoMode && <div className="demo-banner"><Sparkles size={16} /><span>演示模式：展示完整工作方式，不会影响真实数据。</span></div>}
     <header className="office-commandbar">
-      <div className="office-commandbar-title"><span className="eyebrow">我的办公室</span><h1>先和秘书把事情讲清楚</h1><p>从意图确认、项目建档到执行交付，都在同一个项目上下文里完成。</p></div>
+      <div className="office-commandbar-title"><span className="eyebrow">我的办公室</span><h1>今天，从一件讲清楚的事开始</h1><p>秘书负责理解与确认，数字员工负责执行，所有判断与交付都沉淀在项目上下文中。</p></div>
       <div className="office-status-strip" aria-label="办公室状态">
         <div><strong>{activeProjects}</strong><span>进行中项目</span></div>
         <div><strong>{activeRuns.length}</strong><span>工作中</span></div>
