@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import datetime as dt
 import os
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -62,6 +64,14 @@ class ModelGatewaySmokeTest(unittest.TestCase):
         cls.thread.start()
         cls.temp = tempfile.TemporaryDirectory(prefix="digital-office-model-gateway-")
         cls.temp_path = Path(cls.temp.name)
+        cls.system_root = cls.temp_path / "agent-system"
+        (cls.system_root / "settings").mkdir(parents=True)
+        local_hermes = cls.temp_path / "bin" / "hermes"
+        local_hermes.parent.mkdir(parents=True)
+        local_hermes.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        local_hermes.chmod(0o700)
+        shutil.copy2(ROOT / "agent-system" / "ai-native-loop.manifest.json", cls.system_root / "ai-native-loop.manifest.json")
+        shutil.copy2(ROOT / "agent-system" / "agents.registry.json", cls.system_root / "agents.registry.json")
         port = cls.server.server_address[1]
         registry = {
             "kind": "digital-office-model-providers",
@@ -87,6 +97,7 @@ class ModelGatewaySmokeTest(unittest.TestCase):
     def environment(self) -> dict[str, str]:
         return {
             **os.environ,
+            "DIGITAL_OFFICE_SYSTEM_HOME": str(self.system_root),
             "DIGITAL_OFFICE_MODEL_PROVIDER_REGISTRY": str(self.registry_path),
             "DIGITAL_OFFICE_MODEL_RUNTIME": str(self.runtime_path),
             "TEST_OPENAI_KEY": "openai-secret",
@@ -134,6 +145,72 @@ class ModelGatewaySmokeTest(unittest.TestCase):
         proc = subprocess.run([str(GATEWAY), "invoke", "--provider", "openai", "--model", "openai-test", "--prompt", "test"], text=True, capture_output=True, env=env, timeout=5)
         self.assertEqual(proc.returncode, 3)
         self.assertIn("provider_unconfigured", proc.stderr)
+
+    def test_router_records_model_usage_in_governed_loop(self) -> None:
+        env = self.environment()
+        configure = subprocess.run([str(GATEWAY), "configure", "--agent", "writer", "--mode", "direct_api", "--provider", "openai", "--model", "openai-test", "--confirmed"], text=True, capture_output=True, env=env, timeout=5)
+        self.assertEqual(configure.returncode, 0, configure.stderr)
+        run_id = "model-accounting"
+        run_dir = self.system_root / "runs" / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        manifest = json.loads((self.system_root / "ai-native-loop.manifest.json").read_text(encoding="utf-8"))
+        budgets = dict(manifest["controller"]["default_budgets"])
+        budgets["max_model_calls"] = 1
+        run = {
+            "version": "2.0.0",
+            "kind": "digital-office-loop-run",
+            "run_id": run_id,
+            "context_id": run_id,
+            "task_id": "model-accounting-task",
+            "status": "acting",
+            "current_stage": "act",
+            "agent_id": "writer",
+            "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "control": {"cycle_index": 1, "budgets": budgets, "usage": {"tool_calls": 0, "model_calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_microunits": 0}, "stage_retries": {}},
+            "stages": {},
+            "events": [],
+        }
+        (run_dir / "run.json").write_text(json.dumps(run), encoding="utf-8")
+        router = subprocess.run([str(ROOT / "scripts" / "agent-router"), "--agent", "writer", "--run-id", run_id, "draft a short internal greeting"], text=True, capture_output=True, env=env, timeout=15)
+        self.assertEqual(router.returncode, 0, router.stderr)
+        recorded = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+        self.assertEqual(recorded["control"]["usage"]["model_calls"], 1)
+        self.assertIn("max_model_calls_exhausted", recorded.get("blockers", []))
+        self.assertGreater(recorded["control"]["usage"]["input_tokens"], 0)
+        ledger = [json.loads(line) for line in (run_dir / "ledger.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertIn("model_call_completed", [item["event"] for item in ledger])
+
+    def test_stored_connection_is_private_and_auto_resolution_is_deterministic(self) -> None:
+        env = self.environment()
+        env.pop("TEST_COMPATIBLE_KEY")
+        connection = subprocess.run(
+            [str(GATEWAY), "connection-set", "--provider", "compatible", "--base-url", f"http://127.0.0.1:{self.server.server_address[1]}/v1", "--model", "compatible-test", "--secret-stdin", "--confirmed"],
+            input="stored-compatible-secret",
+            text=True,
+            capture_output=True,
+            env=env,
+            timeout=5,
+        )
+        self.assertEqual(connection.returncode, 0, connection.stderr)
+        credentials = self.system_root / "settings" / "model-credentials.json"
+        self.assertEqual(stat.S_IMODE(credentials.stat().st_mode), 0o600)
+        status_proc = subprocess.run([str(GATEWAY), "status", "--provider", "compatible"], text=True, capture_output=True, env=env, timeout=5)
+        self.assertEqual(status_proc.returncode, 0, status_proc.stderr)
+        self.assertNotIn("stored-compatible-secret", status_proc.stdout)
+        provider = json.loads(status_proc.stdout)["providers"][0]
+        self.assertEqual(provider["secret_hint"], "...cret")
+        runtime_proc = subprocess.run([str(GATEWAY), "runtime-set", "--default-mode", "auto", "--selection-policy", "api_first", "--provider-order", "compatible,openai", "--confirmed"], text=True, capture_output=True, env=env, timeout=5)
+        self.assertEqual(runtime_proc.returncode, 0, runtime_proc.stderr)
+        resolve_proc = subprocess.run([str(GATEWAY), "resolve", "--agent", "researcher", "--requested-mode", "auto", "--host-provider", "host-provider", "--host-model", "host-model"], text=True, capture_output=True, env=env, timeout=5)
+        self.assertEqual(resolve_proc.returncode, 0, resolve_proc.stderr)
+        selected = json.loads(resolve_proc.stdout)["execution"]
+        self.assertEqual((selected["mode"], selected["provider"], selected["model"]), ("direct_api", "compatible", "compatible-test"))
+        local_policy = subprocess.run([str(GATEWAY), "runtime-set", "--selection-policy", "local_first", "--confirmed"], text=True, capture_output=True, env=env, timeout=5)
+        self.assertEqual(local_policy.returncode, 0, local_policy.stderr)
+        local_resolve = subprocess.run([str(GATEWAY), "resolve", "--agent", "researcher", "--requested-mode", "auto", "--host-provider", "host-provider", "--host-model", "host-model"], text=True, capture_output=True, env=env, timeout=5)
+        self.assertEqual(local_resolve.returncode, 0, local_resolve.stderr)
+        self.assertEqual(json.loads(local_resolve.stdout)["execution"]["mode"], "host")
 
 
 if __name__ == "__main__":

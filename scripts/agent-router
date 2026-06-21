@@ -557,12 +557,35 @@ def effective_runtime(home: Path, agent_name: str, cfg: dict[str, Any], requeste
     mode = requested_mode or str(override.get("mode") or execution.get("mode") or runtime.get("default_mode") or "host")
     provider = str(override.get("provider") or execution.get("provider") or cfg.get("provider", ""))
     model = str(override.get("model") or execution.get("model") or cfg.get("model", ""))
-    if mode == "auto":
-        mode = "direct_api" if override.get("provider") and override.get("model") else "host"
-    if mode not in {"host", "direct_api"}:
-        print(f"agent-router: unsupported execution mode for {agent_name}: {mode}", file=sys.stderr)
+    gateway = model_gateway(home)
+    cmd = [
+        gateway,
+        "resolve",
+        "--agent",
+        agent_name,
+        "--requested-mode",
+        mode,
+        "--host-provider",
+        provider,
+        "--host-model",
+        model,
+    ]
+    try:
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=15)
+        payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+        print(f"agent-router: model runtime resolution failed: {exc}", file=sys.stderr)
         raise SystemExit(2)
-    return {"mode": mode, "provider": provider, "model": model}
+    if proc.returncode != 0 or not isinstance(payload.get("execution"), dict):
+        detail = proc.stderr.strip() or "invalid model gateway response"
+        print(f"agent-router: model runtime resolution failed: {detail}", file=sys.stderr)
+        raise SystemExit(2)
+    selected = payload["execution"]
+    return {
+        "mode": str(selected.get("mode", "")),
+        "provider": str(selected.get("provider", "")),
+        "model": str(selected.get("model", "")),
+    }
 
 
 def skill_instruction_blocks(home: Path, cfg: dict[str, Any]) -> list[str]:
@@ -711,6 +734,7 @@ def run_step(prompt: str, cfg: dict[str, Any], home: Path, agent_name: str, runt
             runtime["model"],
             "--system",
             profile_system_prompt(home, agent_name, cfg),
+            "--json",
         ]
         stdin_payload = prompt
     else:
@@ -722,7 +746,75 @@ def run_step(prompt: str, cfg: dict[str, Any], home: Path, agent_name: str, runt
     return subprocess.run(cmd, text=True, input=stdin_payload, capture_output=True, env=env, timeout=300)
 
 
-def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, Any], home: Path, requested_mode: str) -> int:
+def normalize_model_result(proc: subprocess.CompletedProcess[str], runtime: dict[str, str]) -> tuple[subprocess.CompletedProcess[str], dict[str, int]]:
+    usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    if runtime["mode"] != "direct_api" or proc.returncode != 0:
+        return proc, usage
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return subprocess.CompletedProcess(proc.args, 4, "", "agent-router: model gateway returned invalid JSON\n"), usage
+    raw_usage = payload.get("usage", {}) if isinstance(payload.get("usage"), dict) else {}
+    for key in usage:
+        usage[key] = max(0, int(raw_usage.get(key, 0) or 0))
+    return subprocess.CompletedProcess(proc.args, proc.returncode, str(payload.get("text", "")), proc.stderr), usage
+
+
+def record_model_observation(home: Path, run_id: str, agent_name: str, runtime: dict[str, str], usage: dict[str, int], succeeded: bool) -> tuple[bool, str]:
+    if not run_id:
+        return True, ""
+    office = str(home / "agent-system" / "bin" / "office-system")
+    usage_cmd = [
+        office,
+        "loop-usage-add",
+        "--run-id",
+        run_id,
+        "--stage",
+        "act",
+        "--model-calls",
+        "1",
+        "--input-tokens",
+        str(usage.get("input_tokens", 0)),
+        "--output-tokens",
+        str(usage.get("output_tokens", 0)),
+    ]
+    usage_proc = subprocess.run(usage_cmd, text=True, capture_output=True, timeout=15)
+    budget_reached = False
+    if usage_proc.returncode != 0:
+        try:
+            usage_payload = json.loads(usage_proc.stdout.strip() or usage_proc.stderr.strip())
+            budget_reached = usage_payload.get("status") == "budget_reached"
+        except json.JSONDecodeError:
+            budget_reached = False
+        if not budget_reached:
+            return False, usage_proc.stderr.strip() or usage_proc.stdout.strip()
+    ledger_cmd = [
+        office,
+        "run-ledger-add",
+        "--run-id",
+        run_id,
+        "--event",
+        "model_call_completed" if succeeded else "model_call_failed",
+        "--stage",
+        "act",
+        "--action",
+        "agent.invoke",
+        "--agent",
+        agent_name,
+        "--provider",
+        runtime["provider"],
+        "--model",
+        runtime["model"],
+        "--parameters-json",
+        json.dumps({"runtime_mode": runtime["mode"], "usage": usage, "budget_reached": budget_reached}, ensure_ascii=False),
+    ]
+    ledger_proc = subprocess.run(ledger_cmd, text=True, capture_output=True, timeout=15)
+    if ledger_proc.returncode != 0:
+        return False, ledger_proc.stderr.strip() or ledger_proc.stdout.strip()
+    return True, ""
+
+
+def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, Any], home: Path, requested_mode: str, run_id: str) -> int:
     judgment = route_info.get("judgment", {})
     if judgment.get("decision") == "pause":
         print("HUMAN_JUDGMENT_REQUIRED: Agent dispatch paused before execution.")
@@ -742,7 +834,11 @@ def execute_route(prompt: str, route_info: dict[str, Any], registry: dict[str, A
         runtime = effective_runtime(home, agent_name, cfg, requested_mode)
         print(switch_notice(registry, agent_name, cfg, workflow_name, index, len(steps), runtime), flush=True)
         step_prompt = prompt_for_step(prompt, registry, workflow_name, agent_name, index, len(steps), outputs)
-        proc = run_step(step_prompt, cfg, home, agent_name, runtime)
+        proc, usage = normalize_model_result(run_step(step_prompt, cfg, home, agent_name, runtime), runtime)
+        recorded, record_error = record_model_observation(home, run_id, agent_name, runtime, usage, proc.returncode == 0)
+        if not recorded:
+            print(f"agent-router: governed run accounting failed: {record_error}", file=sys.stderr)
+            return 5
         if proc.stdout:
             print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
             outputs.append(proc.stdout)
@@ -856,6 +952,7 @@ def parse_args(registry: dict[str, Any]) -> argparse.Namespace:
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--health", action="store_true")
     parser.add_argument("--runtime", choices=["host", "direct_api", "auto"], default="")
+    parser.add_argument("--run-id", default=os.environ.get("DIGITAL_OFFICE_RUN_ID", ""))
     parser.add_argument("prompt", nargs="*")
     return parser.parse_args()
 
@@ -895,7 +992,7 @@ def main() -> int:
         )
         return 0
 
-    return execute_route(prompt, route_info, registry, home, args.runtime)
+    return execute_route(prompt, route_info, registry, home, args.runtime, args.run_id)
 
 
 if __name__ == "__main__":

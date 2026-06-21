@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Archive, ArrowLeft, CheckCircle2, FileCheck2, FolderKanban, History, MessageSquarePlus, Plus, ShieldCheck, UploadCloud } from 'lucide-react'
 import { EmptyState, Field, Modal, PageHeading, StatusBadge } from '../../components/ui'
 import { displayAgentName, formatTime, statusLabels } from '../../lib/presentation'
@@ -142,10 +142,15 @@ function ConversationView({ run, state, onBack }: { run: ReturnType<typeof proje
   const agent = state?.digital_employees.items.find((item) => item.agent_id === run.agent_id)
   const runtime = state?.runtime_replay.recent_runs.find((item) => item.run_id === run.run_id)
   const relatedTasks = (state?.tasks.recent || []).filter((task) => task.workflow_run_id === run.run_id)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const body = bodyRef.current
+    if (body) body.scrollTo({ top: body.scrollHeight, behavior: 'smooth' })
+  }, [relatedTasks.length, runtime?.current_stage, run.status])
 
   return <section className="plain-card conversation-view">
     <header><div><h3>{run.title || '项目对话'}</h3><span>{displayAgentName(agent)} · {statusLabels[run.status] || run.status}</span></div><button className="secondary-button conversation-back" onClick={onBack}><ArrowLeft size={16} />返回项目看板</button></header>
-    <div className="conversation-body">
+    <div className="conversation-body" ref={bodyRef}>
       <div className="chat-bubble user">我把这项工作交给秘书，并要求放进当前项目。</div>
       <div className="chat-bubble secretary">秘书已经理解目标，并把工作安排给 {displayAgentName(agent)}。资料、过程和交付物都会保存在这个项目里。</div>
       {runtime && <div className="conversation-progress">
@@ -173,7 +178,7 @@ function CreateProjectDialog({ actions, onClose, onCreated }: { actions: AppActi
       setError('先简单说一下这个项目要做什么。')
       return
     }
-    const result = await actions.createProject({ name: suggestedName, project_id: suggestedId })
+    const result = await actions.createProject({ name: suggestedName, project_id: suggestedId, brief: brief.trim() })
     const createdProject = result.project as { project_id?: string } | undefined
     onCreated(createdProject?.project_id || suggestedId)
   }

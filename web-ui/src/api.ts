@@ -1,4 +1,4 @@
-import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, UploadKnowledgeInput } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, UploadKnowledgeInput } from './types'
 
 const TOKEN_KEY = 'digital-office-web-token'
 
@@ -46,6 +46,22 @@ export const api = {
     }),
   uploadKnowledge: (input: UploadKnowledgeInput) =>
     request<Record<string, unknown>>('/api/knowledge/uploads', { method: 'POST', body: JSON.stringify(input) }),
+  updateProjectContext: (projectId: string, context: ProjectContextInput) =>
+    request<Record<string, unknown>>(`/api/projects/${encodeURIComponent(projectId)}/context`, { method: 'POST', body: JSON.stringify({ context }) }),
+  confirmProjectIntent: (projectId: string, expectedHash: string) =>
+    request<Record<string, unknown>>(`/api/projects/${encodeURIComponent(projectId)}/intent/confirm`, { method: 'POST', body: JSON.stringify({ confirmed: true, expected_hash: expectedHash }) }),
+  confirmProjectContext: (projectId: string) =>
+    request<Record<string, unknown>>(`/api/projects/${encodeURIComponent(projectId)}/context/confirm`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }),
+  saveModelConnection: (providerId: string, input: ModelConnectionInput) =>
+    request<Record<string, unknown>>(`/api/model-connections/${encodeURIComponent(providerId)}`, { method: 'POST', body: JSON.stringify(input) }),
+  testModelConnection: (providerId: string) =>
+    request<Record<string, unknown>>(`/api/model-connections/${encodeURIComponent(providerId)}/test`, { method: 'POST', body: JSON.stringify({}) }),
+  deleteModelConnection: (providerId: string) =>
+    request<Record<string, unknown>>(`/api/model-connections/${encodeURIComponent(providerId)}?confirmed=true`, { method: 'DELETE' }),
+  updateModelRuntime: (input: ModelRuntimeInput) =>
+    request<Record<string, unknown>>('/api/model-runtime', { method: 'POST', body: JSON.stringify(input) }),
+  updatePreferences: (input: PreferenceInput) =>
+    request<Record<string, unknown>>('/api/settings', { method: 'POST', body: JSON.stringify(input) }),
   setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
   clearToken: () => localStorage.removeItem(TOKEN_KEY),
 }

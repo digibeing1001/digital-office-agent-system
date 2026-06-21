@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Archive, Briefcase, Database, FolderKanban, Search, Settings, UploadCloud, UserRound } from 'lucide-react'
 import { EmptyState, PageHeading, StatusBadge } from '../../components/ui'
 import { formatTime } from '../../lib/presentation'
@@ -45,14 +45,19 @@ export function KnowledgePage({ state, actions, onOpenProject }: { state: GuiSta
   </div>
 }
 
-export function SettingsPage({ state }: { state: GuiState | null }) {
-  const [workMode, setWorkMode] = useState(() => localStorage.getItem('digital-office-work-mode') || 'balanced')
+export function SettingsPage({ state, actions }: { state: GuiState | null; actions: AppActions }) {
+  const presets = state?.settings.presets
+  const [choices, setChoices] = useState<Record<string, string>>({})
+  const [companyName, setCompanyName] = useState('')
+  const [secretaryName, setSecretaryName] = useState('秘书')
   const [notifications, setNotifications] = useState(() => localStorage.getItem('digital-office-notifications') !== 'off')
+  const [saved, setSaved] = useState(false)
 
-  const updateWorkMode = (value: string) => {
-    setWorkMode(value)
-    localStorage.setItem('digital-office-work-mode', value)
-  }
+  useEffect(() => {
+    setChoices({ ...(presets?.default_choices || {}), ...(state?.settings.preferences.choices || {}) })
+    setCompanyName(state?.settings.preferences.company_name || '')
+    setSecretaryName(state?.settings.preferences.secretary_name || '秘书')
+  }, [state?.generated_at])
 
   const toggleNotifications = () => {
     const next = !notifications
@@ -62,9 +67,17 @@ export function SettingsPage({ state }: { state: GuiState | null }) {
 
   const modelProviders = state?.model_runtime.providers || []
   const readyModels = modelProviders.filter((provider) => provider.configured).length
+  const labels: Record<string, string> = { assistant_style: '秘书风格', address_style: '称呼方式', language: '回复语言', initiative_level: '主动程度', pushback_style: '提醒与反驳', approval_strictness: '确认严格度', memory_mode: '记忆范围', work_mode: '工作模式' }
+
+  const save = async () => {
+    await actions.updatePreferences({ company_name: companyName, secretary_name: secretaryName, choices })
+    setSaved(true)
+    window.setTimeout(() => setSaved(false), 2400)
+  }
 
   return <div className="standard-page narrow-page"><PageHeading title="设置" description="调整你的使用习惯。安全、权限和系统策略由管理中心统一管理。" />
-    <section className="settings-section"><h2>本机界面偏好</h2><div className="settings-row"><div><strong>工作偏好</strong><span>平衡质量、速度和成本</span></div><select value={workMode} onChange={(event) => updateWorkMode(event.target.value)}><option value="balanced">平衡</option><option value="quality">质量优先</option><option value="fast">速度优先</option></select></div><div className="settings-row"><div><strong>通知</strong><span>任务完成、审批和异常时提醒</span></div><button className={notifications ? 'toggle active' : 'toggle'} aria-label={notifications ? '关闭通知' : '开启通知'} aria-pressed={notifications} onClick={toggleNotifications}><span /></button></div></section>
+    <section className="settings-section"><div className="settings-section-heading"><div><h2>秘书与工作偏好</h2><span>这些设置会写入后端，下一次对话和任务会直接使用。</span></div><button className="primary-button" onClick={() => void save()}>{saved ? '已保存' : '保存设置'}</button></div><div className="settings-row"><div><strong>公司名称</strong><span>用于项目、报告和秘书称呼中的公司身份</span></div><input value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="你的公司" /></div><div className="settings-row"><div><strong>秘书名称</strong><span>用户界面和任务沟通中显示的名称</span></div><input value={secretaryName} onChange={(event) => setSecretaryName(event.target.value)} /></div>{Object.entries(presets?.fields || {}).map(([field, config]) => <div className="settings-row" key={field}><div><strong>{labels[field] || config.label}</strong><span>{config.choices[choices[field]]?.description || config.label}</span></div><select value={choices[field] || ''} onChange={(event) => setChoices({ ...choices, [field]: event.target.value })}>{Object.entries(config.choices).map(([value, option]) => <option value={value} key={value}>{option.label}</option>)}</select></div>)}</section>
+    <section className="settings-section"><h2>本机界面偏好</h2><div className="settings-row"><div><strong>通知</strong><span>任务完成、审批和异常时提醒</span></div><button className={notifications ? 'toggle active' : 'toggle'} aria-label={notifications ? '关闭通知' : '开启通知'} aria-pressed={notifications} onClick={toggleNotifications}><span /></button></div></section>
     <section className="settings-section"><h2>连接状态</h2><div className="settings-row"><div><strong>数字办公室后端</strong><span>{state?.generated_at ? `上次更新 ${formatTime(state.generated_at)}` : '等待连接'}</span></div><StatusBadge tone={state?.health.status === 'ok' ? 'green' : 'amber'}>{state?.health.status === 'ok' ? '正常' : '需要检查'}</StatusBadge></div><div className="settings-row"><div><strong>大模型</strong><span>{readyModels ? `${readyModels} 个 API 已连接，也可以继续使用本地 Agent` : '当前使用本地 Agent，可在管理中心接入模型 API'}</span></div><StatusBadge tone={readyModels ? 'green' : 'gray'}>{readyModels ? '已连接' : '本地模式'}</StatusBadge></div><div className="settings-row"><div><strong>个人设置</strong><span>{state?.settings.configured ? '已经配置' : '尚未完成首次设置'}</span></div><Settings size={18} /></div></section>
   </div>
 }

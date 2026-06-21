@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "task_id": "project-context-intake-production",
+  "description": "Verify secretary-led intent restatement, first-principles context intake, versioned human confirmation, and execution blocking before project context is ready.",
+  "roles": ["intake", "evaluation", "operations"],
+  "workflow": "project_context_intake",
+  "gates": [
+    {
+      "id": "context_intake_smoke",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 120,
+      "command": ["bash", "agent-system/tests/project-context-intake-smoke.sh"]
+    },
+    {
+      "id": "web_context_controls_present",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "web-ui/src/features/user/SecretaryPanel.tsx",
+      "patterns": ["confirmProjectIntent", "请至少回答三个关键问题", "confirmProjectContext", "uploadKnowledge"]
+    },
+    {
+      "id": "context_gate_is_server_enforced",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/bin/office-system.py",
+      "patterns": ["project_context_not_confirmed", "project_intent_hash", "first_principles_socratic"]
+    }
+  ]
+}

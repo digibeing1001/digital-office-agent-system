@@ -156,7 +156,7 @@ export function UserApp({ state, actions }: { state: GuiState | null; actions: A
   else if (location.page === 'employees') content = <EmployeesPage actions={actions} state={state} />
   else if (location.page === 'knowledge') content = <KnowledgePage actions={actions} onOpenProject={openProject} state={state} />
   else if (location.page === 'projects') content = <ProjectsPage actions={actions} createProjectKey={createProjectKey} onOpenConversation={(conversationId) => location.projectId && openConversation(location.projectId, conversationId)} onSelectProject={openProject} selectedConversationId={location.conversationId || ''} selectedId={location.projectId || ''} state={state} />
-  else content = <SettingsPage state={state} />
+  else content = <SettingsPage actions={actions} state={state} />
 
   return <AppShell activePage={location.page} backLabel={backLabel} breadcrumbs={breadcrumbs.filter(Boolean)} bottomNavItems={bottomNavItems} demoMode={demoMode} health={state?.health.status || 'degraded'} navItems={navItems} onBack={location.page === 'office' ? undefined : goBack} onNavigate={openPage} onToggleDemo={toggleDemo} pageTitle={pageTitle} projectNavigation={projectNavigation} surface="user" unread={state?.notifications.unread || 0}>{content}</AppShell>
 }

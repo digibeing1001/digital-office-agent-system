@@ -965,7 +965,143 @@ def compute_authorization_decision(
     return decision
 
 
-def copy_template_project(root: Path, project_id: str, name: str, agents: list[str], schedule: str) -> Path:
+PROJECT_CONTEXT_FIELDS = {
+    "intent_summary", "goal", "deliverables", "acceptance_criteria", "constraints", "source_refs",
+    "deadline", "stakeholders", "risk_level", "open_questions", "assumptions",
+}
+
+
+def fresh_project_context(brief: str = "", *, required: bool = False) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "required": required,
+        "intent_summary": brief.strip(),
+        "intent_confirmed_hash": "",
+        "intent_confirmed_at": "",
+        "intent_confirmed_by": "",
+        "goal": brief.strip(),
+        "deliverables": [],
+        "acceptance_criteria": [],
+        "constraints": [],
+        "source_refs": [],
+        "deadline": "",
+        "stakeholders": [],
+        "risk_level": "normal",
+        "open_questions": [],
+        "assumptions": [],
+        "confirmed_hash": "",
+        "confirmed_at": "",
+        "confirmed_by": "",
+        "updated_at": now_iso(),
+    }
+
+
+def normalized_project_context(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    result = fresh_project_context(str(source.get("goal", "")), required=bool(source.get("required", False)))
+    result["version"] = max(1, int(source.get("version", 1) or 1))
+    result["intent_summary"] = str(source.get("intent_summary", source.get("goal", ""))).strip()[:4000]
+    for field in ("deliverables", "acceptance_criteria", "constraints", "source_refs", "stakeholders", "assumptions"):
+        raw = source.get(field, [])
+        result[field] = [str(item).strip()[:1000] for item in raw[:50] if str(item).strip()] if isinstance(raw, list) else []
+    questions = source.get("open_questions", [])
+    if isinstance(questions, list):
+        result["open_questions"] = [
+            {"question": str(item.get("question", "")).strip()[:1000], "critical": bool(item.get("critical", False))}
+            if isinstance(item, dict) else {"question": str(item).strip()[:1000], "critical": False}
+            for item in questions[:30] if (str(item.get("question", "")).strip() if isinstance(item, dict) else str(item).strip())
+        ]
+    result["deadline"] = str(source.get("deadline", "")).strip()[:200]
+    result["risk_level"] = str(source.get("risk_level", "normal")).strip() if str(source.get("risk_level", "normal")).strip() in {"low", "normal", "high", "regulated"} else "normal"
+    for field in ("intent_confirmed_hash", "intent_confirmed_at", "intent_confirmed_by", "confirmed_hash", "confirmed_at", "confirmed_by", "updated_at"):
+        result[field] = str(source.get(field, ""))
+    return result
+
+
+def project_context_hash(context: dict[str, Any]) -> str:
+    material = {key: context.get(key) for key in sorted(PROJECT_CONTEXT_FIELDS)}
+    return canonical_hash(material)
+
+
+def project_intent_hash(context: dict[str, Any]) -> str:
+    return canonical_hash({"intent_summary": context.get("intent_summary", ""), "goal": context.get("goal", "")})
+
+
+def assess_project_context(root: Path, project_id: str, project: dict[str, Any]) -> dict[str, Any]:
+    context = normalized_project_context(project.get("context_intake"))
+    knowledge_count = len(load_entries(root, project_path(root, project_id) / "knowledge" / "entries"))
+    points = {
+        "goal": 25 if context["goal"] else 0,
+        "deliverables": 20 if context["deliverables"] else 0,
+        "acceptance_criteria": 20 if context["acceptance_criteria"] else 0,
+        "constraints": 10 if context["constraints"] else 0,
+        "sources": 10 if context["source_refs"] or knowledge_count else 0,
+        "deadline": 5 if context["deadline"] else 0,
+        "stakeholders": 5 if context["stakeholders"] else 0,
+        "risk": 5 if context["risk_level"] else 0,
+    }
+    blockers = []
+    intent_hash = project_intent_hash(context)
+    intent_confirmed = bool(context["intent_summary"] and context["intent_confirmed_hash"] == intent_hash)
+    if not intent_confirmed:
+        blockers.append("intent_confirmation_required")
+    for field in ("goal", "deliverables", "acceptance_criteria"):
+        if not context[field]:
+            blockers.append(f"missing_{field}")
+    if any(item.get("critical") for item in context["open_questions"]):
+        blockers.append("critical_questions_unresolved")
+    context_hash = project_context_hash(context)
+    threshold = 70
+    confirmed = bool(context["confirmed_hash"] and context["confirmed_hash"] == context_hash and sum(points.values()) >= threshold and not blockers)
+    suggestions = []
+    suggestion_specs = [
+        ("goal", "先确认项目最终要解决什么问题？", "目标越清楚，秘书越不容易把任务分错方向。"),
+        ("deliverables", "最后希望拿到哪些具体成果？", "明确交付物可以让 Agent 在正确的位置停止。"),
+        ("acceptance_criteria", "什么样的结果才算完成并且可用？", "可检查的标准能防止 Loop 反复改写却没有进展。"),
+        ("constraints", "有哪些预算、格式、合规或不能触碰的边界？", "提前说明边界可以减少返工和高风险操作。"),
+        ("sources", "有哪些现成资料、链接或历史文件可以作为依据？", "原始资料能降低猜测和上下文漂移。"),
+    ]
+    for field, prompt, why in suggestion_specs:
+        empty = not (context["source_refs"] or knowledge_count) if field == "sources" else not context.get(field)
+        if empty:
+            suggestions.append({"field": field, "prompt": prompt, "why": why, "priority": "required" if field in {"goal", "deliverables", "acceptance_criteria"} else "recommended"})
+    depth_questions = [
+        {"field": "acceptance_criteria", "prompt": "如果项目只能带来一个可观察的变化，那个变化是什么，谁来判断它已经发生？", "why": "从真实结果而不是任务名称出发，可以校准目标和验收标准。", "priority": "socratic"},
+        {"field": "constraints", "prompt": "哪一种结果即使看起来完成了，你也会认为它是失败的？为什么？", "why": "反例能暴露不能牺牲的质量、合规和业务边界。", "priority": "socratic"},
+        {"field": "source_refs", "prompt": "哪些原始文件、历史决定或数据最能证明事实？哪些内容目前只是猜测？", "why": "区分证据和假设，是防止 Loop 漂移的关键。", "priority": "socratic"},
+        {"field": "deliverables", "prompt": "最终成果会被谁在什么场景下使用，需要以什么形式交付？", "why": "从使用场景倒推交付物，比泛泛描述更可执行。", "priority": "socratic"},
+        {"field": "open_questions", "prompt": "现在最不确定、但一旦判断错误就会让项目走偏的三件事是什么？", "why": "优先消除高影响不确定性，可以少走无效循环。", "priority": "socratic"},
+    ]
+    seen = {(item["field"], item["prompt"]) for item in suggestions}
+    for item in depth_questions:
+        if len(suggestions) >= 5:
+            break
+        if (item["field"], item["prompt"]) not in seen:
+            suggestions.append(item)
+    return {
+        "required": context["required"],
+        "readiness_score": sum(points.values()),
+        "readiness_threshold": threshold,
+        "ready": sum(points.values()) >= threshold and not blockers,
+        "confirmed": confirmed,
+        "intent": {
+            "summary": context["intent_summary"],
+            "hash": intent_hash,
+            "confirmed": intent_confirmed,
+            "confirmed_at": context["intent_confirmed_at"],
+            "confirmed_by": context["intent_confirmed_by"],
+        },
+        "context_hash": context_hash,
+        "context_version": context["version"],
+        "knowledge_count": knowledge_count,
+        "blockers": blockers,
+        "question_policy": {"minimum_questions": 3, "recommended_questions": 5, "method": "first_principles_socratic"},
+        "suggestions": suggestions[:5],
+        "context": context,
+    }
+
+
+def copy_template_project(root: Path, project_id: str, name: str, agents: list[str], schedule: str, *, guided_intake: bool = False, brief: str = "") -> Path:
     template = root / "projects" / "_template"
     project_id = safe_component(project_id, "project id")
     target = project_path(root, project_id)
@@ -984,9 +1120,116 @@ def copy_template_project(root: Path, project_id: str, name: str, agents: list[s
     )
     if agents:
         data["agent_roster"] = agents
+    data["context_intake"] = fresh_project_context(brief, required=guided_intake)
     data.setdefault("methodology_promotion", {})["schedule"] = schedule
     write_json(target / "project.json", data)
     return target
+
+
+def project_context_status(args: argparse.Namespace) -> int:
+    root = system_root()
+    project_id = safe_component(args.project, "project id")
+    project_file = ensure_project(root, project_id) / "project.json"
+    project = read_json(project_file)
+    assessment = assess_project_context(root, project_id, project)
+    print(json.dumps({"status": "ready" if assessment["confirmed"] else "needs_context", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def project_context_update(args: argparse.Namespace) -> int:
+    root = system_root()
+    project_id = safe_component(args.project, "project id")
+    project_file = ensure_project(root, project_id) / "project.json"
+    project = read_json(project_file)
+    try:
+        patch = json.loads(args.context_json)
+    except json.JSONDecodeError as exc:
+        print(f"office-system: invalid project context JSON: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(patch, dict) or any(key not in PROJECT_CONTEXT_FIELDS for key in patch):
+        print("office-system: project context contains unsupported fields", file=sys.stderr)
+        return 2
+    current = normalized_project_context(project.get("context_intake"))
+    before_hash = project_context_hash(current)
+    before_intent_hash = project_intent_hash(current)
+    for key, value in patch.items():
+        current[key] = value
+    updated = normalized_project_context(current)
+    after_hash = project_context_hash(updated)
+    if after_hash != before_hash:
+        updated["version"] = current["version"] + 1
+        updated["confirmed_hash"] = ""
+        updated["confirmed_at"] = ""
+        updated["confirmed_by"] = ""
+        if project_intent_hash(updated) != before_intent_hash:
+            updated["intent_confirmed_hash"] = ""
+            updated["intent_confirmed_at"] = ""
+            updated["intent_confirmed_by"] = ""
+    updated["required"] = bool(current.get("required", True))
+    updated["updated_at"] = now_iso()
+    project["context_intake"] = updated
+    project["updated_at"] = now_iso()
+    write_json(project_file, project)
+    assessment = assess_project_context(root, project_id, project)
+    append_log(root, {"event": "project_context_updated", "project": project_id, "version": updated["version"], "updated_by": args.updated_by or ""})
+    print(json.dumps({"status": "updated", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def project_intent_confirm(args: argparse.Namespace) -> int:
+    if not args.confirmed:
+        print("office-system: project-intent-confirm requires --confirmed", file=sys.stderr)
+        return 2
+    root = system_root()
+    project_id = safe_component(args.project, "project id")
+    project_file = ensure_project(root, project_id) / "project.json"
+    project = read_json(project_file)
+    context = normalized_project_context(project.get("context_intake"))
+    actual_hash = project_intent_hash(context)
+    if not context["intent_summary"]:
+        print("office-system: intent summary is required before confirmation", file=sys.stderr)
+        return 2
+    if args.expected_hash and args.expected_hash != actual_hash:
+        print(json.dumps({"status": "conflict", "reason": "intent_changed", "expected_hash": args.expected_hash, "actual_hash": actual_hash}, ensure_ascii=False, indent=2))
+        return 4
+    context["intent_confirmed_hash"] = actual_hash
+    context["intent_confirmed_at"] = now_iso()
+    context["intent_confirmed_by"] = safe_claim(args.confirmed_by, "confirmed by")
+    context["confirmed_hash"] = ""
+    context["confirmed_at"] = ""
+    context["confirmed_by"] = ""
+    project["context_intake"] = context
+    project["updated_at"] = now_iso()
+    write_json(project_file, project)
+    assessment = assess_project_context(root, project_id, project)
+    append_log(root, {"event": "project_intent_confirmed", "project": project_id, "intent_hash": actual_hash, "confirmed_by": context["intent_confirmed_by"]})
+    print(json.dumps({"status": "intent_confirmed", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def project_context_confirm(args: argparse.Namespace) -> int:
+    if not args.confirmed:
+        print("office-system: project-context-confirm requires --confirmed", file=sys.stderr)
+        return 2
+    root = system_root()
+    project_id = safe_component(args.project, "project id")
+    project_file = ensure_project(root, project_id) / "project.json"
+    project = read_json(project_file)
+    assessment = assess_project_context(root, project_id, project)
+    if not assessment["ready"]:
+        print(json.dumps({"status": "needs_context", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 4
+    context = normalized_project_context(project.get("context_intake"))
+    context["confirmed_hash"] = assessment["context_hash"]
+    context["confirmed_at"] = now_iso()
+    context["confirmed_by"] = safe_claim(args.confirmed_by, "confirmed by")
+    project["context_intake"] = context
+    project["updated_at"] = now_iso()
+    write_json(project_file, project)
+    assessment = assess_project_context(root, project_id, project)
+    append_log(root, {"event": "project_context_confirmed", "project": project_id, "version": context["version"], "confirmed_by": context["confirmed_by"]})
+    print(json.dumps({"status": "confirmed", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
 
 
 def entry_root(root: Path, scope: str, project: str | None) -> Path:
@@ -1936,10 +2179,11 @@ def create_project(args: argparse.Namespace) -> int:
     root = system_root()
     project_id = args.project or slugify(args.name)
     agents = [registered_agent(root, item.strip()) for item in args.agents.split(",") if item.strip()] if args.agents else []
-    target = copy_template_project(root, project_id, args.name, agents, args.methodology_schedule)
+    target = copy_template_project(root, project_id, args.name, agents, args.methodology_schedule, guided_intake=bool(args.guided_intake), brief=args.brief or "")
     append_log(root, {"event": "project_create", "project": project_id})
     project = read_json(target / "project.json")
-    print(json.dumps({"status": "created", "project": project, "project_id": project_id, "path": str(target)}, ensure_ascii=False, indent=2, sort_keys=True))
+    assessment = assess_project_context(root, project_id, project)
+    print(json.dumps({"status": "created", "project": project, "project_id": project_id, "path": str(target), "context_readiness": assessment}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -2990,7 +3234,18 @@ def workflow_start(args: argparse.Namespace) -> int:
 
     project = safe_component(args.project, "project id") if args.project else ""
     if project:
-        ensure_project(root, project)
+        project_file = ensure_project(root, project) / "project.json"
+        project_record = read_json(project_file)
+        context_assessment = assess_project_context(root, project, project_record)
+        if context_assessment["required"] and not context_assessment["confirmed"]:
+            print(json.dumps({
+                "status": "needs_context",
+                "reason": "project_context_not_confirmed",
+                "project_id": project,
+                "context_readiness": context_assessment,
+                "next_actions": ["project-context-update", "project-context-confirm"],
+            }, ensure_ascii=False, indent=2, sort_keys=True))
+            return 4
     route = route_task(root, body, args.agent, args.workflow)
     agent = registered_agent(root, str(route.get("agent", ""))) if route.get("agent") else ""
     judgment_eval = evaluate_judgment(
@@ -7286,6 +7541,7 @@ def project_summaries(root: Path, limit: int) -> list[dict[str, Any]]:
             data = read_json(path)
         except Exception:
             continue
+        assessment = assess_project_context(root, path.parent.name, data)
         projects.append(
             {
                 "project_id": data.get("project_id", path.parent.name),
@@ -7293,6 +7549,7 @@ def project_summaries(root: Path, limit: int) -> list[dict[str, Any]]:
                 "status": data.get("status", ""),
                 "agent_roster": data.get("agent_roster", []),
                 "updated_at": data.get("updated_at", data.get("created_at", "")),
+                "context_readiness": {key: assessment[key] for key in ("required", "readiness_score", "readiness_threshold", "ready", "confirmed", "context_version", "blockers", "suggestions", "question_policy", "intent", "context")},
             }
         )
     projects.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
@@ -7813,8 +8070,9 @@ def model_runtime_summary(root: Path) -> dict[str, Any]:
         "status": payload.get("status", "ready"),
         "providers": payload.get("providers", []),
         "runtime": payload.get("runtime", {}),
-        "secret_storage": "environment_only",
-        "configure_command": "model-gateway configure --agent AGENT --mode direct_api --provider PROVIDER --model MODEL --confirmed",
+        "local_runtimes": payload.get("local_runtimes", []),
+        "secret_storage": payload.get("secret_storage", "local_private_file_or_environment"),
+        "configure_command": "model-gateway connection-set --provider PROVIDER --base-url URL --model MODEL --secret-stdin --confirmed",
     }
 
 
@@ -7825,7 +8083,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "web_ui_pwa", "status": "ready", "commands": ["digital-office-gui", "web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
         {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
-        {"id": "direct_model_api_gateway", "status": "ready", "commands": ["model-gateway status", "model-gateway configure", "model-gateway invoke"]},
+        {"id": "direct_model_api_gateway", "status": "ready", "commands": ["model-gateway status", "model-gateway connection-set", "model-gateway test", "model-gateway resolve", "model-gateway invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
         {"id": "workflow_runtime_controls", "status": "ready", "commands": ["workflow-control", "workflow-node-context"]},
         {"id": "runtime_replay_and_checkpoints", "status": "ready", "commands": ["run-ledger-add", "run-ledger-list", "run-ledger-verify", "checkpoint-create", "checkpoint-list"]},
@@ -7944,6 +8202,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
             "configured": preferences is not None,
             "outputs": ONBOARDING_OUTPUTS,
             "preferences": preferences or {},
+            "presets": onboarding_presets(root),
             "options_command": "settings-options",
             "update_command": "settings-update --confirmed",
         },
@@ -8070,7 +8329,15 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
             "mutation_routes": [
                 {"method": "POST", "path": "/api/workflows", "description": "Create a governed workflow through the secretary."},
                 {"method": "POST", "path": "/api/projects", "description": "Create a project folder for task context, knowledge, work records, and deliverables."},
+                {"method": "POST", "path": "/api/projects/{project_id}/intent/confirm", "description": "Confirm the secretary's versioned understanding of user intent."},
+                {"method": "POST", "path": "/api/projects/{project_id}/context", "description": "Update the governed project context intake."},
+                {"method": "POST", "path": "/api/projects/{project_id}/context/confirm", "description": "Confirm the current project context hash before execution."},
                 {"method": "POST", "path": "/api/knowledge/uploads", "description": "Upload text or files into company or project knowledge."},
+                {"method": "POST", "path": "/api/settings", "description": "Persist user-facing secretary and work preferences."},
+                {"method": "POST", "path": "/api/model-connections/{provider_id}", "description": "Configure a model API or Token Plan connection without returning its secret."},
+                {"method": "POST", "path": "/api/model-connections/{provider_id}/test", "description": "Run a real bounded connection test."},
+                {"method": "POST", "path": "/api/model-runtime", "description": "Configure local/API automatic selection policy."},
+                {"method": "DELETE", "path": "/api/model-connections/{provider_id}?confirmed=true", "description": "Disconnect a model provider and remove its locally stored secret."},
                 {"method": "POST", "path": "/api/agents", "description": "Create a template-based custom digital employee."},
                 {"method": "POST", "path": "/api/agents/{agent_id}/status", "description": "Activate, disable, archive, or restore a custom Agent."},
                 {"method": "DELETE", "path": "/api/agents/{agent_id}?confirmed=true", "description": "Permanently remove an archived custom Agent while preserving history."},
@@ -8143,6 +8410,22 @@ def run_office_json_command(root: Path, command: list[str]) -> tuple[int, dict[s
         payload.setdefault("status", "error")
         payload.setdefault("error", completed.stderr.strip() or "The requested action failed.")
         payload.setdefault("next_actions", ["Review the request and retry."])
+    return completed.returncode, payload
+
+
+def run_model_gateway_json(root: Path, command: list[str], *, secret_input: str = "") -> tuple[int, dict[str, Any]]:
+    gateway = root / "bin" / "model-gateway"
+    env = os.environ.copy()
+    env["DIGITAL_OFFICE_SYSTEM_HOME"] = str(root)
+    try:
+        completed = subprocess.run([str(gateway), *command], input=secret_input, capture_output=True, text=True, timeout=45, env=env)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 2, {"status": "error", "error": "model_gateway_unavailable", "message": str(exc)}
+    raw = completed.stdout.strip() if completed.returncode == 0 else (completed.stderr.strip() or completed.stdout.strip())
+    try:
+        payload = json.loads(raw) if raw else {"status": "error", "error": "empty_gateway_response"}
+    except json.JSONDecodeError:
+        payload = {"status": "error", "error": "invalid_gateway_response", "message": raw[-1000:]}
     return completed.returncode, payload
 
 
@@ -8356,7 +8639,10 @@ def web_serve(args: argparse.Namespace) -> int:
                 if not name:
                     web_json_response(self, 400, {"status": "error", "error": "name is required"})
                     return
-                command = ["project-create", "--name", name]
+                command = ["project-create", "--name", name, "--guided-intake"]
+                brief = str(body.get("brief", "")).strip()
+                if brief:
+                    command.extend(["--brief", brief])
                 project_id = str(body.get("project_id", "")).strip()
                 if project_id:
                     command.extend(["--project", project_id])
@@ -8371,8 +8657,106 @@ def web_serve(args: argparse.Namespace) -> int:
                 self.command_response(command, success_status=201)
                 return
 
+            project_context_match = re.fullmatch(r"/api/projects/([^/]+)/context", parsed.path)
+            if project_context_match:
+                project_id = urllib.parse.unquote(project_context_match.group(1))
+                context = body.get("context")
+                if not isinstance(context, dict):
+                    web_json_response(self, 400, {"status": "error", "error": "context must be an object"})
+                    return
+                self.command_response(["project-context-update", "--project", project_id, "--context-json", json.dumps(context, ensure_ascii=False), "--updated-by", user])
+                return
+
+            project_confirm_match = re.fullmatch(r"/api/projects/([^/]+)/context/confirm", parsed.path)
+            if project_confirm_match:
+                if not bool(body.get("confirmed", False)):
+                    web_json_response(self, 400, {"status": "error", "error": "confirmed=true is required"})
+                    return
+                project_id = urllib.parse.unquote(project_confirm_match.group(1))
+                self.command_response(["project-context-confirm", "--project", project_id, "--confirmed-by", user, "--confirmed"])
+                return
+
+            project_intent_match = re.fullmatch(r"/api/projects/([^/]+)/intent/confirm", parsed.path)
+            if project_intent_match:
+                if not bool(body.get("confirmed", False)):
+                    web_json_response(self, 400, {"status": "error", "error": "confirmed=true is required"})
+                    return
+                project_id = urllib.parse.unquote(project_intent_match.group(1))
+                command = ["project-intent-confirm", "--project", project_id, "--confirmed-by", user, "--confirmed"]
+                expected_hash = str(body.get("expected_hash", "")).strip()
+                if expected_hash:
+                    command.extend(["--expected-hash", expected_hash])
+                self.command_response(command)
+                return
+
             if parsed.path == "/api/knowledge/uploads":
                 self.knowledge_upload_response(body, user=user, role=role)
+                return
+
+            if parsed.path == "/api/settings":
+                command = ["settings-update", "--tenant", tenant, "--user", user, "--confirmed"]
+                choices = body.get("choices", {}) if isinstance(body.get("choices"), dict) else {}
+                for field in ONBOARDING_FIELDS:
+                    value = str(choices.get(field, "")).strip()
+                    if value:
+                        command.extend([f"--{field.replace('_', '-')}", value])
+                for field, flag in (("company_name", "--company-name"), ("secretary_name", "--secretary-name"), ("tone_note", "--tone-note")):
+                    if field in body:
+                        command.extend([flag, str(body.get(field, ""))])
+                self.command_response(command)
+                return
+
+            model_connection_match = re.fullmatch(r"/api/model-connections/([^/]+)", parsed.path)
+            if model_connection_match:
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can change model credentials."})
+                    return
+                provider_id = urllib.parse.unquote(model_connection_match.group(1))
+                command = ["connection-set", "--provider", provider_id, "--confirmed"]
+                for field, flag in (("base_url", "--base-url"), ("model", "--model"), ("protocol", "--protocol")):
+                    value = str(body.get(field, "")).strip()
+                    if value:
+                        command.extend([flag, value])
+                if body.get("enabled") is False:
+                    command.append("--disabled")
+                secret = str(body.get("secret", "")).strip()
+                if secret:
+                    command.append("--secret-stdin")
+                code, payload = run_model_gateway_json(root, command, secret_input=secret)
+                if code == 0:
+                    append_audit_event(root, "model_connection_updated", actor_id=user, actor_role=role, resource_type="model_provider", resource_id=provider_id, outcome="configured", extra={"secret_changed": bool(secret)})
+                web_json_response(self, 200 if code == 0 else 409 if code == 4 else 400, payload, headers={"Cache-Control": "no-store"})
+                return
+
+            model_test_match = re.fullmatch(r"/api/model-connections/([^/]+)/test", parsed.path)
+            if model_test_match:
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can test model credentials."})
+                    return
+                provider_id = urllib.parse.unquote(model_test_match.group(1))
+                code, payload = run_model_gateway_json(root, ["test", "--provider", provider_id])
+                append_audit_event(root, "model_connection_tested", actor_id=user, actor_role=role, resource_type="model_provider", resource_id=provider_id, outcome="passed" if code == 0 else "failed")
+                web_json_response(self, 200 if code == 0 else 409, payload, headers={"Cache-Control": "no-store"})
+                return
+
+            if parsed.path == "/api/model-runtime":
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can change model routing."})
+                    return
+                command = ["runtime-set", "--confirmed"]
+                default_mode = str(body.get("default_mode", "")).strip()
+                selection_policy = str(body.get("selection_policy", "")).strip()
+                if default_mode:
+                    command.extend(["--default-mode", default_mode])
+                if selection_policy:
+                    command.extend(["--selection-policy", selection_policy])
+                order = body.get("provider_order")
+                if isinstance(order, list):
+                    command.extend(["--provider-order", ",".join(str(item) for item in order)])
+                code, payload = run_model_gateway_json(root, command)
+                if code == 0:
+                    append_audit_event(root, "model_runtime_updated", actor_id=user, actor_role=role, resource_type="model_runtime", resource_id="default", outcome="configured")
+                web_json_response(self, 200 if code == 0 else 400, payload, headers={"Cache-Control": "no-store"})
                 return
 
             if parsed.path == "/api/agents":
@@ -8430,6 +8814,17 @@ def web_serve(args: argparse.Namespace) -> int:
             query = urllib.parse.parse_qs(parsed.query)
             if agent_match and query.get("confirmed", [""])[0].lower() == "true":
                 self.command_response(["agent-delete", "--agent", urllib.parse.unquote(agent_match.group(1)), "--requested-by", user, "--role", role, "--confirmed"])
+                return
+            model_match = re.fullmatch(r"/api/model-connections/([^/]+)", parsed.path)
+            if model_match and query.get("confirmed", [""])[0].lower() == "true":
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can disconnect model credentials."})
+                    return
+                provider_id = urllib.parse.unquote(model_match.group(1))
+                code, payload = run_model_gateway_json(root, ["connection-delete", "--provider", provider_id, "--confirmed"])
+                if code == 0:
+                    append_audit_event(root, "model_connection_deleted", actor_id=user, actor_role=role, resource_type="model_provider", resource_id=provider_id, outcome="disconnected")
+                web_json_response(self, 200 if code == 0 else 400, payload, headers={"Cache-Control": "no-store"})
                 return
             web_json_response(self, 400 if agent_match else 404, {"status": "error", "error": "Permanent deletion requires confirmed=true."} if agent_match else {"status": "not_found", "path": parsed.path})
 
@@ -8698,7 +9093,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name", required=True)
     p.add_argument("--agents", default="")
     p.add_argument("--methodology-schedule", choices=["manual", "weekly", "monthly", "on_project_close"], default="manual")
+    p.add_argument("--guided-intake", action="store_true")
+    p.add_argument("--brief", default="")
     p.set_defaults(func=create_project)
+
+    p = sub.add_parser("project-context-status")
+    p.add_argument("--project", required=True)
+    p.set_defaults(func=project_context_status)
+
+    p = sub.add_parser("project-context-update")
+    p.add_argument("--project", required=True)
+    p.add_argument("--context-json", required=True)
+    p.add_argument("--updated-by", default="")
+    p.set_defaults(func=project_context_update)
+
+    p = sub.add_parser("project-context-confirm")
+    p.add_argument("--project", required=True)
+    p.add_argument("--confirmed-by", required=True)
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=project_context_confirm)
+
+    p = sub.add_parser("project-intent-confirm")
+    p.add_argument("--project", required=True)
+    p.add_argument("--expected-hash", default="")
+    p.add_argument("--confirmed-by", required=True)
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=project_intent_confirm)
 
     p = sub.add_parser("knowledge-add")
     p.add_argument("--scope", choices=["company", "project"], required=True)

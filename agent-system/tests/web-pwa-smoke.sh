@@ -23,7 +23,7 @@ import sys
 path, expr = sys.argv[1], sys.argv[2]
 with open(path, "r", encoding="utf-8") as handle:
     data = json.load(handle)
-if not eval(expr, {"__builtins__": {"len": len, "any": any}}, {"data": data}):
+if not eval(expr, {"__builtins__": {"len": len, "any": any}}, {"data": data, "json": json}):
     raise SystemExit(f"assertion failed: {expr}\n{json.dumps(data, ensure_ascii=False, indent=2)}")
 PY
 }
@@ -69,6 +69,31 @@ with open(output, "w", encoding="utf-8") as handle:
 PY
 }
 
+request_json_status() {
+  local expected="$1"
+  local method="$2"
+  local url="$3"
+  local body="$4"
+  local output="$5"
+  python3 - "$expected" "$method" "$url" "$body" "$output" <<'PY'
+import json, os, sys, urllib.error, urllib.request
+expected, method, url, body, output = sys.argv[1:]
+request = urllib.request.Request(url, data=body.encode("utf-8") if body else None, method=method)
+request.add_header("Authorization", f"Bearer {os.environ['WEB_TOKEN']}")
+request.add_header("Content-Type", "application/json")
+try:
+    response = urllib.request.urlopen(request, timeout=15)
+    status = response.status
+    payload = json.load(response)
+except urllib.error.HTTPError as exc:
+    status = exc.code
+    payload = json.load(exc)
+assert status == int(expected), (status, payload)
+with open(output, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, indent=2)
+PY
+}
+
 OFFICE="$SOURCE_ROOT/agent-system/bin/office-system"
 [ -x "$OFFICE" ] || fail "office-system not executable: $OFFICE"
 [ -x "$SOURCE_ROOT/digital-office-gui" ] || fail "digital-office-gui not executable: $SOURCE_ROOT/digital-office-gui"
@@ -78,6 +103,7 @@ OFFICE="$SOURCE_ROOT/agent-system/bin/office-system"
 
 cp -a "$SOURCE_ROOT/agent-system" "$WORK_DIR/agent-system"
 cp -a "$SOURCE_ROOT/skills" "$WORK_DIR/skills"
+cp -a "$SOURCE_ROOT/scripts" "$WORK_DIR/scripts"
 export DIGITAL_OFFICE_SYSTEM_HOME="$WORK_DIR/agent-system"
 
 test -f "$SOURCE_ROOT/agent-system/web/app/index.html" || fail "missing web index"
@@ -199,8 +225,19 @@ fetch "$BASE_URL/admin" "$WORK_DIR/admin.html"
 request_json POST "$BASE_URL/api/agents" '{"agent_id":"web-smoke-writer","display_name":"Web Smoke Writer","role_description":"Web lifecycle verification","template_agent_id":"writer","keywords":["web smoke"]}' "$WORK_DIR/agent-created.json"
 request_json POST "$BASE_URL/api/agents/web-smoke-writer/status" '{"status":"archived","reason":"web smoke cleanup"}' "$WORK_DIR/agent-archived.json"
 request_json DELETE "$BASE_URL/api/agents/web-smoke-writer?confirmed=true" '' "$WORK_DIR/agent-deleted.json"
-request_json POST "$BASE_URL/api/projects" '{"project_id":"web-smoke-project","name":"Web Smoke Project"}' "$WORK_DIR/project-created.json"
+request_json POST "$BASE_URL/api/projects" '{"project_id":"web-smoke-project","name":"Web Smoke Project","brief":"Prepare a source-backed compliance memo","agent_roster":["legal"]}' "$WORK_DIR/project-created.json"
 request_json POST "$BASE_URL/api/knowledge/uploads" '{"scope":"project","project_id":"web-smoke-project","title":"Web Smoke Note","body":"alpha beta gamma","approve":true}' "$WORK_DIR/knowledge-uploaded.json"
+request_json_status 409 POST "$BASE_URL/api/workflows" '{"task":"Start before context confirmation","priority":"normal","project_id":"web-smoke-project"}' "$WORK_DIR/workflow-context-blocked.json"
+intent_hash="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["context_readiness"]["intent"]["hash"])' "$WORK_DIR/project-created.json")"
+request_json POST "$BASE_URL/api/projects/web-smoke-project/intent/confirm" "{\"confirmed\":true,\"expected_hash\":\"$intent_hash\"}" "$WORK_DIR/intent-confirmed.json"
+request_json POST "$BASE_URL/api/projects/web-smoke-project/context" '{"context":{"deliverables":["Compliance memo"],"acceptance_criteria":["Reviewed against source evidence"],"constraints":["Do not expose customer data"],"source_refs":["Web Smoke Note"],"stakeholders":["Legal owner"]}}' "$WORK_DIR/context-updated.json"
+request_json POST "$BASE_URL/api/projects/web-smoke-project/context/confirm" '{"confirmed":true}' "$WORK_DIR/context-confirmed.json"
+request_json POST "$BASE_URL/api/workflows" '{"task":"Prepare the compliance memo","priority":"normal","project_id":"web-smoke-project"}' "$WORK_DIR/workflow-created.json"
+request_json POST "$BASE_URL/api/model-connections/minimax" "{\"base_url\":\"http://127.0.0.1:$WEB_PORT/v1\",\"model\":\"MiniMax-M3\",\"protocol\":\"openai_chat_completions\",\"secret\":\"web-secret-1234\"}" "$WORK_DIR/model-configured.json"
+request_json POST "$BASE_URL/api/model-runtime" '{"default_mode":"auto","selection_policy":"api_first","provider_order":["minimax","kimi","glm"]}' "$WORK_DIR/model-runtime.json"
+request_json POST "$BASE_URL/api/settings" '{"company_name":"Smoke Company","secretary_name":"Smoke Secretary","choices":{"work_mode":"quality","language":"zh-CN"}}' "$WORK_DIR/settings-updated.json"
+fetch "$BASE_URL/api/gui-state?limit=5" "$WORK_DIR/gui-state-after.json"
+request_json DELETE "$BASE_URL/api/model-connections/minimax?confirmed=true" '' "$WORK_DIR/model-deleted.json"
 
 json_assert "$WORK_DIR/healthz.json" 'len(data) == 2 and "status" in data and "timestamp" in data and data["status"] == "ok"'
 json_assert "$WORK_DIR/health.json" 'data["status"] == "ok" and data["checks"]["web_index"] is True and data["checks"]["service_worker"] is True'
@@ -214,7 +251,18 @@ json_assert "$WORK_DIR/agent-created.json" 'data["agent_id"] == "web-smoke-write
 json_assert "$WORK_DIR/agent-archived.json" 'data["agent_id"] == "web-smoke-writer" and data["status"] == "archived"'
 json_assert "$WORK_DIR/agent-deleted.json" 'data["agent_id"] == "web-smoke-writer" and data["status"] == "deleted" and data["history_preserved"] is True'
 json_assert "$WORK_DIR/project-created.json" 'data["status"] == "created" and data["project_id"] == "web-smoke-project"'
+json_assert "$WORK_DIR/project-created.json" 'len(data["context_readiness"]["suggestions"]) >= 3 and data["context_readiness"]["intent"]["confirmed"] is False'
 json_assert "$WORK_DIR/knowledge-uploaded.json" 'data["status"] == "uploaded" and data["entry"]["scope"] == "project" and data["entry"]["agent_readable"] is True'
+json_assert "$WORK_DIR/workflow-context-blocked.json" 'data["status"] == "needs_context" and data["reason"] == "project_context_not_confirmed"'
+json_assert "$WORK_DIR/intent-confirmed.json" 'data["intent"]["confirmed"] is True'
+json_assert "$WORK_DIR/context-updated.json" 'data["ready"] is True and data["confirmed"] is False'
+json_assert "$WORK_DIR/context-confirmed.json" 'data["confirmed"] is True and data["status"] == "confirmed"'
+json_assert "$WORK_DIR/workflow-created.json" 'data["run_id"] and data["task_id"]'
+json_assert "$WORK_DIR/model-configured.json" 'data["configured"] is True and data["secret_hint"] == "...1234"'
+json_assert "$WORK_DIR/model-runtime.json" 'data["runtime"]["selection_policy"] == "api_first" and data["runtime"]["provider_order"][0] == "minimax"'
+json_assert "$WORK_DIR/settings-updated.json" 'data["company_name"] == "Smoke Company" and data["choices"]["work_mode"] == "quality"'
+json_assert "$WORK_DIR/gui-state-after.json" '"web-secret-1234" not in json.dumps(data) and any(item["provider_id"] == "minimax" and item["configured"] for item in data["model_runtime"]["providers"])'
+json_assert "$WORK_DIR/model-deleted.json" 'data["status"] == "disconnected" and data["provider"] == "minimax"'
 grep -q "digital-office-shell-v2" "$WORK_DIR/service-worker.js" || fail "service worker cache contract missing"
 grep -q '<div id="root"></div>' "$WORK_DIR/index.html" || fail "user application root not served"
 grep -q '<div id="root"></div>' "$WORK_DIR/admin.html" || fail "admin application route not served"

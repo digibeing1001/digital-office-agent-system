@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "2.0.0",
   "kind": "digital-office-model-providers",
   "defaults": {
     "request_timeout_seconds": 120,
@@ -9,37 +9,147 @@
     "retry_attempts": 3
   },
   "providers": {
+    "minimax": {
+      "display_name": "MiniMax API",
+      "provider_family": "minimax",
+      "category": "domestic",
+      "credential_mode": "api_key",
+      "protocol": "openai_chat_completions",
+      "base_url": "https://api.minimaxi.com/v1",
+      "api_key_env": "MINIMAX_API_KEY",
+      "default_model": "MiniMax-M3",
+      "suggested_models": ["MiniMax-M3", "MiniMax-M2.7"],
+      "help_url": "https://platform.minimaxi.com/docs/api-reference/text-openai-api"
+    },
+    "minimax-token-plan": {
+      "display_name": "MiniMax Token Plan",
+      "provider_family": "minimax",
+      "category": "domestic",
+      "credential_mode": "token_plan",
+      "credential_label": "Subscription Key",
+      "protocol": "openai_chat_completions",
+      "base_url": "https://api.minimaxi.com/v1",
+      "default_model": "MiniMax-M3",
+      "suggested_models": ["MiniMax-M3", "MiniMax-M2.7"],
+      "help_url": "https://platform.minimaxi.com/docs/coding-plan/intro"
+    },
+    "mimo": {
+      "display_name": "MiMo API",
+      "provider_family": "mimo",
+      "category": "domestic",
+      "credential_mode": "api_key",
+      "protocol": "openai_chat_completions",
+      "base_url": "https://api.xiaomimimo.com/v1",
+      "api_key_env": "MIMO_API_KEY",
+      "default_model": "mimo-v2.5-pro",
+      "suggested_models": ["mimo-v2.5-pro", "mimo-v2-flash"],
+      "help_url": "https://platform.xiaomimimo.com/"
+    },
+    "mimo-token-plan": {
+      "display_name": "MiMo Token Plan",
+      "provider_family": "mimo",
+      "category": "domestic",
+      "credential_mode": "token_plan",
+      "credential_label": "Token Plan Key",
+      "protocol": "openai_chat_completions",
+      "base_url": "https://api.xiaomimimo.com/v1",
+      "default_model": "mimo-v2.5-pro",
+      "suggested_models": ["mimo-v2.5-pro", "mimo-v2-flash"],
+      "help_url": "https://platform.xiaomimimo.com/"
+    },
+    "kimi": {
+      "display_name": "Kimi API",
+      "provider_family": "kimi",
+      "category": "domestic",
+      "credential_mode": "api_key",
+      "protocol": "openai_chat_completions",
+      "base_url": "https://api.moonshot.cn/v1",
+      "api_key_env": "MOONSHOT_API_KEY",
+      "default_model": "moonshot-v1-auto",
+      "suggested_models": ["moonshot-v1-auto", "kimi-k2.5"],
+      "help_url": "https://platform.moonshot.cn/docs"
+    },
+    "kimi-token-plan": {
+      "display_name": "Kimi Code Token Plan",
+      "provider_family": "kimi",
+      "category": "domestic",
+      "credential_mode": "token_plan",
+      "credential_label": "Kimi Code Key",
+      "protocol": "openai_chat_completions",
+      "base_url": "https://api.kimi.com/coding/v1",
+      "default_model": "kimi-for-coding",
+      "suggested_models": ["kimi-for-coding"],
+      "model_locked": true,
+      "help_url": "https://www.kimi.com/code/console"
+    },
+    "glm": {
+      "display_name": "智谱 GLM API",
+      "provider_family": "glm",
+      "category": "domestic",
+      "credential_mode": "api_key",
+      "protocol": "openai_chat_completions",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_key_env": "ZAI_API_KEY",
+      "default_model": "glm-5.2",
+      "suggested_models": ["glm-5.2", "glm-4.7"],
+      "help_url": "https://docs.bigmodel.cn/cn/guide/start/quick-start"
+    },
     "openai": {
       "display_name": "OpenAI API",
+      "provider_family": "openai",
+      "category": "global",
+      "credential_mode": "api_key",
       "protocol": "openai_responses",
       "base_url": "https://api.openai.com/v1",
       "base_url_env": "DIGITAL_OFFICE_OPENAI_BASE_URL",
       "api_key_env": "OPENAI_API_KEY",
-      "model_env": "DIGITAL_OFFICE_OPENAI_MODEL"
+      "model_env": "DIGITAL_OFFICE_OPENAI_MODEL",
+      "suggested_models": ["gpt-5.4", "gpt-5.4-mini"],
+      "help_url": "https://platform.openai.com/api-keys"
     },
     "anthropic": {
       "display_name": "Anthropic API",
+      "provider_family": "anthropic",
+      "category": "global",
+      "credential_mode": "api_key",
       "protocol": "anthropic_messages",
       "base_url": "https://api.anthropic.com/v1",
       "base_url_env": "DIGITAL_OFFICE_ANTHROPIC_BASE_URL",
       "api_key_env": "ANTHROPIC_API_KEY",
       "model_env": "DIGITAL_OFFICE_ANTHROPIC_MODEL",
-      "api_version": "2023-06-01"
+      "api_version": "2023-06-01",
+      "help_url": "https://console.anthropic.com/settings/keys"
     },
     "gemini": {
       "display_name": "Google Gemini API",
+      "provider_family": "gemini",
+      "category": "global",
+      "credential_mode": "api_key",
       "protocol": "gemini_generate_content",
       "base_url": "https://generativelanguage.googleapis.com/v1beta",
       "base_url_env": "DIGITAL_OFFICE_GEMINI_BASE_URL",
       "api_key_env": "GEMINI_API_KEY",
-      "model_env": "DIGITAL_OFFICE_GEMINI_MODEL"
+      "model_env": "DIGITAL_OFFICE_GEMINI_MODEL",
+      "help_url": "https://aistudio.google.com/app/apikey"
     },
     "openai-compatible": {
-      "display_name": "OpenAI-compatible API",
+      "display_name": "自定义兼容 API",
+      "provider_family": "custom",
+      "category": "custom",
+      "credential_mode": "api_key",
       "protocol": "openai_chat_completions",
       "base_url_env": "DIGITAL_OFFICE_COMPATIBLE_BASE_URL",
       "api_key_env": "DIGITAL_OFFICE_COMPATIBLE_API_KEY",
       "model_env": "DIGITAL_OFFICE_COMPATIBLE_MODEL",
+      "base_url_required": true
+    },
+    "openai-compatible-token-plan": {
+      "display_name": "自定义 Token Plan",
+      "provider_family": "custom",
+      "category": "custom",
+      "credential_mode": "token_plan",
+      "credential_label": "Token Plan Key",
+      "protocol": "openai_chat_completions",
       "base_url_required": true
     }
   }

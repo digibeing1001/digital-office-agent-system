@@ -53,8 +53,18 @@
     },
     {
       "name": "LangGraph persistence and interrupts",
-      "source": "https://docs.langchain.com/oss/python/langgraph/persistence",
-      "principle": "Checkpoints, stable run identity, interrupts, and resumable state are required for long-running work."
+      "source": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+      "principle": "A human interrupt saves graph state, resumes by stable identity, carries JSON-serializable input, and requires idempotent side effects before the interrupt."
+    },
+    {
+      "name": "AutoGen asynchronous human feedback",
+      "source": "https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html",
+      "principle": "Persist team state and resume when feedback arrives for long interactions; blocking human input is limited to short immediate approvals because blocked state is harder to save and resume safely."
+    },
+    {
+      "name": "MemGPT virtual context management",
+      "source": "https://arxiv.org/abs/2310.08560",
+      "principle": "Use tiered working and archival memory with explicit movement and references instead of replaying all historical context into every model call."
     },
     {
       "name": "Temporal durable execution",
@@ -82,7 +92,8 @@
         "active_rules",
         "run_state",
         "relevant_knowledge_refs",
-        "prior_decisions_and_open_questions"
+        "prior_decisions_and_open_questions",
+        "versioned_human_intent_confirmation_when_project_intake_requires_it"
       ],
       "required_artifacts": [
         "context_snapshot",
@@ -95,7 +106,9 @@
         "authoritative_sources_separated_from_memory_relay",
         "large_outputs_referenced_instead_of_repeated",
         "unknowns_and_conflicts_are_explicit",
-        "context_budget_recorded"
+        "context_budget_recorded",
+        "at_least_three_first_principles_questions_are_present_for_guided_project_intake",
+        "current_intent_and_project_context_hashes_are_human_confirmed_before_dispatch"
       ]
     },
     "decide": {
@@ -276,6 +289,8 @@
     "A run cannot complete until acceptance criteria pass and required artifacts remain reachable.",
     "Context handoffs use typed envelopes, artifact references, provenance, hashes, and receiver acknowledgment.",
     "Private chain-of-thought is never required, persisted, or exposed; store concise decision records instead.",
+    "Human input is a versioned state transition: early intent and context confirmation precede dispatch, while later interrupts are reserved for missing high-impact context, drift, risk, or irreversible actions.",
+    "Do not replay full conversation history after human input; resume from the checkpoint with the confirmed context delta and authoritative artifact references.",
     "System self-modification is never an automatic task-loop transition and always requires a confirmed proposal."
   ]
 }

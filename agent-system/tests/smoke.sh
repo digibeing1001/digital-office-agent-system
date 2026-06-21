@@ -159,6 +159,8 @@ critical_files = [
     "agent-system/bin/model-gateway",
     "agent-system/tests/model-gateway-smoke.py",
     "agent-system/harness/tasks/model-api-gateway-production.json",
+    "agent-system/harness/tasks/project-context-intake-production.json",
+    "agent-system/tests/project-context-intake-smoke.sh",
     "agent-system/bin/digital-office-gui",
     "agent-system/docs/gui-contract.md",
     "agent-system/docs/digital-lawyer.zh-CN.md",
@@ -214,6 +216,7 @@ json_assert agent-system/harness/tasks/digital-lawyer-production.json 'data["tas
 json_assert agent-system/harness/tasks/digital-employee-model-production.json 'data["task_id"] == "digital-employee-model-production"'
 json_assert agent-system/harness/tasks/context-envelope-production.json 'data["task_id"] == "context-envelope-production"'
 json_assert agent-system/harness/tasks/context-handoff-production.json 'data["task_id"] == "context-handoff-production"'
+json_assert agent-system/harness/tasks/project-context-intake-production.json 'data["task_id"] == "project-context-intake-production"'
 json_assert agent-system/harness/tasks/local-skill-installation-production.json 'data["task_id"] == "local-skill-installation-production"'
 json_assert agent-system/harness/tasks/ui-design-readiness-production.json 'data["task_id"] == "ui-design-readiness-production"'
 json_assert agent-system/digital-employees.registry.json 'data["model"]["levels"] == ["secretary_control_plane", "digital_employee_agents", "skill_staff_lanes"] and data["employees"]["legal"]["agent_id"] == "legal"'

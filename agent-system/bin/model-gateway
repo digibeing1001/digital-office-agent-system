@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import random
+import shutil
 import socket
 import stat
 import sys
@@ -20,6 +21,7 @@ from typing import Any
 
 RETRYABLE_STATUS = {408, 429, 502, 503, 504}
 RUNTIME_MODES = {"host", "direct_api", "auto"}
+SELECTION_POLICIES = {"local_first", "api_first"}
 
 
 class GatewayError(RuntimeError):
@@ -86,10 +88,44 @@ def runtime_path(root: Path) -> Path:
     return Path(configured).expanduser() if configured else root / "settings" / "model-runtime.json"
 
 
+def connections_path(root: Path) -> Path:
+    configured = os.environ.get("DIGITAL_OFFICE_MODEL_CONNECTIONS")
+    return Path(configured).expanduser() if configured else root / "settings" / "model-connections.json"
+
+
+def credentials_path(root: Path) -> Path:
+    configured = os.environ.get("DIGITAL_OFFICE_MODEL_CREDENTIALS")
+    return Path(configured).expanduser() if configured else root / "settings" / "model-credentials.json"
+
+
+def load_optional_document(path: Path, kind: str, field: str) -> dict[str, Any]:
+    if not path.exists():
+        return {"version": "1.0.0", "kind": kind, field: {}}
+    value = read_json(path)
+    if value.get("kind") != kind or not isinstance(value.get(field), dict):
+        raise GatewayError(f"configuration has an invalid shape: {path}", code="config_invalid")
+    return value
+
+
+def load_connections(root: Path) -> dict[str, Any]:
+    return load_optional_document(connections_path(root), "digital-office-model-connections", "providers")
+
+
+def load_credentials(root: Path) -> dict[str, Any]:
+    return load_optional_document(credentials_path(root), "digital-office-model-credentials", "providers")
+
+
 def load_runtime(root: Path) -> dict[str, Any]:
     path = runtime_path(root)
     if not path.exists():
-        return {"version": "1.0.0", "kind": "digital-office-model-runtime", "default_mode": "host", "agents": {}}
+        return {
+            "version": "1.0.0",
+            "kind": "digital-office-model-runtime",
+            "default_mode": "auto",
+            "selection_policy": "local_first",
+            "provider_order": [],
+            "agents": {},
+        }
     value = read_json(path)
     if value.get("kind") != "digital-office-model-runtime" or not isinstance(value.get("agents"), dict):
         raise GatewayError("model runtime configuration has an invalid shape", code="config_invalid")
@@ -109,11 +145,18 @@ def env_value(settings: dict[str, Any], field: str) -> str:
     return os.environ.get(name, "").strip() if name else ""
 
 
-def resolve_provider(provider_id: str, registry: dict[str, Any], model: str = "") -> dict[str, Any]:
-    settings = provider_settings(provider_id, registry)
+def resolve_provider(provider_id: str, registry: dict[str, Any], root: Path, model: str = "") -> dict[str, Any]:
+    settings = dict(provider_settings(provider_id, registry))
+    override = load_connections(root).get("providers", {}).get(provider_id, {})
+    if isinstance(override, dict):
+        for key in ("base_url", "model", "protocol", "enabled"):
+            if key in override:
+                settings[key] = override[key]
+    secret_entry = load_credentials(root).get("providers", {}).get(provider_id, {})
+    stored_secret = str(secret_entry.get("secret", "")) if isinstance(secret_entry, dict) else ""
     base_url = env_value(settings, "base_url_env") or str(settings.get("base_url", "")).strip()
-    api_key = env_value(settings, "api_key_env")
-    resolved_model = model.strip() or env_value(settings, "model_env")
+    api_key = stored_secret or env_value(settings, "api_key_env")
+    resolved_model = model.strip() or str(settings.get("model", "")).strip() or env_value(settings, "model_env") or str(settings.get("default_model", "")).strip()
     missing = []
     if not api_key:
         missing.append(str(settings.get("api_key_env", "API key")))
@@ -122,6 +165,10 @@ def resolve_provider(provider_id: str, registry: dict[str, Any], model: str = ""
     return {
         "provider_id": provider_id,
         "display_name": settings.get("display_name", provider_id),
+        "provider_family": settings.get("provider_family", provider_id),
+        "category": settings.get("category", "custom"),
+        "credential_mode": settings.get("credential_mode", "api_key"),
+        "credential_label": settings.get("credential_label", "API Key"),
         "protocol": settings.get("protocol", ""),
         "base_url": base_url.rstrip("/"),
         "api_key": api_key,
@@ -130,7 +177,13 @@ def resolve_provider(provider_id: str, registry: dict[str, Any], model: str = ""
         "api_key_env": settings.get("api_key_env", ""),
         "base_url_env": settings.get("base_url_env", ""),
         "api_version": settings.get("api_version", ""),
-        "configured": not missing,
+        "suggested_models": settings.get("suggested_models", []),
+        "help_url": settings.get("help_url", ""),
+        "model_locked": bool(settings.get("model_locked", False)),
+        "enabled": bool(settings.get("enabled", True)),
+        "secret_source": "stored" if stored_secret else ("environment" if api_key else "none"),
+        "secret_hint": f"...{api_key[-4:]}" if len(api_key) >= 4 else ("已配置" if api_key else ""),
+        "configured": not missing and bool(settings.get("enabled", True)),
         "missing": missing,
     }
 
@@ -146,6 +199,79 @@ def validate_url(url: str) -> None:
     host = (parsed.hostname or "").lower()
     if host not in {"localhost", "127.0.0.1", "::1"} and os.environ.get("DIGITAL_OFFICE_ALLOW_INSECURE_MODEL_API") != "1":
         raise GatewayError("plain HTTP model APIs are limited to localhost", code="insecure_base_url")
+
+
+def discover_local_runtimes(root: Path) -> list[dict[str, Any]]:
+    home = root.parent
+    candidates = [
+        ("hermes", "Hermes", [home / "bin" / "hermes", Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes"], [home / "config.yaml", Path.home() / ".hermes" / "config.yaml"]),
+        ("openclaw", "OpenClaw", [Path.home() / ".openclaw" / "bin" / "openclaw"], [Path.home() / ".openclaw" / "config.yaml"]),
+    ]
+    result = []
+    for runtime_id, display_name, executables, configs in candidates:
+        env_name = f"DIGITAL_OFFICE_{runtime_id.upper()}_COMMAND"
+        command = os.environ.get(env_name, "").strip()
+        discovered = next((str(path) for path in executables if path.exists()), "") or str(shutil.which(runtime_id) or "")
+        detected = bool(command or discovered)
+        result.append({
+            "id": runtime_id,
+            "display_name": display_name,
+            "detected": detected,
+            "ready": detected and runtime_id == "hermes",
+            "command": command or discovered,
+            "config_detected": any(path.exists() for path in configs),
+            "execution_support": "native" if runtime_id == "hermes" else "detected_only",
+        })
+    return result
+
+
+def ordered_provider_ids(runtime: dict[str, Any], registry: dict[str, Any]) -> list[str]:
+    configured = runtime.get("provider_order", [])
+    ordered = [str(item) for item in configured if str(item) in registry.get("providers", {})] if isinstance(configured, list) else []
+    return ordered + [item for item in registry.get("providers", {}) if item not in ordered]
+
+
+def resolve_execution(args: argparse.Namespace, root: Path, registry: dict[str, Any]) -> int:
+    runtime = load_runtime(root)
+    override = runtime.get("agents", {}).get(args.agent, {})
+    override = override if isinstance(override, dict) else {}
+    mode = args.requested_mode or str(override.get("mode") or runtime.get("default_mode") or "auto")
+    provider_id = str(override.get("provider") or args.host_provider or "")
+    model = str(override.get("model") or args.host_model or "")
+
+    local = next((item for item in discover_local_runtimes(root) if item["ready"]), None)
+    api = None
+    for candidate in ordered_provider_ids(runtime, registry):
+        item = resolve_provider(candidate, registry, root, model if candidate == provider_id else "")
+        if item["configured"] and item["model"]:
+            api = item
+            if candidate == provider_id:
+                break
+
+    if mode == "host":
+        selected = {"mode": "host", "provider": args.host_provider, "model": args.host_model, "local_runtime": local}
+    elif mode == "direct_api":
+        if provider_id:
+            api = resolve_provider(provider_id, registry, root, model)
+        if not api or not api["configured"] or not api["model"]:
+            raise GatewayError("no configured API connection is available", code="provider_unconfigured", status=3)
+        selected = {"mode": "direct_api", "provider": api["provider_id"], "model": api["model"]}
+    else:
+        policy = str(runtime.get("selection_policy") or "local_first")
+        choices = ["host", "direct_api"] if policy == "local_first" else ["direct_api", "host"]
+        selected = {}
+        for choice in choices:
+            if choice == "host" and local:
+                selected = {"mode": "host", "provider": args.host_provider, "model": args.host_model, "local_runtime": local}
+                break
+            if choice == "direct_api" and api and api["configured"] and api["model"]:
+                selected = {"mode": "direct_api", "provider": api["provider_id"], "model": api["model"]}
+                break
+        if not selected:
+            raise GatewayError("no ready local Agent or configured API connection is available", code="runtime_unavailable", status=3)
+    selected["requested_mode"] = mode
+    print(json.dumps({"status": "resolved", "execution": selected}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
 
 
 def request_spec(provider: dict[str, Any], prompt: str, system_prompt: str, max_tokens: int) -> tuple[str, dict[str, str], dict[str, Any]]:
@@ -254,9 +380,9 @@ def remote_call(url: str, headers: dict[str, str], body: dict[str, Any], *, time
     raise GatewayError(f"model API request failed: {last_error}", code="remote_error", status=4)
 
 
-def invoke(args: argparse.Namespace, registry: dict[str, Any]) -> int:
+def invoke(args: argparse.Namespace, root: Path, registry: dict[str, Any]) -> int:
     defaults = registry.get("defaults", {})
-    provider = resolve_provider(args.provider, registry, args.model or "")
+    provider = resolve_provider(args.provider, registry, root, args.model or "")
     if not provider["configured"]:
         raise GatewayError(f"provider {args.provider!r} is not configured; missing: {', '.join(provider['missing'])}", code="provider_unconfigured", status=3)
     if not provider["model"]:
@@ -283,9 +409,17 @@ def show_status(args: argparse.Namespace, root: Path, registry: dict[str, Any]) 
     selected = [args.provider] if args.provider else sorted(registry.get("providers", {}))
     items = []
     for provider_id in selected:
-        item = resolve_provider(provider_id, registry)
-        items.append({key: value for key, value in item.items() if key not in {"api_key", "base_url"}} | {"base_url_configured": bool(item["base_url"])})
-    payload = {"status": "ready", "providers": items, "runtime": load_runtime(root), "runtime_path": str(runtime_path(root))}
+        item = resolve_provider(provider_id, registry, root)
+        items.append({key: value for key, value in item.items() if key != "api_key"})
+    payload = {
+        "status": "ready",
+        "providers": items,
+        "runtime": load_runtime(root),
+        "local_runtimes": discover_local_runtimes(root),
+        "runtime_path": str(runtime_path(root)),
+        "connections_path": str(connections_path(root)),
+        "secret_storage": "local_private_file_or_environment",
+    }
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
@@ -302,6 +436,93 @@ def configure(args: argparse.Namespace, root: Path, registry: dict[str, Any]) ->
     write_json_private(runtime_path(root), value)
     print(json.dumps({"status": "configured", "agent": args.agent, "runtime": value["agents"][args.agent], "secret_storage": "environment_only"}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
+
+
+def connection_set(args: argparse.Namespace, root: Path, registry: dict[str, Any]) -> int:
+    if not args.confirmed:
+        raise GatewayError("connection-set requires --confirmed", code="confirmation_required")
+    settings = provider_settings(args.provider, registry)
+    base_url = (args.base_url or str(settings.get("base_url", ""))).strip().rstrip("/")
+    if not base_url:
+        raise GatewayError("base URL is required", code="base_url_missing")
+    validate_url(base_url)
+    model = (args.model or str(settings.get("default_model", ""))).strip()
+    if not model:
+        raise GatewayError("model is required", code="model_missing")
+    protocol = (args.protocol or str(settings.get("protocol", ""))).strip()
+    if protocol not in {"openai_responses", "openai_chat_completions", "anthropic_messages", "gemini_generate_content"}:
+        raise GatewayError("unsupported provider protocol", code="protocol_unsupported")
+
+    connections = load_connections(root)
+    connections.setdefault("providers", {})[args.provider] = {
+        "base_url": base_url,
+        "model": model,
+        "protocol": protocol,
+        "enabled": not args.disabled,
+    }
+    write_json_private(connections_path(root), connections)
+
+    supplied_secret = sys.stdin.read().strip() if args.secret_stdin else ""
+    if supplied_secret:
+        credentials = load_credentials(root)
+        credentials.setdefault("providers", {})[args.provider] = {"secret": supplied_secret}
+        write_json_private(credentials_path(root), credentials)
+    resolved = resolve_provider(args.provider, registry, root)
+    print(json.dumps({
+        "status": "configured",
+        "provider": args.provider,
+        "configured": resolved["configured"],
+        "secret_hint": resolved["secret_hint"],
+        "secret_storage": "local_private_file",
+    }, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def connection_delete(args: argparse.Namespace, root: Path, registry: dict[str, Any]) -> int:
+    if not args.confirmed:
+        raise GatewayError("connection-delete requires --confirmed", code="confirmation_required")
+    provider_settings(args.provider, registry)
+    for path, loader in ((connections_path(root), load_connections), (credentials_path(root), load_credentials)):
+        document = loader(root)
+        document.setdefault("providers", {}).pop(args.provider, None)
+        write_json_private(path, document)
+    print(json.dumps({"status": "disconnected", "provider": args.provider}, ensure_ascii=False, indent=2))
+    return 0
+
+
+def runtime_set(args: argparse.Namespace, root: Path, registry: dict[str, Any]) -> int:
+    if not args.confirmed:
+        raise GatewayError("runtime-set requires --confirmed", code="confirmation_required")
+    runtime = load_runtime(root)
+    if args.default_mode:
+        runtime["default_mode"] = args.default_mode
+    if args.selection_policy:
+        runtime["selection_policy"] = args.selection_policy
+    if args.provider_order is not None:
+        order = [item.strip() for item in args.provider_order.split(",") if item.strip()]
+        unknown = [item for item in order if item not in registry.get("providers", {})]
+        if unknown:
+            raise GatewayError(f"unknown providers in order: {', '.join(unknown)}", code="provider_unknown")
+        runtime["provider_order"] = list(dict.fromkeys(order))
+    write_json_private(runtime_path(root), runtime)
+    print(json.dumps({"status": "configured", "runtime": runtime}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def test_connection(args: argparse.Namespace, root: Path, registry: dict[str, Any]) -> int:
+    provider = resolve_provider(args.provider, registry, root)
+    if not provider["configured"] or not provider["model"]:
+        raise GatewayError("connection is incomplete", code="provider_unconfigured", status=3)
+    probe = argparse.Namespace(
+        provider=args.provider,
+        model=provider["model"],
+        prompt="只回复：连接成功",
+        system="这是连接测试。不要输出任何敏感信息。",
+        timeout=args.timeout,
+        max_output_tokens=32,
+        json=True,
+    )
+    return invoke(probe, root, registry)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -323,6 +544,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--provider", default="")
     p.add_argument("--model", default="")
     p.add_argument("--confirmed", action="store_true")
+    p = sub.add_parser("connection-set")
+    p.add_argument("--provider", required=True)
+    p.add_argument("--base-url")
+    p.add_argument("--model")
+    p.add_argument("--protocol")
+    p.add_argument("--secret-stdin", action="store_true")
+    p.add_argument("--disabled", action="store_true")
+    p.add_argument("--confirmed", action="store_true")
+    p = sub.add_parser("connection-delete")
+    p.add_argument("--provider", required=True)
+    p.add_argument("--confirmed", action="store_true")
+    p = sub.add_parser("runtime-set")
+    p.add_argument("--default-mode", choices=sorted(RUNTIME_MODES))
+    p.add_argument("--selection-policy", choices=sorted(SELECTION_POLICIES))
+    p.add_argument("--provider-order")
+    p.add_argument("--confirmed", action="store_true")
+    p = sub.add_parser("resolve")
+    p.add_argument("--agent", required=True)
+    p.add_argument("--requested-mode", choices=sorted(RUNTIME_MODES), default="")
+    p.add_argument("--host-provider", default="")
+    p.add_argument("--host-model", default="")
+    p = sub.add_parser("test")
+    p.add_argument("--provider", required=True)
+    p.add_argument("--timeout", type=int, default=30)
     return parser
 
 
@@ -333,11 +578,21 @@ def main() -> int:
     try:
         registry = load_registry(root)
         if args.command == "invoke":
-            return invoke(args, registry)
+            return invoke(args, root, registry)
         if args.command == "status":
             return show_status(args, root, registry)
         if args.command == "configure":
             return configure(args, root, registry)
+        if args.command == "connection-set":
+            return connection_set(args, root, registry)
+        if args.command == "connection-delete":
+            return connection_delete(args, root, registry)
+        if args.command == "runtime-set":
+            return runtime_set(args, root, registry)
+        if args.command == "resolve":
+            return resolve_execution(args, root, registry)
+        if args.command == "test":
+            return test_connection(args, root, registry)
         raise GatewayError(f"unknown command: {args.command}")
     except GatewayError as exc:
         print(json.dumps({"status": "error", "error": exc.code, "message": str(exc)}, ensure_ascii=False), file=sys.stderr)

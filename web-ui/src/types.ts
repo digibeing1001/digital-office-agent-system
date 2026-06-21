@@ -75,6 +75,41 @@ export interface ProjectSummary {
   status: string
   agent_roster: string[]
   updated_at: string
+  context_readiness?: ProjectContextReadiness
+}
+
+export interface ProjectContextQuestion {
+  field: string
+  prompt: string
+  why: string
+  priority: 'required' | 'recommended' | 'socratic'
+}
+
+export interface ProjectContextReadiness {
+  required: boolean
+  readiness_score: number
+  readiness_threshold: number
+  ready: boolean
+  confirmed: boolean
+  context_version: number
+  blockers: string[]
+  suggestions: ProjectContextQuestion[]
+  intent?: { summary: string; hash: string; confirmed: boolean; confirmed_at: string; confirmed_by: string }
+  context?: ProjectContextInput & { version?: number }
+}
+
+export interface ProjectContextInput {
+  intent_summary?: string
+  goal?: string
+  deliverables?: string[]
+  acceptance_criteria?: string[]
+  constraints?: string[]
+  source_refs?: string[]
+  deadline?: string
+  stakeholders?: string[]
+  risk_level?: 'low' | 'normal' | 'high' | 'regulated'
+  open_questions?: Array<{ question: string; critical: boolean }>
+  assumptions?: string[]
 }
 
 export interface KnowledgeEntrySummary {
@@ -115,7 +150,11 @@ export interface GuiState {
   version: string
   generated_at: string
   health: { status: string; checks: Record<string, boolean> }
-  settings: { configured: boolean; preferences: Record<string, unknown> }
+  settings: {
+    configured: boolean
+    preferences: { company_name?: string; secretary_name?: string; tone_note?: string; choices?: Record<string, string> }
+    presets: { default_choices: Record<string, string>; fields: Record<string, { label: string; choices: Record<string, { label: string; description: string }> }> }
+  }
   capabilities: Array<{ id: string; status: string; commands: string[] }>
   agents: { count: number; items: AgentSummary[] }
   digital_employees: { count: number; items: AgentSummary[] }
@@ -147,14 +186,26 @@ export interface GuiState {
     providers: Array<{
       provider_id: string
       display_name: string
+      provider_family: string
+      category: 'domestic' | 'global' | 'custom'
+      credential_mode: 'api_key' | 'token_plan'
+      credential_label: string
       protocol: string
+      base_url: string
       configured: boolean
+      enabled: boolean
       missing: string[]
       api_key_env: string
       model_env: string
       model: string
+      secret_hint: string
+      secret_source: string
+      suggested_models: string[]
+      help_url: string
+      model_locked: boolean
     }>
-    runtime: { default_mode: 'host' | 'direct_api' | 'auto'; agents: Record<string, { mode: string; provider: string; model: string }> }
+    runtime: { default_mode: 'host' | 'direct_api' | 'auto'; selection_policy: 'local_first' | 'api_first'; provider_order: string[]; agents: Record<string, { mode: string; provider: string; model: string }> }
+    local_runtimes: Array<{ id: string; display_name: string; detected: boolean; ready: boolean; config_detected: boolean; execution_support: string }>
   }
 }
 
@@ -184,8 +235,30 @@ export interface UploadKnowledgeInput {
 export interface CreateProjectInput {
   project_id?: string
   name: string
+  brief?: string
   agent_roster?: string[]
   methodology_schedule?: 'manual' | 'weekly' | 'monthly' | 'on_project_close'
+}
+
+export interface ModelConnectionInput {
+  base_url: string
+  model: string
+  protocol: string
+  secret?: string
+  enabled?: boolean
+}
+
+export interface ModelRuntimeInput {
+  default_mode: 'host' | 'direct_api' | 'auto'
+  selection_policy: 'local_first' | 'api_first'
+  provider_order: string[]
+}
+
+export interface PreferenceInput {
+  company_name?: string
+  secretary_name?: string
+  tone_note?: string
+  choices: Record<string, string>
 }
 
 export interface AppActions {
@@ -196,4 +269,12 @@ export interface AppActions {
   deleteAgent: (agentId: string) => Promise<Record<string, unknown>>
   decideApproval: (approvalId: string, decision: 'approve' | 'reject') => Promise<Record<string, unknown>>
   uploadKnowledge: (input: UploadKnowledgeInput) => Promise<Record<string, unknown>>
+  updateProjectContext: (projectId: string, context: ProjectContextInput) => Promise<Record<string, unknown>>
+  confirmProjectIntent: (projectId: string, expectedHash: string) => Promise<Record<string, unknown>>
+  confirmProjectContext: (projectId: string) => Promise<Record<string, unknown>>
+  saveModelConnection: (providerId: string, input: ModelConnectionInput) => Promise<Record<string, unknown>>
+  testModelConnection: (providerId: string) => Promise<Record<string, unknown>>
+  deleteModelConnection: (providerId: string) => Promise<Record<string, unknown>>
+  updateModelRuntime: (input: ModelRuntimeInput) => Promise<Record<string, unknown>>
+  updatePreferences: (input: PreferenceInput) => Promise<Record<string, unknown>>
 }

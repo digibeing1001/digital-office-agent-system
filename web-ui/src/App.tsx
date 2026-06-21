@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { AdminApp } from './features/admin/AdminApp'
 import { UserApp } from './features/user/UserApp'
-import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, UploadKnowledgeInput } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, UploadKnowledgeInput } from './types'
 
 export default function App() {
   const [state, setState] = useState<GuiState | null>(null)
@@ -60,6 +60,14 @@ export default function App() {
     decideApproval: (approvalId: string, decision: 'approve' | 'reject') =>
       mutate('正在记录决定…', () => api.decideApproval(approvalId, decision)),
     uploadKnowledge: (input: UploadKnowledgeInput) => mutate('正在上传资料…', () => api.uploadKnowledge(input)),
+    updateProjectContext: (projectId: string, context: ProjectContextInput) => mutate('正在整理项目上下文…', () => api.updateProjectContext(projectId, context)),
+    confirmProjectIntent: (projectId: string, expectedHash: string) => mutate('正在确认项目意图…', () => api.confirmProjectIntent(projectId, expectedHash)),
+    confirmProjectContext: (projectId: string) => mutate('正在确认项目底稿…', () => api.confirmProjectContext(projectId)),
+    saveModelConnection: (providerId: string, input: ModelConnectionInput) => mutate('正在保存模型连接…', () => api.saveModelConnection(providerId, input)),
+    testModelConnection: (providerId: string) => mutate('正在测试模型连接…', () => api.testModelConnection(providerId)),
+    deleteModelConnection: (providerId: string) => mutate('正在断开模型连接…', () => api.deleteModelConnection(providerId)),
+    updateModelRuntime: (input: ModelRuntimeInput) => mutate('正在更新自动选路…', () => api.updateModelRuntime(input)),
+    updatePreferences: (input: PreferenceInput) => mutate('正在保存使用偏好…', () => api.updatePreferences(input)),
   }
 
   if (loading && !state) {

@@ -45,6 +45,24 @@
 
 副作用必须可幂等、可去重或需要明确确认。不能因为一次网络错误就盲目重跑整个工作流。终态任务保持不可变；后续改进应创建新任务并沿用同一个 `context_id`。
 
+## 人类如何参与 Loop
+
+Human-in-the-loop 不是在最后增加一个审批框，而是两类不同的状态门：
+
+1. **执行前的上下文门**：秘书先根据用户表达生成意图摘要并复述；用户确认当前摘要版本后，秘书至少提出三道第一性原理问题，补齐目标、交付物、验收标准、失败边界、事实依据和关键不确定性。项目底稿达到准备度门槛并由用户确认哈希后，才允许派工。
+2. **执行中的精准中断**：只有出现高影响上下文缺口、目标漂移、证据冲突、高风险或不可逆动作时才暂停。中断保存状态和恢复游标，用户补充的内容以增量写入当前上下文版本，然后从检查点恢复。
+
+意图或目标发生变化时，原确认自动失效。系统不会拿旧确认继续执行，也不会在恢复时把全部聊天历史重新发送给模型；它只加载确认后的上下文差量、当前决定和原始资料引用。
+
+这一设计参考：
+
+- [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)：持久化中断状态、用稳定身份恢复、在中断前保持副作用幂等。
+- [AutoGen Human-in-the-Loop](https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html)：长时间人工反馈采用保存状态后异步恢复，阻塞式等待只适合短时即时确认。
+- [MemGPT](https://arxiv.org/abs/2310.08560)：将工作记忆和长期资料分层，通过引用和按需装载减少整段历史重放。
+- [ReAct](https://arxiv.org/abs/2210.03629) 与 [Reflexion](https://arxiv.org/abs/2303.11366)：动作与新观察交错，反思由反馈和验收证据触发，而不是每轮无条件增加一次模型调用。
+
+对应实现：`project-context-status`、`project-intent-confirm`、`project-context-update`、`project-context-confirm`，以及 `project-context-intake-production` harness。
+
 ## 任务循环与系统迭代
 
 任务返工可以在用户已经批准的范围和预算内自动循环。以下系统变化不属于普通任务循环：
