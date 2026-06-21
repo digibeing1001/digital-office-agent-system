@@ -7,7 +7,7 @@ export interface BoardItem {
   content: ReactNode
 }
 
-export function DraggableBoard({ items, storageKey }: { items: BoardItem[]; storageKey: string }) {
+export function DraggableBoard({ items, storageKey, variant = 'grid' }: { items: BoardItem[]; storageKey: string; variant?: 'grid' | 'rail' }) {
   const ids = useMemo(() => items.map((item) => item.id), [items])
   const [order, setOrder] = useState<string[]>(ids)
   const [wide, setWide] = useState<string[]>([])
@@ -38,8 +38,8 @@ export function DraggableBoard({ items, storageKey }: { items: BoardItem[]; stor
   }
 
   const ordered = order.map((id) => items.find((item) => item.id === id)).filter(Boolean) as BoardItem[]
-  return <div className="draggable-board">{ordered.map((item) => <div className={`board-item ${wide.includes(item.id) ? 'wide' : ''} ${dragging === item.id ? 'dragging' : ''}`} draggable key={item.id} onDragStart={() => setDragging(item.id)} onDragEnd={() => setDragging('')} onDragOver={(event) => event.preventDefault()} onDrop={() => drop(item.id)}>
-    <div className="board-item-tools"><button className="drag-handle" title="拖动调整位置" aria-label="拖动调整位置"><GripVertical size={16} /></button><button title={wide.includes(item.id) ? '恢复标准宽度' : '加宽此分区'} onClick={() => persist(order, wide.includes(item.id) ? wide.filter((id) => id !== item.id) : [...wide, item.id])}>{wide.includes(item.id) ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button></div>
+  return <div className={`draggable-board ${variant === 'rail' ? 'rail-board' : ''}`}>{ordered.map((item) => <div className={`board-item ${variant !== 'rail' && wide.includes(item.id) ? 'wide' : ''} ${dragging === item.id ? 'dragging' : ''}`} draggable key={item.id} onDragStart={() => setDragging(item.id)} onDragEnd={() => setDragging('')} onDragOver={(event) => event.preventDefault()} onDrop={() => drop(item.id)}>
+    <div className="board-item-tools"><button className="drag-handle" title="拖动调整位置" aria-label="拖动调整位置"><GripVertical size={16} /></button>{variant !== 'rail' && <button title={wide.includes(item.id) ? '恢复标准宽度' : '加宽此分区'} aria-label={wide.includes(item.id) ? '恢复标准宽度' : '加宽此分区'} onClick={() => persist(order, wide.includes(item.id) ? wide.filter((id) => id !== item.id) : [...wide, item.id])}>{wide.includes(item.id) ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button>}</div>
     {item.content}
   </div>)}</div>
 }
