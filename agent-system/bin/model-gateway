@@ -124,6 +124,8 @@ def load_runtime(root: Path) -> dict[str, Any]:
             "default_mode": "auto",
             "selection_policy": "local_first",
             "provider_order": [],
+            "preferred_local_runtime": "",
+            "local_runtime_order": [],
             "agents": {},
         }
     value = read_json(path)
@@ -204,25 +206,73 @@ def validate_url(url: str) -> None:
 def discover_local_runtimes(root: Path) -> list[dict[str, Any]]:
     home = root.parent
     candidates = [
-        ("hermes", "Hermes", [home / "bin" / "hermes", Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes"], [home / "config.yaml", Path.home() / ".hermes" / "config.yaml"]),
-        ("openclaw", "OpenClaw", [Path.home() / ".openclaw" / "bin" / "openclaw"], [Path.home() / ".openclaw" / "config.yaml"]),
+        ("hermes", "Hermes", "hermes", [home / "bin" / "hermes", Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes"], [home / "config.yaml", Path.home() / ".hermes" / "config.yaml"], "native"),
+        ("codex", "Codex", "codex", [Path.home() / ".codex" / "bin" / "codex"], [Path.home() / ".codex" / "config.toml", Path.home() / ".codex" / "auth.json"], "cli"),
+        ("claude_code", "Claude Code", "claude", [Path.home() / ".claude" / "local" / "claude", Path.home() / ".claude" / "bin" / "claude"], [Path.home() / ".claude.json", Path.home() / ".claude" / "settings.json"], "cli"),
+        ("openclaw", "OpenClaw", "openclaw", [Path.home() / ".openclaw" / "bin" / "openclaw"], [Path.home() / ".openclaw" / "config.yaml"], "detected_only"),
     ]
     result = []
-    for runtime_id, display_name, executables, configs in candidates:
+    for runtime_id, display_name, command_name, executables, configs, support in candidates:
         env_name = f"DIGITAL_OFFICE_{runtime_id.upper()}_COMMAND"
         command = os.environ.get(env_name, "").strip()
-        discovered = next((str(path) for path in executables if path.exists()), "") or str(shutil.which(runtime_id) or "")
+        discovered = next((str(path) for path in executables if path.exists()), "") or str(shutil.which(command_name) or "")
         detected = bool(command or discovered)
         result.append({
             "id": runtime_id,
             "display_name": display_name,
             "detected": detected,
-            "ready": detected and runtime_id == "hermes",
+            "ready": detected and support in {"native", "cli"},
             "command": command or discovered,
             "config_detected": any(path.exists() for path in configs),
-            "execution_support": "native" if runtime_id == "hermes" else "detected_only",
+            "execution_support": support,
         })
     return result
+
+
+def local_runtime_ids(root: Path) -> set[str]:
+    return {str(item.get("id", "")) for item in discover_local_runtimes(root)}
+
+
+def validate_local_runtime(root: Path, runtime_id: str) -> str:
+    runtime_id = runtime_id.strip()
+    if not runtime_id or runtime_id == "auto":
+        return ""
+    valid = local_runtime_ids(root)
+    if runtime_id not in valid:
+        raise GatewayError(f"unknown local runtime {runtime_id!r}; valid runtimes: {', '.join(sorted(valid))}", code="local_runtime_unknown")
+    return runtime_id
+
+
+def select_local_runtime(root: Path, runtime: dict[str, Any], preferred: str = "") -> dict[str, Any] | None:
+    runtimes = discover_local_runtimes(root)
+    ready = [item for item in runtimes if item.get("ready")]
+    if not ready:
+        return None
+    preferred = validate_local_runtime(root, preferred or str(runtime.get("preferred_local_runtime", "")))
+    if preferred:
+        selected = next((item for item in ready if item.get("id") == preferred), None)
+        if not selected:
+            raise GatewayError(f"selected local runtime {preferred!r} is not ready on this machine", code="local_runtime_unavailable", status=3)
+        return selected
+    order = runtime.get("local_runtime_order", [])
+    if isinstance(order, list):
+        for runtime_id in order:
+            selected = next((item for item in ready if item.get("id") == str(runtime_id)), None)
+            if selected:
+                return selected
+    return ready[0]
+
+
+def normalize_agent_runtime_override(root: Path, registry: dict[str, Any], value: dict[str, Any]) -> dict[str, str]:
+    mode = str(value.get("mode", "auto") or "auto")
+    if mode not in RUNTIME_MODES:
+        raise GatewayError(f"invalid agent runtime mode: {mode}", code="runtime_mode_invalid")
+    provider = str(value.get("provider", "") or "").strip()
+    if provider:
+        provider_settings(provider, registry)
+    model = str(value.get("model", "") or "").strip()
+    local_runtime = validate_local_runtime(root, str(value.get("local_runtime", "") or ""))
+    return {"mode": mode, "provider": provider, "model": model, "local_runtime": local_runtime}
 
 
 def ordered_provider_ids(runtime: dict[str, Any], registry: dict[str, Any]) -> list[str]:
@@ -239,7 +289,8 @@ def resolve_execution(args: argparse.Namespace, root: Path, registry: dict[str, 
     provider_id = str(override.get("provider") or args.host_provider or "")
     model = str(override.get("model") or args.host_model or "")
 
-    local = next((item for item in discover_local_runtimes(root) if item["ready"]), None)
+    preferred_local = str(override.get("local_runtime") or runtime.get("preferred_local_runtime") or "")
+    local = select_local_runtime(root, runtime, preferred_local)
     api = None
     for candidate in ordered_provider_ids(runtime, registry):
         item = resolve_provider(candidate, registry, root, model if candidate == provider_id else "")
@@ -249,6 +300,8 @@ def resolve_execution(args: argparse.Namespace, root: Path, registry: dict[str, 
                 break
 
     if mode == "host":
+        if not local:
+            raise GatewayError("no ready local Agent is available", code="local_runtime_unavailable", status=3)
         selected = {"mode": "host", "provider": args.host_provider, "model": args.host_model, "local_runtime": local}
     elif mode == "direct_api":
         if provider_id:
@@ -431,8 +484,9 @@ def configure(args: argparse.Namespace, root: Path, registry: dict[str, Any]) ->
         raise GatewayError("direct_api mode requires --provider and --model", code="model_configuration_missing")
     if args.provider:
         provider_settings(args.provider, registry)
+    local_runtime = validate_local_runtime(root, args.local_runtime)
     value = load_runtime(root)
-    value.setdefault("agents", {})[args.agent] = {"mode": args.mode, "provider": args.provider, "model": args.model}
+    value.setdefault("agents", {})[args.agent] = {"mode": args.mode, "provider": args.provider, "model": args.model, "local_runtime": local_runtime}
     write_json_private(runtime_path(root), value)
     print(json.dumps({"status": "configured", "agent": args.agent, "runtime": value["agents"][args.agent], "secret_storage": "environment_only"}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
@@ -504,6 +558,28 @@ def runtime_set(args: argparse.Namespace, root: Path, registry: dict[str, Any]) 
         if unknown:
             raise GatewayError(f"unknown providers in order: {', '.join(unknown)}", code="provider_unknown")
         runtime["provider_order"] = list(dict.fromkeys(order))
+    if args.preferred_local_runtime is not None:
+        runtime["preferred_local_runtime"] = validate_local_runtime(root, args.preferred_local_runtime)
+    if args.local_runtime_order is not None:
+        order = [item.strip() for item in args.local_runtime_order.split(",") if item.strip()]
+        valid = local_runtime_ids(root)
+        unknown = [item for item in order if item not in valid]
+        if unknown:
+            raise GatewayError(f"unknown local runtimes in order: {', '.join(unknown)}", code="local_runtime_unknown")
+        runtime["local_runtime_order"] = list(dict.fromkeys(order))
+    if args.agents_json:
+        try:
+            raw_agents = json.loads(args.agents_json)
+        except json.JSONDecodeError as exc:
+            raise GatewayError(f"invalid agents JSON: {exc}", code="runtime_agents_invalid") from exc
+        if not isinstance(raw_agents, dict):
+            raise GatewayError("agents JSON must be an object", code="runtime_agents_invalid")
+        normalized: dict[str, dict[str, str]] = {}
+        for agent_id, value in raw_agents.items():
+            if not isinstance(value, dict):
+                raise GatewayError(f"runtime override for {agent_id!r} must be an object", code="runtime_agents_invalid")
+            normalized[str(agent_id)] = normalize_agent_runtime_override(root, registry, value)
+        runtime["agents"] = normalized
     write_json_private(runtime_path(root), runtime)
     print(json.dumps({"status": "configured", "runtime": runtime}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
@@ -543,6 +619,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mode", choices=sorted(RUNTIME_MODES), required=True)
     p.add_argument("--provider", default="")
     p.add_argument("--model", default="")
+    p.add_argument("--local-runtime", default="")
     p.add_argument("--confirmed", action="store_true")
     p = sub.add_parser("connection-set")
     p.add_argument("--provider", required=True)
@@ -559,6 +636,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--default-mode", choices=sorted(RUNTIME_MODES))
     p.add_argument("--selection-policy", choices=sorted(SELECTION_POLICIES))
     p.add_argument("--provider-order")
+    p.add_argument("--preferred-local-runtime")
+    p.add_argument("--local-runtime-order")
+    p.add_argument("--agents-json", default="")
     p.add_argument("--confirmed", action="store_true")
     p = sub.add_parser("resolve")
     p.add_argument("--agent", required=True)

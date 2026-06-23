@@ -969,6 +969,187 @@ PROJECT_CONTEXT_FIELDS = {
     "intent_summary", "goal", "deliverables", "acceptance_criteria", "constraints", "source_refs",
     "deadline", "stakeholders", "risk_level", "open_questions", "assumptions",
 }
+FEEDBACK_TYPES = {
+    "intent_misread",
+    "context_missing",
+    "style_mismatch",
+    "tool_error",
+    "deliverable_quality",
+    "acceptance_change",
+    "routing_error",
+    "other",
+}
+FEEDBACK_SCOPES = {"project", "agent", "global", "session"}
+MEMORY_PROMOTION_TARGETS = {"project_rule", "agent_rule", "global_rule", "memory_note"}
+SECRET_SIGNAL_RE = re.compile(
+    r"(?i)(-----BEGIN [A-Z ]*PRIVATE KEY|sk-[A-Za-z0-9]{16,}|"
+    r"bearer\s+[A-Za-z0-9._\-]{16,}|api[_ -]?key\s*[:=]\s*\S+|"
+    r"access[_ -]?token\s*[:=]\s*\S+|password\s*[:=]\s*\S+|secret\s*[:=]\s*\S+)"
+)
+
+
+def clean_long_text(value: Any, *, limit: int = 6000) -> str:
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", " ", str(value or ""))
+    return text.strip()[:limit]
+
+
+def clean_string_list(value: Any, *, limit: int = 50, item_limit: int = 1000) -> list[str]:
+    if isinstance(value, list):
+        return [clean_long_text(item, limit=item_limit) for item in value[:limit] if clean_long_text(item, limit=item_limit)]
+    if isinstance(value, str):
+        return [item for item in (clean_long_text(part, limit=item_limit) for part in re.split(r"[\n;；]+", value)) if item][:limit]
+    return []
+
+
+def reject_sensitive_learning_text(*values: Any) -> None:
+    text = "\n".join(clean_long_text(value, limit=4000) for value in values if value is not None)
+    if SECRET_SIGNAL_RE.search(text):
+        print("office-system: feedback and memory learning must not store credentials, API keys, tokens, passwords, or private keys", file=sys.stderr)
+        raise SystemExit(2)
+
+
+def project_intent_snapshot_dir(root: Path, project_id: str) -> Path:
+    return ensure_project(root, project_id) / "intent-snapshots"
+
+
+def project_context_pack_dir(root: Path, project_id: str) -> Path:
+    return ensure_project(root, project_id) / "context-packs"
+
+
+def feedback_record_dir(root: Path, project_id: str = "") -> Path:
+    if project_id:
+        return ensure_project(root, project_id) / "learning" / "feedback"
+    return root / "learning" / "feedback"
+
+
+def promotion_record_dir(root: Path) -> Path:
+    return root / "learning" / "promotions"
+
+
+def infer_intent_type(text: str) -> str:
+    lowered = text.lower()
+    buckets = [
+        ("legal", ["合同", "合规", "法务", "法律", "nda", "msa", "agreement", "compliance"]),
+        ("writing", ["写", "文案", "文章", "报告", "总结", "润色", "copy", "draft"]),
+        ("development", ["代码", "开发", "bug", "系统", "后端", "前端", "api", "ui", "repo"]),
+        ("finance", ["财务", "预算", "发票", "付款", "成本", "报价", "finance", "invoice"]),
+        ("research", ["调研", "研究", "竞品", "市场", "论文", "资料", "research"]),
+        ("operations", ["流程", "运营", "行政", "审批", "排期", "项目管理", "ops"]),
+    ]
+    for label, terms in buckets:
+        if any(term in lowered for term in terms):
+            return label
+    return "general_office"
+
+
+def infer_risk_level(text: str, context: dict[str, Any] | None = None) -> str:
+    configured = str((context or {}).get("risk_level", "")).strip()
+    if configured in {"low", "normal", "high", "regulated"}:
+        return configured
+    lowered = text.lower()
+    if any(term in lowered for term in ["法律意见", "诉讼", "监管", "医疗", "投资", "税务", "external filing", "regulated"]):
+        return "regulated"
+    if any(term in lowered for term in ["合同", "合规", "客户数据", "机密", "付款", "上线", "生产", "高风险"]):
+        return "high"
+    if any(term in lowered for term in ["草稿", "内部", "整理", "个人"]):
+        return "low"
+    return "normal"
+
+
+def secretary_restatement_from_text(text: str, project_name: str = "") -> str:
+    text = clean_long_text(text, limit=1000)
+    if not text:
+        return ""
+    subject = f"「{project_name}」" if project_name else "这个项目"
+    return f"我理解你希望围绕{subject}推进这件事：{text}"
+
+
+def likely_project_creation_intent(text: str) -> bool:
+    lowered = clean_long_text(text, limit=1000).lower()
+    if not lowered:
+        return False
+    if lowered in {"hello", "hi", "hey", "你好", "您好", "在吗", "嗨"}:
+        return False
+    project_terms = ("项目", "project", "立项", "新建", "创建", "启动", "发起", "安排", "交付", "工作流", "任务")
+    action_terms = ("新建", "创建", "建立", "启动", "发起", "立项", "安排", "帮我做", "帮我完成", "做一个", "开一个", "创建一个", "start", "create", "launch")
+    if any(term in lowered for term in project_terms) and any(term in lowered for term in action_terms):
+        return True
+    if re.search(r"(?i)\b(create|start|launch|open)\b.{0,40}\b(project|workflow|task)\b", lowered):
+        return True
+    return False
+
+
+def secretary_chat_preview(text: str) -> dict[str, Any]:
+    text = clean_long_text(text, limit=4000)
+    lowered = text.lower()
+    is_greeting = lowered in {"hello", "hi", "hey", "你好", "您好", "在吗", "嗨"} or (len(text) <= 12 and any(item in lowered for item in ["hello", "hi", "你好", "您好"]))
+    is_question = bool(re.search(r"[?？]|\bhow\b|\bwhat\b|\bwhy\b|怎么|如何|为什么|是什么|能不能|可以吗", text, re.I))
+    should_create = likely_project_creation_intent(text)
+    suggested_name = clean_long_text(re.sub(r"^(请|麻烦|帮我|我想|我要|我们要|能不能|请你)\s*", "", text), limit=28) or "新项目"
+    suggested_name = re.sub(r"\s+", " ", suggested_name).strip(" ：:，,。.")
+    if should_create:
+        reply = (
+            "我理解你可能是在准备开始一项正式工作。为了避免把普通聊天误建成项目，"
+            "我不会自动新建；你可以点击上方「新建项目」，我会接着用几个关键问题帮你把项目底稿补齐。"
+        )
+        return {
+            "status": "suggest_project",
+            "intent": "project_creation_candidate",
+            "should_create_project": True,
+            "confidence": 0.78,
+            "reply": reply,
+            "suggested_project_name": suggested_name[:24] or "新项目",
+            "suggested_project_id": slugify(suggested_name or "new-project"),
+            "next_actions": ["start_project_intake", "continue_chat"],
+        }
+    if is_greeting:
+        reply = "你好，我在。你可以直接问我问题；如果要开始一项正式工作，请点输入框上方的「新建项目」。"
+        intent = "greeting"
+    elif is_question:
+        reply = f"我先按普通问题来理解：{text[:80]}。你可以继续追问；如果这件事要沉淀资料、交付物和上下文，再点击「新建项目」。"
+        intent = "question"
+    else:
+        reply = "我先按普通对话来理解，不会自动新建项目。需要正式推进一项工作时，点击上方「新建项目」，我会先复述意图并追问关键上下文。"
+        intent = "conversation"
+    return {
+        "status": "chat",
+        "intent": intent,
+        "should_create_project": False,
+        "confidence": 0.7 if is_greeting or is_question else 0.55,
+        "reply": reply,
+        "suggested_project_name": "",
+        "suggested_project_id": "",
+        "next_actions": ["continue_chat", "start_project_intake"],
+    }
+
+
+def secretary_chat(args: argparse.Namespace) -> int:
+    root = system_root()
+    message = clean_long_text(args.message if args.message is not None else sys.stdin.read(), limit=4000)
+    if not message:
+        print("office-system: secretary-chat requires --message or stdin body", file=sys.stderr)
+        return 2
+    preview = secretary_chat_preview(message)
+    append_audit_event(
+        root,
+        "secretary_chat_intent_previewed",
+        actor_id=args.user or "",
+        actor_role=args.role or "",
+        resource_type="secretary_chat",
+        resource_id=preview.get("intent", ""),
+        outcome=preview.get("status", ""),
+        reason="explicit_project_creation_required",
+        extra={"should_create_project": preview.get("should_create_project", False), "confidence": preview.get("confidence", 0)},
+    )
+    print(json.dumps({"message": message, **preview}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def latest_project_intent_snapshot(project: dict[str, Any]) -> dict[str, Any]:
+    snapshots = project.get("intent_snapshots", []) or []
+    if not snapshots:
+        return {}
+    return snapshots[0] if isinstance(snapshots[0], dict) else {}
 
 
 def fresh_project_context(brief: str = "", *, required: bool = False) -> dict[str, Any]:
@@ -1101,6 +1282,515 @@ def assess_project_context(root: Path, project_id: str, project: dict[str, Any])
     }
 
 
+def build_project_intent_snapshot(
+    root: Path,
+    project_id: str,
+    project: dict[str, Any],
+    *,
+    user_utterance: str,
+    created_by: str = "",
+    source: str = "secretary",
+) -> dict[str, Any]:
+    context = normalized_project_context(project.get("context_intake"))
+    utterance = clean_long_text(user_utterance or context.get("intent_summary") or context.get("goal"), limit=4000)
+    restatement = secretary_restatement_from_text(utterance, str(project.get("name", "")))
+    assessment = assess_project_context(root, project_id, {**project, "context_intake": context})
+    task_type = infer_intent_type(" ".join([utterance, context.get("goal", ""), " ".join(context.get("deliverables", []))]))
+    missing_context = [str(item).replace("missing_", "") for item in assessment.get("blockers", []) if str(item).startswith("missing_")]
+    snapshot = {
+        "version": "1.0.0",
+        "kind": "digital-office-intent-snapshot",
+        "snapshot_id": f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}",
+        "project_id": project_id,
+        "project_name": project.get("name", project_id),
+        "created_at": now_iso(),
+        "created_by": safe_claim(created_by, "intent snapshot creator", required=False),
+        "source": safe_component(source, "intent snapshot source"),
+        "user_utterance": utterance,
+        "secretary_restatement": restatement,
+        "task_type": task_type,
+        "need_new_project": False,
+        "project_goal": context.get("goal", ""),
+        "deliverables": context.get("deliverables", []),
+        "success_criteria": context.get("acceptance_criteria", []),
+        "known_context_refs": context.get("source_refs", []),
+        "missing_context": missing_context,
+        "risk_level": infer_risk_level(utterance, context),
+        "suggested_questions": assessment.get("suggestions", [])[:5],
+        "confirmation": {
+            "required": True,
+            "confirmed": bool(assessment.get("intent", {}).get("confirmed")),
+            "confirmed_hash": context.get("intent_confirmed_hash", ""),
+            "confirmed_at": context.get("intent_confirmed_at", ""),
+            "confirmed_by": context.get("intent_confirmed_by", ""),
+        },
+    }
+    snapshot["state_hash"] = canonical_hash({key: value for key, value in snapshot.items() if key != "state_hash"})
+    return snapshot
+
+
+def record_project_intent_snapshot(
+    root: Path,
+    project_id: str,
+    *,
+    user_utterance: str,
+    created_by: str = "",
+    source: str = "secretary",
+    update_context_summary: bool = False,
+) -> dict[str, Any]:
+    project_id = safe_component(project_id, "project id")
+    project_file = ensure_project(root, project_id) / "project.json"
+    project = read_json(project_file)
+    snapshot = build_project_intent_snapshot(root, project_id, project, user_utterance=user_utterance, created_by=created_by, source=source)
+    target = project_intent_snapshot_dir(root, project_id) / f"{snapshot['snapshot_id']}.json"
+    write_json(target, snapshot)
+    context = normalized_project_context(project.get("context_intake"))
+    if update_context_summary and snapshot["secretary_restatement"]:
+        context["intent_summary"] = snapshot["secretary_restatement"]
+        context["goal"] = context.get("goal") or clean_long_text(user_utterance, limit=4000)
+        context["intent_confirmed_hash"] = ""
+        context["intent_confirmed_at"] = ""
+        context["intent_confirmed_by"] = ""
+        context["confirmed_hash"] = ""
+        context["confirmed_at"] = ""
+        context["confirmed_by"] = ""
+        context["updated_at"] = now_iso()
+        project["context_intake"] = context
+    summary = {
+        "snapshot_id": snapshot["snapshot_id"],
+        "path": str(target.relative_to(root)),
+        "state_hash": snapshot["state_hash"],
+        "task_type": snapshot["task_type"],
+        "risk_level": snapshot["risk_level"],
+        "created_at": snapshot["created_at"],
+    }
+    project.setdefault("intent_snapshots", [])
+    project["intent_snapshots"] = [summary, *[item for item in project["intent_snapshots"] if item.get("snapshot_id") != snapshot["snapshot_id"]]][:20]
+    project["active_intent_snapshot_id"] = snapshot["snapshot_id"]
+    project["updated_at"] = now_iso()
+    write_json(project_file, project)
+    append_log(root, {"event": "intent_snapshot_recorded", "project": project_id, "snapshot_id": snapshot["snapshot_id"], "source": source})
+    return snapshot
+
+
+def load_project_feedback_summaries(root: Path, project_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    records = read_records(feedback_record_dir(root, project_id), "digital-office-feedback-learning-event")
+    return compact_records(records, ["feedback_id", "feedback_type", "scope", "promotion_stage", "status", "created_at", "correction_hash"], limit)
+
+
+def build_project_context_pack(
+    root: Path,
+    project_id: str,
+    project: dict[str, Any],
+    *,
+    reason: str = "",
+    created_by: str = "",
+) -> dict[str, Any]:
+    context = normalized_project_context(project.get("context_intake"))
+    assessment = assess_project_context(root, project_id, project)
+    entries = load_entries(root, project_path(root, project_id) / "knowledge" / "entries")
+    knowledge_refs = [
+        {
+            "entry_id": entry.get("entry_id", ""),
+            "title": entry.get("title", ""),
+            "status": entry.get("status", ""),
+            "kind": entry.get("kind", ""),
+            "source_file": entry.get("source_file", ""),
+            "agent_readable": bool(entry.get("agent_readable")),
+        }
+        for entry in entries[:50]
+    ]
+    latest_snapshot = latest_project_intent_snapshot(project)
+    inline_material = {
+        "intent": context.get("intent_summary", ""),
+        "goal": context.get("goal", ""),
+        "deliverables": context.get("deliverables", []),
+        "acceptance_criteria": context.get("acceptance_criteria", []),
+        "constraints": context.get("constraints", []),
+        "source_refs": context.get("source_refs", []),
+        "knowledge_refs": knowledge_refs,
+        "assumptions": context.get("assumptions", []),
+        "open_questions": context.get("open_questions", []),
+    }
+    estimated_tokens = max(1, len(json.dumps(inline_material, ensure_ascii=False)) // 4)
+    pack = {
+        "version": "1.0.0",
+        "kind": "digital-office-project-context-pack",
+        "context_pack_id": f"ctx-v{context['version']}-{canonical_hash(inline_material)[:10]}",
+        "project_id": project_id,
+        "project_name": project.get("name", project_id),
+        "status": "ready_for_dispatch" if assessment.get("confirmed") else "needs_human_context",
+        "created_at": now_iso(),
+        "created_by": safe_claim(created_by, "context pack creator", required=False),
+        "reason": safe_claim(reason, "context pack reason", required=False),
+        "context_version": context["version"],
+        "intent_snapshot": latest_snapshot,
+        "intent": assessment.get("intent", {}),
+        "context_confirmation": {
+            "confirmed": assessment.get("confirmed", False),
+            "confirmed_hash": context.get("confirmed_hash", ""),
+            "confirmed_at": context.get("confirmed_at", ""),
+            "confirmed_by": context.get("confirmed_by", ""),
+        },
+        "readiness": {
+            "score": assessment.get("readiness_score", 0),
+            "threshold": assessment.get("readiness_threshold", 70),
+            "ready": assessment.get("ready", False),
+            "blockers": assessment.get("blockers", []),
+            "suggestions": assessment.get("suggestions", [])[:5],
+        },
+        "goal": context.get("goal", ""),
+        "deliverables": context.get("deliverables", []),
+        "acceptance_criteria": context.get("acceptance_criteria", []),
+        "constraints": context.get("constraints", []),
+        "source_refs": context.get("source_refs", []),
+        "knowledge_refs": knowledge_refs,
+        "stakeholders": context.get("stakeholders", []),
+        "deadline": context.get("deadline", ""),
+        "risk_level": context.get("risk_level", "normal"),
+        "assumptions": context.get("assumptions", []),
+        "open_questions": context.get("open_questions", []),
+        "feedback_learning_refs": load_project_feedback_summaries(root, project_id),
+        "context_budget": {
+            "strategy": "hybrid",
+            "estimated_tokens": estimated_tokens,
+            "max_tokens": 6000,
+            "compacted": estimated_tokens > 6000,
+            "large_evidence_by_reference": True,
+        },
+        "handoff_guidance": [
+            "Use this pack as the authoritative project context before reading chat history.",
+            "Carry facts, decisions, open questions, and references separately.",
+            "Ask the secretary for more context when blockers or critical open questions remain.",
+            "Do not promote feedback into rules unless a memory promotion is confirmed.",
+        ],
+    }
+    pack["state_hash"] = canonical_hash({key: value for key, value in pack.items() if key != "state_hash"})
+    return pack
+
+
+def refresh_project_context_pack(root: Path, project_id: str, *, reason: str = "", created_by: str = "") -> dict[str, Any]:
+    project_id = safe_component(project_id, "project id")
+    project_file = ensure_project(root, project_id) / "project.json"
+    project = read_json(project_file)
+    pack = build_project_context_pack(root, project_id, project, reason=reason, created_by=created_by)
+    target = project_context_pack_dir(root, project_id) / f"{pack['context_pack_id']}.json"
+    pack["path"] = str(target.relative_to(root))
+    pack["state_hash"] = canonical_hash({key: value for key, value in pack.items() if key != "state_hash"})
+    write_json(target, pack)
+    project["current_context_pack"] = {
+        "context_pack_id": pack["context_pack_id"],
+        "path": pack["path"],
+        "state_hash": pack["state_hash"],
+        "status": pack["status"],
+        "updated_at": pack["created_at"],
+    }
+    project.setdefault("context_pack_history", [])
+    project["context_pack_history"] = [project["current_context_pack"], *project["context_pack_history"]][:50]
+    project["updated_at"] = now_iso()
+    write_json(project_file, project)
+    append_log(root, {"event": "context_pack_refreshed", "project": project_id, "context_pack_id": pack["context_pack_id"], "reason": reason})
+    return pack
+
+
+def context_pack_summary(project: dict[str, Any]) -> dict[str, Any]:
+    pack = project.get("current_context_pack", {})
+    return pack if isinstance(pack, dict) else {}
+
+
+def record_run_context_checkpoint(
+    root: Path,
+    run: dict[str, Any],
+    context_pack: dict[str, Any] | None,
+    *,
+    actor_id: str = "",
+    actor_role: str = "",
+) -> dict[str, Any] | None:
+    if not context_pack:
+        return None
+    run_id = str(run.get("run_id", ""))
+    if not run_id:
+        return None
+    checkpoint_id = safe_component(f"context-pack-{context_pack.get('context_pack_id', '')}", "checkpoint id")
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-run-checkpoint",
+        "checkpoint_id": checkpoint_id,
+        "run_id": safe_component(run_id, "run id"),
+        "stage": "context",
+        "label": "Project context pack at dispatch",
+        "status": "ready_to_resume" if context_pack.get("status") == "ready_for_dispatch" else "requires_human_context",
+        "resume_cursor": "context_pack_loaded",
+        "state": {
+            "context_pack_id": context_pack.get("context_pack_id", ""),
+            "context_pack_hash": context_pack.get("state_hash", ""),
+            "context_pack_status": context_pack.get("status", ""),
+            "project_id": context_pack.get("project_id", ""),
+            "readiness": context_pack.get("readiness", {}),
+            "intent": context_pack.get("intent", {}),
+            "context_budget": context_pack.get("context_budget", {}),
+        },
+        "state_hash": canonical_hash(
+            {
+                "context_pack_id": context_pack.get("context_pack_id", ""),
+                "state_hash": context_pack.get("state_hash", ""),
+                "status": context_pack.get("status", ""),
+            }
+        ),
+        "artifacts": [str(context_pack.get("path", ""))] if context_pack.get("path") else [],
+        "requires_human": context_pack.get("status") != "ready_for_dispatch",
+        "created_at": now_iso(),
+    }
+    write_json(checkpoint_path(root, run_id, checkpoint_id), record)
+    run.setdefault("checkpoints", []).append(
+        {
+            "checkpoint_id": checkpoint_id,
+            "stage": "context",
+            "path": str(checkpoint_path(root, run_id, checkpoint_id).relative_to(root)),
+            "state_hash": record["state_hash"],
+            "created_at": record["created_at"],
+            "context_pack_id": context_pack.get("context_pack_id", ""),
+        }
+    )
+    append_run_ledger_event(
+        root,
+        run_id,
+        "context_pack_checkpoint_created",
+        stage="context",
+        action="checkpoint.context_pack",
+        agent_id=str(run.get("agent_id", "")),
+        actor_id=actor_id,
+        actor_role=actor_role,
+        input_payload={"project_id": context_pack.get("project_id", ""), "context_pack_id": context_pack.get("context_pack_id", "")},
+        output_payload={"checkpoint_id": checkpoint_id, "context_pack_hash": context_pack.get("state_hash", ""), "status": record["status"]},
+        artifact_refs=record["artifacts"],
+        checkpoint_id=checkpoint_id,
+    )
+    return record
+
+
+def feedback_record_path(root: Path, feedback_id: str, project_id: str = "") -> Path:
+    return feedback_record_dir(root, project_id) / f"{safe_component(feedback_id, 'feedback id')}.json"
+
+
+def find_feedback_record(root: Path, feedback_id: str, project_id: str = "") -> tuple[dict[str, Any], Path]:
+    feedback_id = safe_component(feedback_id, "feedback id")
+    candidates: list[Path] = []
+    if project_id:
+        candidates.append(feedback_record_path(root, feedback_id, project_id))
+    candidates.append(feedback_record_path(root, feedback_id, ""))
+    for project_file in sorted((root / "projects").glob("*/project.json")):
+        if project_file.parent.name != "_template":
+            candidates.append(feedback_record_path(root, feedback_id, project_file.parent.name))
+    for path in candidates:
+        if path.exists():
+            return read_json(path), path
+    print(f"office-system: feedback record not found: {feedback_id}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def feedback_occurrence_count(root: Path, record: dict[str, Any]) -> int:
+    project_id = str(record.get("project_id", ""))
+    correction_hash = str(record.get("correction_hash", ""))
+    records = read_records(feedback_record_dir(root, project_id), "digital-office-feedback-learning-event")
+    return sum(1 for item in records if item.get("correction_hash") == correction_hash)
+
+
+def feedback_record(args: argparse.Namespace) -> int:
+    root = system_root()
+    feedback_type = safe_component(args.feedback_type, "feedback type")
+    if feedback_type not in FEEDBACK_TYPES:
+        print(f"office-system: invalid feedback type: {feedback_type}", file=sys.stderr)
+        return 2
+    scope = safe_component(args.scope, "feedback scope")
+    if scope not in FEEDBACK_SCOPES:
+        print(f"office-system: invalid feedback scope: {scope}", file=sys.stderr)
+        return 2
+    project_id = safe_component(args.project, "project id") if args.project else ""
+    if scope == "project" and not project_id:
+        print("office-system: project-scoped feedback requires --project", file=sys.stderr)
+        return 2
+    agent_id = registered_agent(root, args.agent) if args.agent else ""
+    if scope == "agent" and not agent_id:
+        print("office-system: agent-scoped feedback requires --agent", file=sys.stderr)
+        return 2
+    user_feedback = clean_long_text(args.user_feedback if args.user_feedback is not None else sys.stdin.read(), limit=6000)
+    correction = clean_long_text(args.correction or user_feedback, limit=6000)
+    expected = clean_long_text(args.expected or "", limit=3000)
+    observed = clean_long_text(args.observed or "", limit=3000)
+    if not user_feedback:
+        print("office-system: feedback requires --user-feedback or stdin", file=sys.stderr)
+        return 2
+    reject_sensitive_learning_text(user_feedback, correction, expected, observed)
+    feedback_id = safe_component(args.feedback_id, "feedback id") if args.feedback_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    path = feedback_record_path(root, feedback_id, project_id if project_id else "")
+    if path.exists():
+        print(f"office-system: feedback already exists: {feedback_id}", file=sys.stderr)
+        return 2
+    correction_hash = canonical_hash(
+        {
+            "feedback_type": feedback_type,
+            "scope": scope,
+            "project_id": project_id,
+            "agent_id": agent_id,
+            "correction": correction.strip().lower(),
+        }
+    )
+    temp_record = {"project_id": project_id, "correction_hash": correction_hash}
+    occurrence = feedback_occurrence_count(root, temp_record) + 1
+    promotion_stage = "pending_confirmation" if occurrence >= 3 else "tentative"
+    if args.confirmed_rule:
+        promotion_stage = "confirmed_by_user"
+    record = {
+        "version": "1.0.0",
+        "kind": "digital-office-feedback-learning-event",
+        "feedback_id": feedback_id,
+        "status": "recorded",
+        "feedback_type": feedback_type,
+        "scope": scope,
+        "promotion_stage": promotion_stage,
+        "occurrence_count": occurrence,
+        "project_id": project_id,
+        "agent_id": agent_id,
+        "workflow_run_id": safe_claim(args.run_id, "feedback run id", required=False),
+        "task_id": safe_claim(args.task_id, "feedback task id", required=False),
+        "created_by": safe_claim(args.created_by, "feedback creator", required=False),
+        "created_at": now_iso(),
+        "user_feedback": user_feedback,
+        "expected": expected,
+        "observed": observed,
+        "correction": correction,
+        "correction_hash": correction_hash,
+        "source": safe_component(args.source, "feedback source"),
+        "promotion_policy": {
+            "requires_confirmation": True,
+            "minimum_repetitions_for_candidate": 3,
+            "never_store_sensitive_secrets": True,
+            "scope_isolation": "project_over_agent_over_global",
+        },
+    }
+    write_json(path, record)
+    if project_id:
+        refresh_project_context_pack(root, project_id, reason="feedback_recorded", created_by=args.created_by or "")
+    append_audit_event(
+        root,
+        "feedback_learning_recorded",
+        actor_id=args.created_by or "",
+        actor_role=args.role or "",
+        project_id=project_id,
+        agent_id=agent_id,
+        resource_type="feedback",
+        resource_id=feedback_id,
+        workflow_run_id=args.run_id or "",
+        task_id=args.task_id or "",
+        outcome=promotion_stage,
+        reason=feedback_type,
+    )
+    print(json.dumps({"feedback": record, "next_actions": ["feedback-list", "feedback-promote"] if promotion_stage in {"pending_confirmation", "confirmed_by_user"} else ["feedback-list"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def feedback_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    project_id = safe_component(args.project, "project id") if args.project else ""
+    records = read_records(feedback_record_dir(root, project_id), "digital-office-feedback-learning-event")
+    if args.feedback_type:
+        records = [item for item in records if item.get("feedback_type") == args.feedback_type]
+    if args.scope:
+        records = [item for item in records if item.get("scope") == args.scope]
+    if args.status:
+        records = [item for item in records if item.get("status") == args.status]
+    print(json.dumps({"feedback": records[: args.limit]}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def promotion_path(root: Path, promotion_id: str) -> Path:
+    return promotion_record_dir(root) / f"{safe_component(promotion_id, 'promotion id')}.json"
+
+
+def feedback_promote(args: argparse.Namespace) -> int:
+    if not args.confirmed:
+        print("office-system: feedback-promote requires --confirmed after user review", file=sys.stderr)
+        return 2
+    root = system_root()
+    feedback, path = find_feedback_record(root, args.feedback_id, args.project or "")
+    if feedback.get("status") == "promoted":
+        print(json.dumps({"status": "already_promoted", "feedback": feedback}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    target = safe_component(args.target, "memory promotion target")
+    if target not in MEMORY_PROMOTION_TARGETS:
+        print(f"office-system: invalid promotion target: {target}", file=sys.stderr)
+        return 2
+    project_id = safe_component(args.project or feedback.get("project_id", ""), "project id") if (args.project or feedback.get("project_id")) else ""
+    agent_id = registered_agent(root, args.agent or feedback.get("agent_id", "")) if (args.agent or feedback.get("agent_id")) else ""
+    if target == "project_rule" and not project_id:
+        print("office-system: project_rule promotion requires a project", file=sys.stderr)
+        return 2
+    if target == "agent_rule" and not agent_id:
+        print("office-system: agent_rule promotion requires an agent", file=sys.stderr)
+        return 2
+    correction = clean_long_text(args.rule_body or feedback.get("correction", ""), limit=6000)
+    title = clean_long_text(args.title or f"Learned correction: {feedback.get('feedback_type', 'feedback')}", limit=120)
+    reject_sensitive_learning_text(title, correction)
+    rule_path = ""
+    if target in {"project_rule", "agent_rule", "global_rule"}:
+        scope = {"project_rule": "project", "agent_rule": "agent", "global_rule": "global"}[target]
+        rule_body = "\n".join(
+            [
+                "This rule was promoted from explicit user feedback.",
+                "",
+                f"- Feedback id: {feedback.get('feedback_id')}",
+                f"- Feedback type: {feedback.get('feedback_type')}",
+                f"- Corrective rule: {correction}",
+                f"- Expected: {feedback.get('expected', '')}",
+                f"- Observed: {feedback.get('observed', '')}",
+                "",
+                "Apply this rule within its recorded scope. If it conflicts with a newer confirmed rule, ask the user before applying it.",
+            ]
+        )
+        rule_path = str(write_rule_to_store(root, scope=scope, title=title, body=rule_body, project=project_id, agent=agent_id).relative_to(root))
+    promotion_id = f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    promotion = {
+        "version": "1.0.0",
+        "kind": "digital-office-memory-promotion",
+        "promotion_id": promotion_id,
+        "feedback_id": feedback.get("feedback_id"),
+        "target": target,
+        "status": "promoted",
+        "project_id": project_id,
+        "agent_id": agent_id,
+        "title": title,
+        "rule_path": rule_path,
+        "promoted_by": safe_claim(args.promoted_by, "promoted by", required=False),
+        "promoted_at": now_iso(),
+        "reason": safe_claim(args.reason, "promotion reason", required=False),
+        "source_feedback_hash": feedback.get("correction_hash", ""),
+    }
+    write_json(promotion_path(root, promotion_id), promotion)
+    feedback["status"] = "promoted"
+    feedback["promotion_stage"] = "confirmed"
+    feedback["promotion"] = promotion
+    feedback["updated_at"] = now_iso()
+    write_json(path, feedback)
+    if project_id:
+        refresh_project_context_pack(root, project_id, reason="feedback_promoted", created_by=args.promoted_by or "")
+    append_audit_event(
+        root,
+        "feedback_learning_promoted",
+        actor_id=args.promoted_by or "",
+        actor_role=args.role or "",
+        project_id=project_id,
+        agent_id=agent_id,
+        resource_type="feedback",
+        resource_id=str(feedback.get("feedback_id", "")),
+        outcome="promoted",
+        reason=args.reason or "",
+        extra={"promotion_id": promotion_id, "target": target, "rule_path": rule_path},
+    )
+    print(json.dumps({"promotion": promotion, "feedback": feedback}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def copy_template_project(root: Path, project_id: str, name: str, agents: list[str], schedule: str, *, guided_intake: bool = False, brief: str = "") -> Path:
     template = root / "projects" / "_template"
     project_id = safe_component(project_id, "project id")
@@ -1132,7 +1822,7 @@ def project_context_status(args: argparse.Namespace) -> int:
     project_file = ensure_project(root, project_id) / "project.json"
     project = read_json(project_file)
     assessment = assess_project_context(root, project_id, project)
-    print(json.dumps({"status": "ready" if assessment["confirmed"] else "needs_context", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": "ready" if assessment["confirmed"] else "needs_context", "project_id": project_id, "context_pack": context_pack_summary(project), **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -1170,9 +1860,20 @@ def project_context_update(args: argparse.Namespace) -> int:
     project["context_intake"] = updated
     project["updated_at"] = now_iso()
     write_json(project_file, project)
+    if any(key in patch for key in {"intent_summary", "goal", "deliverables", "acceptance_criteria", "constraints", "source_refs"}):
+        record_project_intent_snapshot(
+            root,
+            project_id,
+            user_utterance=updated.get("intent_summary") or updated.get("goal") or "",
+            created_by=args.updated_by or "",
+            source="context_update",
+            update_context_summary=False,
+        )
+    pack = refresh_project_context_pack(root, project_id, reason="project_context_updated", created_by=args.updated_by or "")
+    project = read_json(project_file)
     assessment = assess_project_context(root, project_id, project)
     append_log(root, {"event": "project_context_updated", "project": project_id, "version": updated["version"], "updated_by": args.updated_by or ""})
-    print(json.dumps({"status": "updated", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": "updated", "project_id": project_id, "context_pack": {"context_pack_id": pack["context_pack_id"], "state_hash": pack["state_hash"], "status": pack["status"], "path": pack.get("path", "")}, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -1201,9 +1902,11 @@ def project_intent_confirm(args: argparse.Namespace) -> int:
     project["context_intake"] = context
     project["updated_at"] = now_iso()
     write_json(project_file, project)
+    pack = refresh_project_context_pack(root, project_id, reason="project_intent_confirmed", created_by=context["intent_confirmed_by"])
+    project = read_json(project_file)
     assessment = assess_project_context(root, project_id, project)
     append_log(root, {"event": "project_intent_confirmed", "project": project_id, "intent_hash": actual_hash, "confirmed_by": context["intent_confirmed_by"]})
-    print(json.dumps({"status": "intent_confirmed", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": "intent_confirmed", "project_id": project_id, "context_pack": {"context_pack_id": pack["context_pack_id"], "state_hash": pack["state_hash"], "status": pack["status"], "path": pack.get("path", "")}, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -1226,9 +1929,11 @@ def project_context_confirm(args: argparse.Namespace) -> int:
     project["context_intake"] = context
     project["updated_at"] = now_iso()
     write_json(project_file, project)
+    pack = refresh_project_context_pack(root, project_id, reason="project_context_confirmed", created_by=context["confirmed_by"])
+    project = read_json(project_file)
     assessment = assess_project_context(root, project_id, project)
     append_log(root, {"event": "project_context_confirmed", "project": project_id, "version": context["version"], "confirmed_by": context["confirmed_by"]})
-    print(json.dumps({"status": "confirmed", "project_id": project_id, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": "confirmed", "project_id": project_id, "context_pack": {"context_pack_id": pack["context_pack_id"], "state_hash": pack["state_hash"], "status": pack["status"], "path": pack.get("path", "")}, **assessment}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -1411,6 +2116,8 @@ def add_file_entry(args: argparse.Namespace) -> int:
     if args.approve:
         entry["status"] = "approved_for_agent_use"
     write_json(base / "entry.json", entry)
+    if args.scope == "project" and args.project:
+        refresh_project_context_pack(root, args.project, reason="knowledge_file_added", created_by="")
     append_log(root, {"event": "knowledge_add_file", "entry_id": entry_id, "scope": args.scope, "project": args.project})
     print(json.dumps(entry, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
@@ -1439,6 +2146,8 @@ def add_text_entry(args: argparse.Namespace) -> int:
         "agent_readable": args.approve,
     }
     write_json(base / "entry.json", entry)
+    if args.scope == "project" and args.project:
+        refresh_project_context_pack(root, args.project, reason="knowledge_text_added", created_by="")
     append_log(root, {"event": "knowledge_add_text", "entry_id": entry_id, "scope": args.scope, "project": args.project})
     print(json.dumps(entry, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
@@ -2180,10 +2889,27 @@ def create_project(args: argparse.Namespace) -> int:
     project_id = args.project or slugify(args.name)
     agents = [registered_agent(root, item.strip()) for item in args.agents.split(",") if item.strip()] if args.agents else []
     target = copy_template_project(root, project_id, args.name, agents, args.methodology_schedule, guided_intake=bool(args.guided_intake), brief=args.brief or "")
+    snapshot = record_project_intent_snapshot(
+        root,
+        project_id,
+        user_utterance=args.brief or args.name,
+        created_by=args.created_by or "",
+        source="project_create",
+        update_context_summary=bool(args.brief),
+    )
+    pack = refresh_project_context_pack(root, project_id, reason="project_created", created_by=args.created_by or "")
     append_log(root, {"event": "project_create", "project": project_id})
     project = read_json(target / "project.json")
     assessment = assess_project_context(root, project_id, project)
-    print(json.dumps({"status": "created", "project": project, "project_id": project_id, "path": str(target), "context_readiness": assessment}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({
+        "status": "created",
+        "project": project,
+        "project_id": project_id,
+        "path": str(target),
+        "context_readiness": assessment,
+        "intent_snapshot": snapshot,
+        "context_pack": {"context_pack_id": pack["context_pack_id"], "state_hash": pack["state_hash"], "status": pack["status"], "path": pack.get("path", "")},
+    }, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -3233,6 +3959,7 @@ def workflow_start(args: argparse.Namespace) -> int:
         return 0
 
     project = safe_component(args.project, "project id") if args.project else ""
+    context_pack = None
     if project:
         project_file = ensure_project(root, project) / "project.json"
         project_record = read_json(project_file)
@@ -3246,6 +3973,7 @@ def workflow_start(args: argparse.Namespace) -> int:
                 "next_actions": ["project-context-update", "project-context-confirm"],
             }, ensure_ascii=False, indent=2, sort_keys=True))
             return 4
+        context_pack = refresh_project_context_pack(root, project, reason="workflow_start", created_by=args.user or "")
     route = route_task(root, body, args.agent, args.workflow)
     agent = registered_agent(root, str(route.get("agent", ""))) if route.get("agent") else ""
     judgment_eval = evaluate_judgment(
@@ -3310,6 +4038,12 @@ def workflow_start(args: argparse.Namespace) -> int:
         "approvals": [],
         "judgment_cases": [],
         "judgment_evaluation": judgment_eval,
+        "context_pack": {
+            "context_pack_id": context_pack.get("context_pack_id", "") if context_pack else "",
+            "state_hash": context_pack.get("state_hash", "") if context_pack else "",
+            "status": context_pack.get("status", "") if context_pack else "",
+            "path": context_pack.get("path", "") if context_pack else "",
+        },
         "route": route,
         "active_revision_id": initial_revision["revision_id"],
         "revisions": [initial_revision],
@@ -3372,6 +4106,9 @@ def workflow_start(args: argparse.Namespace) -> int:
             str(task_path(root, task_id).relative_to(root)),
         ],
     )
+    context_checkpoint = record_run_context_checkpoint(root, run, context_pack, actor_id=args.user, actor_role=args.role)
+    if context_checkpoint:
+        write_json(run_record_path(root, run_id), run)
     judgment_case = None
     if judgment_required:
         judgment_eval["workflow_run_id"] = run_id
@@ -3422,6 +4159,8 @@ def workflow_start(args: argparse.Namespace) -> int:
                 "judgment": judgment_eval,
                 "judgment_case": judgment_case,
                 "authorization": auth,
+                "context_pack": run.get("context_pack", {}),
+                "context_checkpoint": context_checkpoint,
                 "audit_event_id": event["event_id"],
                 "next_actions": ["judgment-list", "judgment-decision", "workflow-status"] if judgment_required else ["workflow-status", "task-status", "approval-create"],
             },
@@ -3664,7 +4403,19 @@ def agent_invoke(args: argparse.Namespace) -> int:
         print(json.dumps({"status": "denied", "error": "agent-invoke requires --project for governed dispatch"}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
     project = safe_component(args.project, "project id")
-    ensure_project(root, project)
+    project_file = ensure_project(root, project) / "project.json"
+    project_record = read_json(project_file)
+    context_assessment = assess_project_context(root, project, project_record)
+    if context_assessment["required"] and not context_assessment["confirmed"]:
+        print(json.dumps({
+            "status": "needs_context",
+            "reason": "project_context_not_confirmed",
+            "project_id": project,
+            "context_readiness": context_assessment,
+            "next_actions": ["project-context-update", "project-context-confirm"],
+        }, ensure_ascii=False, indent=2, sort_keys=True))
+        return 4
+    context_pack = refresh_project_context_pack(root, project, reason="agent_invoke", created_by=args.user or "")
     registry = effective_agents_registry(root)
     agent = safe_component(args.agent, "agent id")
     if agent not in registry.get("agents", {}):
@@ -3711,6 +4462,12 @@ def agent_invoke(args: argparse.Namespace) -> int:
         "approvals": [],
         "judgment_cases": [],
         "judgment_evaluation": judgment_eval,
+        "context_pack": {
+            "context_pack_id": context_pack.get("context_pack_id", ""),
+            "state_hash": context_pack.get("state_hash", ""),
+            "status": context_pack.get("status", ""),
+            "path": context_pack.get("path", ""),
+        },
         "route": route,
         "active_revision_id": initial_revision["revision_id"],
         "revisions": [initial_revision],
@@ -3757,13 +4514,16 @@ def agent_invoke(args: argparse.Namespace) -> int:
             str(task_path(root, task_id).relative_to(root)),
         ],
     )
+    context_checkpoint = record_run_context_checkpoint(root, run, context_pack, actor_id=args.user, actor_role=args.role)
+    if context_checkpoint:
+        write_json(run_record_path(root, run_id), run)
     judgment_case = None
     if judgment_required:
         judgment_eval["task_id"] = task_id
         judgment_case = create_judgment_case(root, judgment_eval, task=body, reason="direct Agent invocation requires human judgment before dispatch", created_by=args.user, created_by_role=args.role)
     event = append_audit_event(root, "agent_invoked", actor_id=args.user, actor_role=args.role, tenant_id=args.tenant, deployment_id=args.deployment, project_id=project, agent_id=agent, resource_type="agent", resource_id=agent, workflow_run_id=run_id, task_id=task_id, outcome="created", reason=args.reason or "direct GUI @Agent invocation")
     emit_notification(root, user_id=args.user, title="Agent task needs human judgment" if judgment_required else "Agent task queued", body=task["title"], topic="agent", resource_type="workflow_run", resource_id=run_id, severity="warning" if judgment_required else "info")
-    print(json.dumps({"status": run["status"], "invocation_mode": "direct_agent", "agent_id": agent, "project_id": project, "requested_by": args.user, "workflow_run_id": run_id, "task_id": task_id, "active_revision_id": initial_revision["revision_id"], "authorization": auth, "audit_event_id": event["event_id"], "judgment": judgment_eval, "judgment_case": judgment_case}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": run["status"], "invocation_mode": "direct_agent", "agent_id": agent, "project_id": project, "requested_by": args.user, "workflow_run_id": run_id, "task_id": task_id, "active_revision_id": initial_revision["revision_id"], "authorization": auth, "audit_event_id": event["event_id"], "judgment": judgment_eval, "judgment_case": judgment_case, "context_pack": run.get("context_pack", {}), "context_checkpoint": context_checkpoint}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -5262,8 +6022,21 @@ def identity_context(args: argparse.Namespace) -> int:
     root = system_root()
     project = safe_component(args.project, "project id") if args.project else ""
     agent = registered_agent(root, args.agent) if args.agent else ""
+    context_pack = None
     if project:
-        ensure_project(root, project)
+        project_file = ensure_project(root, project) / "project.json"
+        project_record = read_json(project_file)
+        context_assessment = assess_project_context(root, project, project_record)
+        if context_assessment["required"] and not context_assessment["confirmed"]:
+            print(json.dumps({
+                "status": "needs_context",
+                "reason": "project_context_not_confirmed",
+                "project_id": project,
+                "context_readiness": context_assessment,
+                "next_actions": ["project-context-update", "project-context-confirm"],
+            }, ensure_ascii=False, indent=2, sort_keys=True))
+            return 4
+        context_pack = refresh_project_context_pack(root, project, reason="loop_start", created_by=args.requested_by or "")
     claims = {
         "version": "1.0.0",
         "kind": "digital-office-identity-context",
@@ -6092,6 +6865,12 @@ def loop_start(args: argparse.Namespace) -> int:
         "control": control,
         "stages": loop_stage_records(root),
         "hard_rules": manifest.get("hard_rules", []),
+        "context_pack": {
+            "context_pack_id": context_pack.get("context_pack_id", "") if context_pack else "",
+            "state_hash": context_pack.get("state_hash", "") if context_pack else "",
+            "status": context_pack.get("status", "") if context_pack else "",
+            "path": context_pack.get("path", "") if context_pack else "",
+        },
         "judgment_cases": [],
         "judgment_evaluation": judgment_eval,
         "blockers": ["human_judgment_pending"] if judgment_required else [],
@@ -6105,6 +6884,9 @@ def loop_start(args: argparse.Namespace) -> int:
         print(f"office-system: loop run already exists: {run_id}", file=sys.stderr)
         return 2
     write_json(target, run)
+    context_checkpoint = record_run_context_checkpoint(root, run, context_pack, actor_id=args.requested_by or "", actor_role="")
+    if context_checkpoint:
+        write_json(target, run)
     judgment_case = None
     if judgment_required:
         judgment_case = create_judgment_case(root, judgment_eval, task=task.strip(), reason="loop-start requires human judgment before execution", created_by=args.requested_by or "", created_by_role="")
@@ -6120,7 +6902,7 @@ def loop_start(args: argparse.Namespace) -> int:
         output_payload={"status": run["status"], "judgment": judgment_eval, "judgment_case_id": (judgment_case or {}).get("case_id", "")},
     )
     append_log(root, {"event": "loop_start", "run_id": run_id, "project": project, "agent": agent})
-    print(json.dumps({"run_id": run_id, "path": str(target.relative_to(root)), "status": run["status"], "judgment": judgment_eval, "judgment_case": judgment_case}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"run_id": run_id, "path": str(target.relative_to(root)), "status": run["status"], "judgment": judgment_eval, "judgment_case": judgment_case, "context_pack": run.get("context_pack", {}), "context_checkpoint": context_checkpoint}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -8081,12 +8863,14 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
         {"id": "first_run_onboarding", "status": "ready", "commands": ["onboarding-options", "onboarding-apply"]},
         {"id": "web_ui_pwa", "status": "ready", "commands": ["digital-office-gui", "web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
+        {"id": "secretary_intent_preview", "status": "ready", "commands": ["secretary-chat"], "routes": ["/api/secretary/chat"]},
         {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
         {"id": "direct_model_api_gateway", "status": "ready", "commands": ["model-gateway status", "model-gateway connection-set", "model-gateway test", "model-gateway resolve", "model-gateway invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
         {"id": "workflow_runtime_controls", "status": "ready", "commands": ["workflow-control", "workflow-node-context"]},
         {"id": "runtime_replay_and_checkpoints", "status": "ready", "commands": ["run-ledger-add", "run-ledger-list", "run-ledger-verify", "checkpoint-create", "checkpoint-list"]},
+        {"id": "feedback_learning", "status": "ready", "commands": ["feedback-record", "feedback-list", "feedback-promote"], "routes": ["/api/feedback"]},
         {"id": "typed_agent_handoffs", "status": "ready", "commands": ["handoff-create", "handoff-ack", "handoff-list"]},
         {"id": "loop_runtime", "status": "ready", "commands": ["loop-start", "loop-stage", "loop-usage-add", "loop-control", "loop-status"]},
         {"id": "coordination_policy", "status": "ready", "commands": ["coordination-plan"]},
@@ -8620,6 +9404,14 @@ def web_serve(args: argparse.Namespace) -> int:
                 web_json_response(self, 403, {"status": "denied", "error": "The Web server must be started with an authorized --role for mutating actions."})
                 return
 
+            if parsed.path == "/api/secretary/chat":
+                message = str(body.get("message", "")).strip()
+                if not message:
+                    web_json_response(self, 400, {"status": "error", "error": "message is required"})
+                    return
+                self.command_response(["secretary-chat", "--message", message, "--user", user, "--role", role])
+                return
+
             if parsed.path == "/api/workflows":
                 task = str(body.get("task", "")).strip()
                 if not task:
@@ -8639,7 +9431,7 @@ def web_serve(args: argparse.Namespace) -> int:
                 if not name:
                     web_json_response(self, 400, {"status": "error", "error": "name is required"})
                     return
-                command = ["project-create", "--name", name, "--guided-intake"]
+                command = ["project-create", "--name", name, "--guided-intake", "--created-by", user]
                 brief = str(body.get("brief", "")).strip()
                 if brief:
                     command.extend(["--brief", brief])
@@ -8753,10 +9545,36 @@ def web_serve(args: argparse.Namespace) -> int:
                 order = body.get("provider_order")
                 if isinstance(order, list):
                     command.extend(["--provider-order", ",".join(str(item) for item in order)])
+                if "preferred_local_runtime" in body:
+                    preferred_local = str(body.get("preferred_local_runtime", "")).strip() or "auto"
+                    command.extend(["--preferred-local-runtime", preferred_local])
+                local_order = body.get("local_runtime_order")
+                if isinstance(local_order, list):
+                    command.extend(["--local-runtime-order", ",".join(str(item) for item in local_order)])
+                agents = body.get("agents")
+                if isinstance(agents, dict):
+                    command.extend(["--agents-json", json.dumps(agents, ensure_ascii=False)])
                 code, payload = run_model_gateway_json(root, command)
                 if code == 0:
                     append_audit_event(root, "model_runtime_updated", actor_id=user, actor_role=role, resource_type="model_runtime", resource_id="default", outcome="configured")
                 web_json_response(self, 200 if code == 0 else 400, payload, headers={"Cache-Control": "no-store"})
+                return
+
+            if parsed.path == "/api/feedback":
+                feedback_type = str(body.get("feedback_type", "")).strip()
+                scope = str(body.get("scope", "")).strip()
+                user_feedback = str(body.get("user_feedback", "")).strip()
+                if feedback_type not in FEEDBACK_TYPES or scope not in FEEDBACK_SCOPES or not user_feedback:
+                    web_json_response(self, 400, {"status": "error", "error": "feedback_type, scope and user_feedback are required"})
+                    return
+                command = ["feedback-record", "--feedback-type", feedback_type, "--scope", scope, "--user-feedback", user_feedback, "--created-by", user, "--role", role]
+                for field, flag in (("project_id", "--project"), ("agent_id", "--agent"), ("run_id", "--run-id"), ("task_id", "--task-id"), ("expected", "--expected"), ("observed", "--observed"), ("correction", "--correction"), ("source", "--source")):
+                    value = str(body.get(field, "")).strip()
+                    if value:
+                        command.extend([flag, value])
+                if bool(body.get("confirmed_rule", False)):
+                    command.append("--confirmed-rule")
+                self.command_response(command, success_status=201)
                 return
 
             if parsed.path == "/api/agents":
@@ -9095,7 +9913,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--methodology-schedule", choices=["manual", "weekly", "monthly", "on_project_close"], default="manual")
     p.add_argument("--guided-intake", action="store_true")
     p.add_argument("--brief", default="")
+    p.add_argument("--created-by", default="")
     p.set_defaults(func=create_project)
+
+    p = sub.add_parser("secretary-chat")
+    p.add_argument("--message")
+    p.add_argument("--user", default="")
+    p.add_argument("--role", default="")
+    p.set_defaults(func=secretary_chat)
 
     p = sub.add_parser("project-context-status")
     p.add_argument("--project", required=True)
@@ -9119,6 +9944,45 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--confirmed-by", required=True)
     p.add_argument("--confirmed", action="store_true")
     p.set_defaults(func=project_intent_confirm)
+
+    p = sub.add_parser("feedback-record")
+    p.add_argument("--feedback-id")
+    p.add_argument("--feedback-type", choices=sorted(FEEDBACK_TYPES), required=True)
+    p.add_argument("--scope", choices=sorted(FEEDBACK_SCOPES), required=True)
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--run-id", default="")
+    p.add_argument("--task-id", default="")
+    p.add_argument("--user-feedback")
+    p.add_argument("--expected", default="")
+    p.add_argument("--observed", default="")
+    p.add_argument("--correction", default="")
+    p.add_argument("--source", default="secretary_chat")
+    p.add_argument("--created-by", default="")
+    p.add_argument("--role", default="")
+    p.add_argument("--confirmed-rule", action="store_true")
+    p.set_defaults(func=feedback_record)
+
+    p = sub.add_parser("feedback-list")
+    p.add_argument("--project")
+    p.add_argument("--feedback-type", choices=sorted(FEEDBACK_TYPES))
+    p.add_argument("--scope", choices=sorted(FEEDBACK_SCOPES))
+    p.add_argument("--status")
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(func=feedback_list)
+
+    p = sub.add_parser("feedback-promote")
+    p.add_argument("--feedback-id", required=True)
+    p.add_argument("--target", choices=sorted(MEMORY_PROMOTION_TARGETS), required=True)
+    p.add_argument("--project")
+    p.add_argument("--agent")
+    p.add_argument("--title", default="")
+    p.add_argument("--rule-body", default="")
+    p.add_argument("--reason", default="")
+    p.add_argument("--promoted-by", default="")
+    p.add_argument("--role", default="")
+    p.add_argument("--confirmed", action="store_true")
+    p.set_defaults(func=feedback_promote)
 
     p = sub.add_parser("knowledge-add")
     p.add_argument("--scope", choices=["company", "project"], required=True)

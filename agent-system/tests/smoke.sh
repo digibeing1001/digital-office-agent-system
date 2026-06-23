@@ -113,11 +113,13 @@ cd "$WORK_DIR/repo"
 
 bash -n agent-system/tests/smoke.sh
 bash -n agent-system/tests/web-pwa-smoke.sh
+bash -n agent-system/tests/secretary-intent-and-runtime-smoke.sh
 bash -n digital-office-gui
 bash -n agent-system/bin/digital-office-gui
 python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/model-gateway agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
 python3 -m py_compile agent-system/bin/install-skill-sources
 python3 agent-system/tests/model-gateway-smoke.py
+bash agent-system/tests/secretary-intent-and-runtime-smoke.sh
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   json_files="$(git ls-files "*.json")"
 else
@@ -158,6 +160,7 @@ critical_files = [
     "agent-system/bin/office-system.py",
     "agent-system/bin/model-gateway",
     "agent-system/tests/model-gateway-smoke.py",
+    "agent-system/tests/secretary-intent-and-runtime-smoke.sh",
     "agent-system/harness/tasks/model-api-gateway-production.json",
     "agent-system/harness/tasks/project-context-intake-production.json",
     "agent-system/tests/project-context-intake-smoke.sh",

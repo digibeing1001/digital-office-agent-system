@@ -1,4 +1,4 @@
-import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, UploadKnowledgeInput } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, SecretaryChatResponse, UploadKnowledgeInput } from './types'
 
 const TOKEN_KEY = 'digital-office-web-token'
 
@@ -26,6 +26,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   getState: () => request<GuiState>('/api/gui-state?limit=50'),
+  secretaryChat: (input: SecretaryChatInput) =>
+    request<SecretaryChatResponse>('/api/secretary/chat', { method: 'POST', body: JSON.stringify(input) }),
   createProject: (input: CreateProjectInput) =>
     request<Record<string, unknown>>('/api/projects', { method: 'POST', body: JSON.stringify(input) }),
   createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) =>

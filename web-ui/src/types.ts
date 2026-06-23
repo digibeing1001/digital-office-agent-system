@@ -204,7 +204,14 @@ export interface GuiState {
       help_url: string
       model_locked: boolean
     }>
-    runtime: { default_mode: 'host' | 'direct_api' | 'auto'; selection_policy: 'local_first' | 'api_first'; provider_order: string[]; agents: Record<string, { mode: string; provider: string; model: string }> }
+    runtime: {
+      default_mode: 'host' | 'direct_api' | 'auto'
+      selection_policy: 'local_first' | 'api_first'
+      provider_order: string[]
+      preferred_local_runtime?: string
+      local_runtime_order?: string[]
+      agents: Record<string, { mode: string; provider: string; model: string; local_runtime?: string }>
+    }
     local_runtimes: Array<{ id: string; display_name: string; detected: boolean; ready: boolean; config_detected: boolean; execution_support: string }>
   }
 }
@@ -252,6 +259,24 @@ export interface ModelRuntimeInput {
   default_mode: 'host' | 'direct_api' | 'auto'
   selection_policy: 'local_first' | 'api_first'
   provider_order: string[]
+  preferred_local_runtime?: string
+  local_runtime_order?: string[]
+  agents?: Record<string, { mode: string; provider: string; model: string; local_runtime?: string }>
+}
+
+export interface SecretaryChatInput {
+  message: string
+}
+
+export interface SecretaryChatResponse {
+  status: 'chat' | 'suggest_project'
+  intent: string
+  should_create_project: boolean
+  confidence: number
+  reply: string
+  suggested_project_name?: string
+  suggested_project_id?: string
+  next_actions?: string[]
 }
 
 export interface PreferenceInput {
@@ -262,6 +287,7 @@ export interface PreferenceInput {
 }
 
 export interface AppActions {
+  secretaryChat: (input: SecretaryChatInput) => Promise<SecretaryChatResponse>
   createProject: (input: CreateProjectInput) => Promise<Record<string, unknown>>
   createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) => Promise<Record<string, unknown>>
   createAgent: (input: CreateAgentInput) => Promise<Record<string, unknown>>
