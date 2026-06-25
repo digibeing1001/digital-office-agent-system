@@ -72,3 +72,10 @@ export function initials(name: string): string {
   const clean = name.replace(/Digital Office/gi, '').trim()
   return clean.slice(0, 2).toUpperCase() || 'DO'
 }
+
+export function runtimeEnvLabel(command?: string): string {
+  if (!command) return ''
+  if (command.startsWith('/mnt/')) return ' (Windows)'
+  if (command.startsWith('/Users/') || command.startsWith('/Applications/')) return ' (Mac)'
+  return ' (WSL)'
+}
