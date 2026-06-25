@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, FileUp, FolderPlus, Send, Sparkles } from 'lucide-react'
+import { Check, FileUp, FolderPlus, Send, ShieldAlert, Sparkles } from 'lucide-react'
 import type { AppActions, GuiState, ProjectContextInput, ProjectContextQuestion, ProjectSummary } from '../../types'
 
 type SecretaryMode = 'chat' | 'existing' | 'new'
@@ -157,6 +157,25 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
     setAnswers({})
   }
 
+  const pendingJudgments = (state?.judgments?.recent || []).filter((jc) => {
+    if (jc.status !== "pending") return false
+    if (!selectedProject) return false
+    return (state?.workflows.recent || []).some((w) => w.run_id === jc.workflow_run_id && w.project_id === selectedProject.project_id)
+  })
+  const [judging, setJudging] = useState(false)
+  const handleJudgment = async (caseId: string, decision: string, workflowRunId: string) => {
+    setJudging(true)
+    try {
+      const result = await actions.decideJudgment(caseId, decision, workflowRunId, decision === "approve" ? "批准并继续执行" : "")
+      const resume = result?.resume as { status?: string } | undefined
+      if (resume) {
+        setLocalMessages((items) => [...items, { from: "secretary", text: decision === "approve" ? `已批准这项判断，工作流正在恢复（${resume.status || "resuming"}）。` : `已记录决定：${decision}。` }])
+      }
+    } finally {
+      setJudging(false)
+    }
+  }
+
   const uploadFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file || !selectedProject) return
@@ -183,6 +202,7 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
 上传依据</button></div>{questions.map((question, index) => <label key={`${question.field}-${index}`}><span>{index + 1}</span><div><strong>{question.prompt}</strong><small>{question.why}</small><textarea rows={2} value={answers[`${question.field}-${index}`] || ''} onChange={(event) => setAnswers({ ...answers, [`${question.field}-${index}`]: event.target.value })} placeholder="把你的判断、事实或不确定之处写在这里" /></div></label>)}{contextError && <p className="form-error">{contextError}</p>}<div className="question-actions"><button className="suggestion-pill suggestion-pill--primary" onClick={() => void saveAnswers()}>
 交给秘书整理</button>{readiness?.ready && readiness.intent?.confirmed && <button className="suggestion-pill" onClick={() => selectedProject && void actions.confirmProjectContext(selectedProject.project_id)}><Check size={16} />
 确认项目底稿并开始工作</button>}</div></div>}
+      {pendingJudgments.length > 0 && <div className="judgment-cards">{pendingJudgments.map((jc) => <div className="judgment-card" key={jc.case_id}><div className="judgment-card__header"><ShieldAlert size={18} /><div><strong>需要你的判断</strong><small>{jc.required_human_role} · 风险：{jc.risk_label}</small></div></div>{jc.reason && <p className="judgment-card__reason">{jc.reason}</p>}{jc.triggers && jc.triggers.length > 0 && <div className="judgment-card__triggers">{jc.triggers.map((tr, i) => <span key={i} className="judgment-trigger">{String(tr.type || "unknown")} · {String(tr.confidence || "")}</span>)}</div>}<div className="judgment-card__actions"><button className="suggestion-pill suggestion-pill--primary" disabled={judging} onClick={() => void handleJudgment(jc.case_id, "approve", jc.workflow_run_id)}><Check size={16} />批准并继续</button><button className="suggestion-pill" disabled={judging} onClick={() => void handleJudgment(jc.case_id, "request_evidence", jc.workflow_run_id)}>要求补充证据</button><button className="suggestion-pill" disabled={judging} onClick={() => void handleJudgment(jc.case_id, "reject", jc.workflow_run_id)}>拒绝</button></div></div>)}</div>}
       <div ref={endRef} />
     </div>
     {!fixedProject && <div className="secretary-intake-toolbar">

@@ -1656,3 +1656,30 @@ h1, h2, h3, .office-wall span { font-family: "Stack Sans Text", "PingFang SC", "
 .user-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
 
 .knowledge-tab-pill.active{border-color:#0065fd!important}.knowledge-tabs-track{border-color:#e7eaef!important}.knowledge-section-title{color:#0e1115!important}h1,h2,h3,h4,h5,h6{color:#0e1115!important}.suggestion-create-btn{border-radius:999px!important;border-color:#0065fd!important;color:#0065fd!important}.suggestion-create-btn:hover{background:#0065fd!important;color:#fff!important}.compose-send-btn{background:#0065fd!important;border-radius:999px!important;color:#fff!important}.compose-send-btn:disabled{background:#b8c4ff!important}.tool-chip{border-color:#e7eaef!important;border-radius:999px!important}.tool-chip:hover{border-color:#0065fd!important;color:#0065fd!important}.compose-upload-btn{color:#7f8d9f!important;border-color:#e7eaef!important;border-radius:999px!important}.suggestion-pill{border-color:#e7eaef!important;border-radius:999px!important}.suggestion-pill:hover{border-color:#0065fd!important}.empty-state{color:#7f8d9f!important}.empty-state-action{color:#0065fd!important}.project-progress-bar{background:#0065fd!important}.project-progress-track{background:#e7eaef!important}.settings-card select{border-color:#e7eaef!important;border-radius:12px!important}.demo-toggle{border-color:#e7eaef!important;border-radius:999px!important}
+
+/* ── Judgment Cards ── */
+.judgment-cards { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
+.judgment-card {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(0, 101, 253, 0.06), 0 4px 12px rgba(0, 101, 253, 0.08);
+  -webkit-font-smoothing: antialiased;
+}
+.judgment-card__header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: #0043ad; }
+.judgment-card__header strong { font-size: 14px; }
+.judgment-card__header small { display: block; font-size: 11px; color: var(--muted, #64748b); }
+.judgment-card__reason { font-size: 13px; color: #334155; margin: 6px 0 8px; line-height: 1.5; text-wrap: pretty; }
+.judgment-card__triggers { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.judgment-trigger {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(0, 101, 253, 0.08);
+  color: #0065fd;
+  border-radius: 10px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.judgment-card__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.judgment-card__actions .suggestion-pill { font-size: 12px; padding: 6px 14px; }

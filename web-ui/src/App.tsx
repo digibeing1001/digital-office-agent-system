@@ -60,6 +60,10 @@ export default function App() {
     deleteAgent: (agentId: string) => mutate('正在删除数字员工…', () => api.deleteAgent(agentId)),
     decideApproval: (approvalId: string, decision: 'approve' | 'reject') =>
       mutate('正在记录决定…', () => api.decideApproval(approvalId, decision)),
+    decideJudgment: (caseId: string, decision: string, workflowRunId?: string, message?: string) =>
+      mutate('正在处理审批…', () => api.decideJudgment(caseId, decision, workflowRunId || '', message || '')),
+    resumeWorkflow: (runId: string, reason?: string) =>
+      mutate('正在恢复工作流…', () => api.resumeWorkflow(runId, reason || '')),
     uploadKnowledge: (input: UploadKnowledgeInput) => mutate('正在上传资料…', () => api.uploadKnowledge(input)),
     updateProjectContext: (projectId: string, context: ProjectContextInput) => mutate('正在整理项目上下文…', () => api.updateProjectContext(projectId, context)),
     confirmProjectIntent: (projectId: string, expectedHash: string) => mutate('正在确认项目意图…', () => api.confirmProjectIntent(projectId, expectedHash)),

@@ -145,6 +145,24 @@ export interface EmployeeSuggestion {
   priority: 'high' | 'medium' | 'low'
 }
 
+export interface JudgmentSummary {
+  case_id: string
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled'
+  risk_label: string
+  risk_score?: number
+  required_human_role: string
+  task_id: string
+  workflow_run_id: string
+  reason?: string
+  stage?: string
+  decision?: string
+  recommended_option?: string
+  options?: Array<{ id: string; label: string }>
+  triggers?: Array<Record<string, unknown>>
+  updated_at: string
+  created_at?: string
+}
+
 export interface GuiState {
   kind: string
   version: string
@@ -169,6 +187,7 @@ export interface GuiState {
   workflows: { count: number; active_count: number; by_status: Record<string, number>; recent: WorkflowSummary[] }
   tasks: { count: number; by_status: Record<string, number>; recent: TaskSummary[] }
   approvals: { count: number; by_status: Record<string, number>; recent: ApprovalSummary[] }
+  judgments: { count: number; by_status: Record<string, number>; recent: JudgmentSummary[] }
   notifications: { count: number; unread: number; recent: Array<Record<string, string>> }
   knowledge: {
     company_entries: number
@@ -309,6 +328,8 @@ export interface AppActions {
   setAgentStatus: (agentId: string, status: AgentStatus, reason?: string) => Promise<Record<string, unknown>>
   deleteAgent: (agentId: string) => Promise<Record<string, unknown>>
   decideApproval: (approvalId: string, decision: 'approve' | 'reject') => Promise<Record<string, unknown>>
+  decideJudgment: (caseId: string, decision: string, workflowRunId?: string, message?: string) => Promise<Record<string, unknown>>
+  resumeWorkflow: (runId: string, reason?: string) => Promise<Record<string, unknown>>
   uploadKnowledge: (input: UploadKnowledgeInput) => Promise<Record<string, unknown>>
   updateProjectContext: (projectId: string, context: ProjectContextInput) => Promise<Record<string, unknown>>
   confirmProjectIntent: (projectId: string, expectedHash: string) => Promise<Record<string, unknown>>

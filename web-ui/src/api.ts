@@ -46,6 +46,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ decision, message }),
     }),
+  decideJudgment: (caseId: string, decision: string, workflowRunId = '', message = '') =>
+    request<Record<string, unknown>>(`/api/judgments/${encodeURIComponent(caseId)}/decision`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, workflow_run_id: workflowRunId, message }),
+    }),
+  resumeWorkflow: (runId: string, reason = '') =>
+    request<Record<string, unknown>>(`/api/workflows/${encodeURIComponent(runId)}/resume`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
   uploadKnowledge: (input: UploadKnowledgeInput) =>
     request<Record<string, unknown>>('/api/knowledge/uploads', { method: 'POST', body: JSON.stringify(input) }),
   updateProjectContext: (projectId: string, context: ProjectContextInput) =>

@@ -5446,7 +5446,28 @@ def judgment_resume(args: argparse.Namespace) -> int:
         if task.get("status") == "waiting_human_judgment":
             update_task_status(root, task_id, "queued", message=args.reason or "judgment resume", actor_id=args.requested_by, actor_role=args.role)
     append_audit_event(root, "judgment_resume", actor_id=args.requested_by, actor_role=args.role, project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome=run["status"], reason=args.reason or "")
-    print(json.dumps({"run_id": args.run_id, "status": run["status"], "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+    execution = None
+    try:
+        execution = execute_agent_task(
+            root,
+            run_id=args.run_id,
+            task_id=run.get("task_id", ""),
+            task=run.get("task", ""),
+            agent_id=run.get("agent_id", "secretary"),
+            route=run.get("route", {}),
+            project_id=run.get("project_id", ""),
+            context_pack=run.get("context_pack"),
+            user=args.requested_by,
+            role=args.role,
+            runtime_mode=str(run.get("runtime_mode", "auto")),
+            timeout_seconds=int(run.get("execution_timeout", 300)),
+        )
+        run = load_run_record(root, args.run_id)
+        run.setdefault("events", []).append({"time": now_iso(), "event": "agent_execution_after_resume", "status": execution.get("status")})
+        write_json(run_record_path(root, args.run_id), run)
+    except Exception as exc:
+        execution = {"status": "failed", "error": str(exc)}
+    print(json.dumps({"run_id": args.run_id, "status": run.get("status", ""), "authorization": auth, "execution": execution}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -9410,9 +9431,9 @@ def model_runtime_summary(root: Path) -> dict[str, Any]:
         return {"status": "missing", "providers": [], "runtime": {"default_mode": "host", "agents": {}}}
     env = os.environ.copy()
     env["DIGITAL_OFFICE_SYSTEM_HOME"] = str(root)
-    env.setdefault("DIGITAL_OFFICE_LOCAL_RUNTIME_PROBE_TIMEOUT", "0.8")
+    env.setdefault("DIGITAL_OFFICE_LOCAL_RUNTIME_PROBE_TIMEOUT", "3.0")
     try:
-        proc = subprocess.run([str(gateway), "status"], text=True, capture_output=True, timeout=5, env=env)
+        proc = subprocess.run([str(gateway), "status"], text=True, capture_output=True, timeout=15, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return {"status": "degraded", "providers": [], "runtime": {}, "local_runtimes": [], "error": str(exc), "configure_command": "model-gateway connection-set --provider PROVIDER --base-url URL --model MODEL --secret-stdin --confirmed"}
     if proc.returncode != 0:
@@ -10201,6 +10222,44 @@ def web_serve(args: argparse.Namespace) -> int:
                 command = ["approval-decision", "--approval-id", urllib.parse.unquote(approval_match.group(1)), "--decision", str(body.get("decision", "")), "--decided-by", user, "--role", role, "--confirmed"]
                 if body.get("message"):
                     command.extend(["--message", str(body["message"])])
+                self.command_response(command)
+                return
+
+            judgment_decision_match = re.fullmatch(r"/api/judgments/([^/]+)/decision", parsed.path)
+            if judgment_decision_match:
+                case_id = urllib.parse.unquote(judgment_decision_match.group(1))
+                decision = str(body.get("decision", "")).strip()
+                if decision not in {"approve", "reject", "request_evidence", "revise_scope", "cancel"}:
+                    web_json_response(self, 400, {"status": "error", "error": "decision must be one of approve, reject, request_evidence, revise_scope, cancel"})
+                    return
+                command = ["judgment-decision", "--case-id", case_id, "--decision", decision, "--decided-by", user, "--role", role, "--confirmed"]
+                if body.get("message"):
+                    command.extend(["--message", str(body["message"])])
+                if body.get("scope_note"):
+                    command.extend(["--scope-note", str(body["scope_note"])])
+                if body.get("project"):
+                    command.extend(["--project", str(body["project"])])
+                code, payload = run_office_json_command(root, command)
+                result: dict[str, Any] = {"decision": payload, "case_id": case_id, "decision_value": decision}
+                if code == 0 and decision == "approve":
+                    run_id = str(body.get("workflow_run_id", "")).strip()
+                    if run_id:
+                        resume_command = ["judgment-resume", "--run-id", run_id, "--requested-by", user, "--role", role]
+                        if body.get("reason"):
+                            resume_command.extend(["--reason", str(body["reason"])])
+                        rcode, rpayload = run_office_json_command(root, resume_command)
+                        result["resume"] = rpayload
+                        result["resume_code"] = rcode
+                status = 200 if code == 0 else 403 if code == 3 else 409 if code == 4 else 400
+                web_json_response(self, status, result, headers={"Cache-Control": "no-store"})
+                return
+
+            workflow_resume_match = re.fullmatch(r"/api/workflows/([^/]+)/resume", parsed.path)
+            if workflow_resume_match:
+                run_id = urllib.parse.unquote(workflow_resume_match.group(1))
+                command = ["judgment-resume", "--run-id", run_id, "--requested-by", user, "--role", role]
+                if body.get("reason"):
+                    command.extend(["--reason", str(body["reason"])])
                 self.command_response(command)
                 return
 
