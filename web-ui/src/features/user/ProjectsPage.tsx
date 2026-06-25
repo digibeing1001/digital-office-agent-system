@@ -12,7 +12,7 @@ function slugSuggestion(value: string) {
   const cleaned = value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+    .replace(/[^a-z0-9一-鿿]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48)
   return cleaned || 'new-project'
@@ -39,7 +39,7 @@ function fileKindIcon(kind: string) {
   const k = (kind || '').toLowerCase()
   if (k.includes('sheet') || k.includes('excel') || k.includes('csv')) return { Icon: FileSpreadsheet, color: '#16a34a' }
   if (k.includes('image') || k.includes('img') || k.includes('pdf') || k.includes('screenshot')) return { Icon: FileImage, color: '#9333ea' }
-  if (k.includes('doc') || k.includes('word') || k.includes('text') || k.includes('contract') || k.includes('\u9700\u6c42') || k.includes('\u5408\u540c')) return { Icon: FileText, color: '#2563eb' }
+  if (k.includes('doc') || k.includes('word') || k.includes('text') || k.includes('contract') || k.includes('需求') || k.includes('合同')) return { Icon: FileText, color: '#2563eb' }
   return { Icon: File, color: '#64748b' }
 }
 

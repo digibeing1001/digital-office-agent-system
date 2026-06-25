@@ -20,7 +20,7 @@ export function PageHeading({ title, description, action }: { title: string; des
 export function Modal({ title, children, onClose, footer }: { title: string; children: ReactNode; onClose: () => void; footer?: ReactNode }) {
   return <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <section aria-modal="true" className="modal" role="dialog">
-      <header><h2>{title}</h2><button aria-label="关闭" className="icon-button" onClick={onClose}><X size={19} /></button></header>
+      <header><h2>{title}</h2><button aria-label="鍏抽棴" className="icon-button" onClick={onClose}><X size={19} /></button></header>
       <div className="modal-body">{children}</div>
       {footer && <footer>{footer}</footer>}
     </section>

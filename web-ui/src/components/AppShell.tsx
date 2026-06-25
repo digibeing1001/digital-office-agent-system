@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from 'react'
-import { Activity, ArrowLeft, Bell, Building2, ChevronDown, ChevronRight, Folder, FolderKanban, Menu, MessageSquare, Plus, Presentation, Settings, ShieldCheck, X } from 'lucide-react'
+import { Activity, ArrowLeft, Bell, Building2, ChevronDown, ChevronRight, Folder, FolderKanban, Menu, MessageSquare, Plus, Presentation, Settings, Search, ShieldCheck, X } from 'lucide-react'
 import { useState } from 'react'
 
 export interface NavItem {
@@ -69,9 +69,9 @@ export function AppShell({ surface, navItems, bottomNavItems = [], activePage, o
   return <div className={`app-shell ${surface}`}>
     <aside className={`sidebar ${projectNavigation ? 'has-project-tree' : ''} ${mobileOpen ? 'open' : ''}`}>
       <div className="brand-row">
-        <span className="brand-mark"><Building2 size={20} /></span>
+        <img className="brand-mark" src="/icons/brand-mark.svg" alt="" width="28" height="28" />
         <div><strong>Digital Office</strong><span>{surface === 'user' ? '数字办公室 · 智能工作系统' : '系统管理中心'}</span></div>
-        <span className="brand-edition">DO / 01</span>
+        <span className="brand-edition">v0.3</span>
         <button aria-label="关闭菜单" className="mobile-close icon-button" onClick={() => setMobileOpen(false)}><X size={19} /></button>
       </div>
       <nav className="primary-nav" aria-label={surface === 'user' ? '用户端导航' : '管理端导航'}>
@@ -141,7 +141,7 @@ export function AppShell({ surface, navItems, bottomNavItems = [], activePage, o
           {surface === 'user' && <button className={demoMode ? 'demo-toggle active' : 'demo-toggle'} onClick={onToggleDemo}><Presentation size={15} />{demoMode ? '退出演示' : '演示模式'}</button>}
           <button aria-label="通知" className="icon-button notification-button" onClick={() => navigate(surface === 'user' ? 'projects' : 'audit')}><Bell size={18} />{unread > 0 && <span>{unread}</span>}</button>
           <button aria-label="设置" className="icon-button" onClick={() => navigate(surface === 'user' ? 'settings' : 'system')}><Settings size={18} /></button>
-          <span className="user-avatar">主</span>
+          <img className="user-avatar" src="/avatar.svg" alt="" width="32" height="32" />
         </div>
       </header>
       <main className="app-content" id="main-content" tabIndex={-1}>{children}</main>

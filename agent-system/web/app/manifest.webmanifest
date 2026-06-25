@@ -1,11 +1,11 @@
 {
-  "name": "Digital Office 数字办公室",
+  "name": "Digital Office",
   "short_name": "Digital Office",
-  "description": "一间已经开始工作的数字办公室",
+  "description": "One-person smart office system",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f3f6f4",
-  "theme_color": "#1e6b55",
+  "background_color": "#f5f7fa",
+  "theme_color": "#0065fd",
   "icons": [
     {
       "src": "/icons/icon.svg",

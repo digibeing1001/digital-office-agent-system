@@ -1,4 +1,4 @@
-const CACHE = 'digital-office-shell-v2'
+const CACHE = 'digital-office-shell'
 const SHELL = ['/', '/admin', '/manifest.webmanifest', '/offline.html', '/icons/icon.svg']
 
 self.addEventListener('install', (event) => {

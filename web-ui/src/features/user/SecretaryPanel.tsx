@@ -5,7 +5,7 @@ import type { AppActions, GuiState, ProjectContextInput, ProjectContextQuestion,
 type SecretaryMode = 'chat' | 'existing' | 'new'
 
 function slugSuggestion(value: string) {
-  const clean = value.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
+  const clean = value.trim().toLowerCase().replace(/[^a-z0-9一-鿿]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
   return clean || `project-${Date.now().toString(36)}`
 }
 
@@ -125,8 +125,8 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
         const workflow = await actions.createWorkflow({ task: clean, priority: 'normal', project_id: activeProject.project_id, execute: true, runtime: 'auto', execution_timeout: 300 })
         const execution = workflow.execution as { status?: string; output_excerpt?: string; diagnostics_excerpt?: string } | null | undefined
         const reply = execution?.status === 'completed'
-          ? `\u5df2\u786e\u8ba4\u610f\u56fe\u548c\u9879\u76ee\u5e95\u7a3f\uff0c\u5e76\u5b8c\u6210\u7b2c\u4e00\u8f6e Agent \u6267\u884c\u3002${execution.output_excerpt ? `\n\n${execution.output_excerpt.slice(0, 600)}` : ''}`
-          : `\u5df2\u628a\u8fd9\u9879\u5de5\u4f5c\u653e\u8fdb\u300c${activeProject.name}\u300d\u7684 Loop \u8bb0\u5f55\u3002${execution?.diagnostics_excerpt ? `\n\n\u6267\u884c\u8bca\u65ad\uff1a${execution.diagnostics_excerpt.slice(0, 400)}` : '\u5982\u679c\u672c\u5730 Agent \u6216 API \u8fd8\u672a\u5c31\u7eea\uff0c\u8bf7\u5728\u7ba1\u7406\u4e2d\u5fc3\u9009\u62e9\u53ef\u7528\u8fd0\u884c\u65b9\u5f0f\u3002'}`
+          ? `已确认意图和项目底稿，并完成第一轮 Agent 执行。${execution.output_excerpt ? `\n\n${execution.output_excerpt.slice(0, 600)}` : ''}`
+          : `已把这项工作放进「${activeProject.name}」的 Loop 记录。${execution?.diagnostics_excerpt ? `\n\n执行诊断：${execution.diagnostics_excerpt.slice(0, 400)}` : '如果本地 Agent 或 API 还未就绪，请在管理中心选择可用运行方式。'}`
         setLocalMessages((items) => [...items, { from: 'secretary', text: reply }])
         setMessage('')
         if (mode !== 'new') setProjectName('')
@@ -174,21 +174,28 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
   return <section className={`secretary-panel ${compact ? 'compact' : ''}`}>
     <header><span className="secretary-orb">秘</span><div><strong>秘书</strong><small>{selectedProject ? `${selectedProject.name} · 项目对话` : '我的办公室 · 普通对话'}</small></div>{readiness && <span className={`context-score ${readiness.confirmed ? 'ready' : ''}`}>{readiness.confirmed ? '底稿已确认' : `准备度 ${readiness.readiness_score}%`}</span>}</header>
     <div className="secretary-context"><Sparkles size={16} /><span>{selectedProject ? '当前项目的目标、资料和确认记录会随 Loop 一直保留' : '普通聊天不会自动创建项目；正式工作请先进入新建项目流程'}</span></div>
-    <div className="secretary-messages" role="log" aria-live="polite" aria-label="与秘书的对话">{localMessages.map((item, index) => <div className={`secretary-message ${item.from}`} key={`${item.from}-${index}`}>{item.text}</div>)}
-      {thinking && <div className="secretary-message secretary thinking-bubble"><span className="thinking-dots"><i></i><i></i><i></i></span></div>}
-      {suggestedProject && <div className="secretary-suggestion-card"><span>秘书建议</span><strong>这句话可能适合新建项目</strong><p>如果这项工作需要沉淀资料、交付物和过程记录，请进入项目流程；如果只是聊天，可以继续直接问我。</p><div><button className="primary-button" type="button" onClick={() => startNewProject(suggestedProject.name, suggestedProject.id)}><FolderPlus size={16} />新建项目</button><button className="secondary-button" type="button" onClick={() => setSuggestedProject(null)}>继续聊天</button></div></div>}
-      {setupRequired && readiness?.intent && <div className="intent-confirmation"><span>秘书对你的意图理解</span><strong>{readiness.intent.summary || '尚未形成意图摘要'}</strong><p>请检查目标和对象是否准确。确认后，核心目标发生变化会要求重新确认。</p>{!readiness.intent.confirmed ? <button className="primary-button" onClick={() => void confirmIntent()}><Check size={16} />这就是我的意思</button> : <span className="confirmed-mark"><Check size={15} />意图已确认</span>}</div>}
-      {setupRequired && <div className="socratic-questions"><div className="question-heading"><div><span>建立项目底稿</span><strong>请至少回答三个关键问题</strong></div><button className="secondary-button" disabled={!selectedProject} onClick={() => fileRef.current?.click()}><FileUp size={16} />上传依据</button></div>{questions.map((question, index) => <label key={`${question.field}-${index}`}><span>{index + 1}</span><div><strong>{question.prompt}</strong><small>{question.why}</small><textarea rows={2} value={answers[`${question.field}-${index}`] || ''} onChange={(event) => setAnswers({ ...answers, [`${question.field}-${index}`]: event.target.value })} placeholder="把你的判断、事实或不确定之处写在这里" /></div></label>)}{contextError && <p className="form-error">{contextError}</p>}<div className="question-actions"><button className="primary-button" onClick={() => void saveAnswers()}>交给秘书整理</button>{readiness?.ready && readiness.intent?.confirmed && <button className="secondary-button" onClick={() => selectedProject && void actions.confirmProjectContext(selectedProject.project_id)}><Check size={16} />确认项目底稿并开始工作</button>}</div></div>}
+    <div className="secretary-messages" role="log" aria-live="polite" aria-label="与秘书的对话">{localMessages.map((item, index) => <div className={`secretary-message secretary-message--${item.from}`} key={`${item.from}-${index}`}>{item.text}</div>)}
+      {thinking && <div className="secretary-message secretary-message--secretary thinking-bubble"><span className="thinking-dots"><i></i><i></i><i></i></span></div>}
+      {suggestedProject && <div className="secretary-suggestion-card"><span>秘书建议</span><strong>这句话可能适合新建项目</strong><p>如果这项工作需要沉淀资料、交付物和过程记录，请进入项目流程；如果只是聊天，可以继续直接问我。</p><div className="secretary-suggestion-card__actions"><button className="suggestion-pill suggestion-pill--primary" type="button" onClick={() => startNewProject(suggestedProject.name, suggestedProject.id)}><FolderPlus size={16} />新建项目</button><button className="suggestion-pill" type="button" onClick={() => setSuggestedProject(null)}>
+继续聊天</button></div></div>}
+      {setupRequired && readiness?.intent && <div className="intent-confirmation"><span>秘书对你的意图理解</span><strong>{readiness.intent.summary || '尚未形成意图摘要'}</strong><p>请检查目标和对象是否准确。确认后，核心目标发生变化会要求重新确认。</p>{!readiness.intent.confirmed ? <button className="suggestion-pill suggestion-pill--primary" onClick={() => void confirmIntent()}><Check size={16} />这就是我的意思</button> : <span className="confirmed-mark"><Check size={15} />意图已确认</span>}</div>}
+      {setupRequired && <div className="socratic-questions"><div className="question-heading"><div><span>建立项目底稿</span><strong>请至少回答三个关键问题</strong></div><button className="tool-chip" disabled={!selectedProject} onClick={() => fileRef.current?.click()}><FileUp size={16} />
+上传依据</button></div>{questions.map((question, index) => <label key={`${question.field}-${index}`}><span>{index + 1}</span><div><strong>{question.prompt}</strong><small>{question.why}</small><textarea rows={2} value={answers[`${question.field}-${index}`] || ''} onChange={(event) => setAnswers({ ...answers, [`${question.field}-${index}`]: event.target.value })} placeholder="把你的判断、事实或不确定之处写在这里" /></div></label>)}{contextError && <p className="form-error">{contextError}</p>}<div className="question-actions"><button className="suggestion-pill suggestion-pill--primary" onClick={() => void saveAnswers()}>
+交给秘书整理</button>{readiness?.ready && readiness.intent?.confirmed && <button className="suggestion-pill" onClick={() => selectedProject && void actions.confirmProjectContext(selectedProject.project_id)}><Check size={16} />
+确认项目底稿并开始工作</button>}</div></div>}
       <div ref={endRef} />
     </div>
     {!fixedProject && <div className="secretary-intake-toolbar">
-      <button className={mode === 'new' ? 'active' : ''} type="button" onClick={() => startNewProject(projectName)}><FolderPlus size={14} />新建项目</button>
-      <button className={mode === 'existing' ? 'active' : ''} disabled={!projects.length} type="button" onClick={switchToExistingProject}>放入已有项目</button>
-      <button className={mode === 'chat' ? 'active' : ''} type="button" onClick={() => { setMode('chat'); setSuggestedProject(null) }}>普通对话</button>
+      <button className={`tool-chip ${mode === 'new' ? 'tool-chip--active' : ''}`} type="button" onClick={() => startNewProject(projectName)}><FolderPlus size={14} />
+新建项目</button>
+      <button className={`tool-chip ${mode === 'existing' ? 'tool-chip--active' : ''}`} disabled={!projects.length} type="button" onClick={switchToExistingProject}>
+放入已有项目</button>
+      <button className={`tool-chip ${mode === 'chat' ? 'tool-chip--active' : ''}`} type="button" onClick={() => { setMode('chat'); setSuggestedProject(null) }}>
+普通对话</button>
       {mode === 'existing' && <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.name}</option>)}</select>}
       {mode === 'new' && <input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="项目名称可留空，秘书会根据你的说明命名" />}
     </div>}
-    <form className="secretary-compose" onSubmit={createOrDispatch}><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={!selectedProject ? (mode === 'new' ? '说明这个新项目要完成什么...' : '直接问秘书问题；正式工作请先点上方「新建项目」...') : setupRequired ? '补充你的想法；正式信息请填写上方问题...' : '在这个项目里继续安排工作...'} rows={compact ? 3 : 4} /><div className="compose-actions"><button className="icon-button" disabled={!selectedProject} onClick={() => fileRef.current?.click()} title="上传项目资料" type="button"><FileUp size={18} /></button><button className="primary-button" disabled={!message.trim() || submitting} type="submit"><Send size={16} />{submitting ? '处理中' : mode === 'new' && !fixedProject ? '创建项目' : setupRequired ? '补充说明' : selectedProject ? '发送并执行' : '发送'}</button></div></form>
+    <form className="secretary-compose" onSubmit={createOrDispatch}><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={!selectedProject ? (mode === 'new' ? '说明这个新项目要完成什么...' : '直接问秘书问题；正式工作请先点上方「新建项目」...') : setupRequired ? '补充你的想法；正式信息请填写上方问题...' : '在这个项目里继续安排工作...'} rows={compact ? 3 : 4} /><div className="compose-actions"><button className="compose-file-btn" disabled={!selectedProject} onClick={() => fileRef.current?.click()} title="上传项目资料" type="button"><FileUp size={18} /></button><button className={`compose-send-btn ${message.trim() && !submitting ? 'compose-send-btn--active' : ''}`} disabled={!message.trim() || submitting} type="submit">{submitting ? '...' : <Send size={16} />}</button></div></form>
     <input ref={fileRef} className="visually-hidden" type="file" onChange={(event) => void uploadFile(event)} />
   </section>
 }

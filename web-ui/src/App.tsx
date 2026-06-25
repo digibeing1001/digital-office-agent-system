@@ -71,10 +71,6 @@ export default function App() {
     updatePreferences: (input: PreferenceInput) => mutate('正在保存使用偏好…', () => api.updatePreferences(input)),
   }
 
-  if (loading && !state) {
-    return <div className="boot-screen"><span className="boot-mark">DO</span><strong>正在打开数字办公室</strong></div>
-  }
-
   return <>
     {error && <div className="global-message error"><span>{error}</span><button onClick={() => void refresh()}>重新连接</button></div>}
     {busy && <div className="global-message busy">{busy}</div>}
