@@ -101,7 +101,7 @@ export function AdminModels({ state, actions }: { state: GuiState | null; action
       <div className="routing-settings">
         <Field label="默认运行方式"><select value={runtime?.default_mode || 'auto'} onChange={(event) => void persistRuntime({ default_mode: event.target.value as 'host' | 'direct_api' | 'auto' })}><option value="auto">自动选择</option><option value="host">只用本地 Agent</option><option value="direct_api">只用模型 API</option></select></Field>
         <Field label="优先策略"><select value={runtime?.selection_policy || 'local_first'} onChange={(event) => void persistRuntime({ selection_policy: event.target.value as 'local_first' | 'api_first' })}><option value="local_first">本地优先，API 兜底</option><option value="api_first">API 优先，本地兜底</option></select></Field>
-        <Field label="默认本地 Agent"><select value={preferredLocalRuntime} onChange={(event) => setPreferredLocalRuntime(event.target.value)}><option value="auto">自动选择可用本地 Agent</option>{localRuntimes.map((item) => <option key={item.id} value={item.id}>{item.display_name}{item.ready ? '' : '（未就绪）'}</option>)}</select></Field>
+        <Field label="默认本地 Agent"><select value={preferredLocalRuntime} onChange={(event) => setPreferredLocalRuntime(event.target.value)}><option value="auto">自动选择可用本地 Agent</option>{localRuntimes.map((item) => <option key={item.id} value={item.id}>{item.display_name}{item.ready ? '' : '（未就绪）'}{item.command && item.command.startsWith('/mnt/') ? ' (Windows)' : ' (WSL)'}</option>)}</select></Field>
       </div>
       <div className="local-runtime-list">{localRuntimes.map((item) => <div key={item.id}><Bot size={18} /><div><strong>{item.display_name}</strong><span>{item.detected ? (item.ready ? `已发现，可选择；支持方式：${item.execution_support}` : '已发现，当前只检测不执行') : '未在本机发现'}</span></div><StatusBadge tone={item.ready ? 'green' : item.detected ? 'amber' : 'gray'}>{item.ready ? '可用' : item.detected ? '待适配' : '未安装'}</StatusBadge></div>)}</div>
       <div className="agent-runtime-matrix">
@@ -111,7 +111,7 @@ export function AdminModels({ state, actions }: { state: GuiState | null; action
           return <article key={agentId}>
             <div><strong>{employee?.display_name_zh || employee?.display_name || agentId}</strong><span>{agentId}</span></div>
             <select value={config.mode || 'auto'} onChange={(event) => updateAgentRuntime(agentId, { mode: event.target.value })}><option value="auto">自动</option><option value="host">本地 Agent</option><option value="direct_api">模型 API</option></select>
-            <select value={config.local_runtime || ''} onChange={(event) => updateAgentRuntime(agentId, { local_runtime: event.target.value })}><option value="">跟随默认</option>{localRuntimes.map((item) => <option key={item.id} value={item.id}>{item.display_name}{item.ready ? '' : '（未就绪）'}</option>)}</select>
+            <select value={config.local_runtime || ''} onChange={(event) => updateAgentRuntime(agentId, { local_runtime: event.target.value })}><option value="">跟随默认</option>{localRuntimes.map((item) => <option key={item.id} value={item.id}>{item.display_name}{item.ready ? '' : '（未就绪）'}{item.command && item.command.startsWith('/mnt/') ? ' (Windows)' : ' (WSL)'}</option>)}</select>
           </article>
         })}</div>
       </div>
