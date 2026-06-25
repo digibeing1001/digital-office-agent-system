@@ -1,0 +1,251 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-quality-scoring-policy",
+  "description": "7-point rubric scoring layer for LOOP engineering. Orthogonal to judgment.policy.json (risk gating). Decides rework/iterate vs wait_human based on failure_class.",
+  "research_foundations": [
+    "PRM per-step scoring (arXiv:2305.20050)",
+    "LLM-as-a-Judge with rubric anchors (arXiv:2306.05685)",
+    "Constitutional AI critique-then-revise",
+    "ECC verification-loop multi-gate pattern"
+  ],
+  "score_scale": {
+    "min": 1,
+    "max": 7,
+    "pass_threshold": 6,
+    "labels": {
+      "7": "exemplary",
+      "6": "pass",
+      "5": "fail_with_minor_defects",
+      "4": "fail",
+      "3": "fail_with_clear_defect",
+      "2": "severe_fail",
+      "1": "broken"
+    }
+  },
+  "scoring_principles": [
+    "Judge is decoupled: different model/temperature, never loads executor chain-of-thought",
+    "Every score MUST include strengths, defects, and fix_suggestion; bare scores are rejected",
+    "Hard disqualifier hit caps score at 4 (fail) regardless of other rubric items",
+    "missing_context MUST be distinguished from correctable_replan; misrouting causes infinite rework loops",
+    "Final delivery uses multi-sample voting; stage gates use single deterministic sample",
+    "Score 5 label is 'fail_with_minor_defects' (not 'pass_with_minor_defects'): threshold=6 means 5 is a FAIL. Label must be honest about pass/fail status.",
+    "Stage-differentiated thresholds: context=4 (lenient, false-reject wastes pipeline), decide/act=5 (medium, iteration cheap), evaluate=6 (strict, delivery cost highest). Ref: SWE-bench Verified difficulty stratification + verification-loop phase-specific strictness."
+  ],
+  "failure_class_routing": {
+    "missing_context": {
+      "verdict": "needs_human_context",
+      "control_decision": "wait_human",
+      "human_prompt_hint": "Score is low because required context is missing. Stop iteration. Ask human to supply the missing fields. Do NOT auto-rework."
+    },
+    "human_judgment_required": {
+      "verdict": "needs_human_review",
+      "control_decision": "wait_human",
+      "human_prompt_hint": "Score is low and requires human judgment the agent cannot self-resolve."
+    },
+    "correctable_replan": {
+      "verdict": "rework_replan",
+      "control_decision": "replan",
+      "human_prompt_hint": ""
+    },
+    "transient_retryable": {
+      "verdict": "rework_retry",
+      "control_decision": "retry",
+      "human_prompt_hint": ""
+    },
+    "policy_blocked": {
+      "verdict": "needs_human_review",
+      "control_decision": "wait_human",
+      "human_prompt_hint": "Action blocked by policy; human must authorize or adjust scope."
+    },
+    "permanent_failure": {
+      "verdict": "fail",
+      "control_decision": "fail",
+      "human_prompt_hint": ""
+    },
+    "default": {
+      "verdict": "rework_replan",
+      "control_decision": "replan",
+      "human_prompt_hint": ""
+    }
+  },
+  "debiasing": {
+    "rubric_anchored": true,
+    "force_defect_reasoning": true,
+    "stage_gate": {
+      "samples": 1,
+      "temperature": 0.0,
+      "mode": "single_sample"
+    },
+    "final_delivery": {
+      "samples": 3,
+      "temperature": 0.7,
+      "mode": "majority_vote",
+      "disagreement_threshold": 1.0
+    },
+    "reference_calibration": true
+  },
+  "role_gates": {
+    "product": {
+      "rubric_items": [
+        {
+          "id": "acceptance_criteria_met",
+          "weight": 0.4,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "scope_alignment",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "stakeholder_concerns_addressed",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        }
+      ],
+      "hard_disqualifiers": [
+        "missing_acceptance_criteria",
+        "scope_creep_unapproved"
+      ]
+    },
+    "design": {
+      "rubric_items": [
+        {
+          "id": "architecture_coherent",
+          "weight": 0.4,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "interface_contracts_clear",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "tradeoffs_documented",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        }
+      ],
+      "hard_disqualifiers": [
+        "circular_dependency",
+        "missing_interface_contract"
+      ]
+    },
+    "implementation": {
+      "rubric_items": [
+        {
+          "id": "tests_pass",
+          "weight": 0.4,
+          "hard_disqualifier": true
+        },
+        {
+          "id": "code_quality",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "no_regressions",
+          "weight": 0.3,
+          "hard_disqualifier": true
+        }
+      ],
+      "hard_disqualifiers": [
+        "tests_failing",
+        "regression_introduced",
+        "syntax_error"
+      ]
+    },
+    "writing": {
+      "rubric_items": [
+        {
+          "id": "claims_supported",
+          "weight": 0.4,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "structure_clear",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "voice_consistent",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        }
+      ],
+      "hard_disqualifiers": [
+        "fabricated_citation",
+        "plagiarism_detected"
+      ]
+    },
+    "delivery": {
+      "rubric_items": [
+        {
+          "id": "artifacts_complete",
+          "weight": 0.4,
+          "hard_disqualifier": true
+        },
+        {
+          "id": "handoff_documented",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "secretary_acceptable",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        }
+      ],
+      "hard_disqualifiers": [
+        "missing_artifact",
+        "handoff_blocked"
+      ]
+    }
+  },
+  "composite_score": {
+    "mode": "weighted_average",
+    "default_weights": {
+      "product": 0.2,
+      "design": 0.2,
+      "implementation": 0.3,
+      "writing": 0.15,
+      "delivery": 0.15
+    }
+  },
+  "judge_agent": {
+    "profile": "secretary",
+    "output_schema": {
+      "score": "integer 1-7",
+      "verdict": "string from failure_class_routing",
+      "failure_class": "string",
+      "rubric_hits": "object",
+      "strengths": "array of {item, evidence}",
+      "defects": "array of {item, severity, fix_suggestion}",
+      "recommended_control_decision": "string",
+      "human_prompt_hint": "string (non-empty when verdict starts with needs_human_)",
+      "reason": "string"
+    },
+    "scorer_role": "secretary evaluates against user-confirmed intent and goals"
+  },
+  "gui_contract": {
+    "display_fields": [
+      "score",
+      "verdict",
+      "failure_class",
+      "strengths",
+      "defects",
+      "human_prompt_hint"
+    ],
+    "block_color": {
+      "pass": "green",
+      "fail": "red",
+      "needs_human": "amber"
+    }
+  },
+  "stage_thresholds": {
+    "context": 4,
+    "decide": 5,
+    "act": 5,
+    "evaluate": 6
+  }
+}

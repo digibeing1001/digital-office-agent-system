@@ -3428,6 +3428,205 @@ def evaluate_judgment(
     }
 
 
+def quality_scoring_policy(root: Path) -> dict[str, Any]:
+    path = root / "quality-scoring.policy.json"
+    if path.exists():
+        return read_json(path)
+    return {
+        "version": "0.0.0",
+        "kind": "digital-office-quality-scoring-policy",
+        "score_scale": {"min": 1, "max": 7, "pass_threshold": 6},
+        "failure_class_routing": {
+            "default": {"verdict": "rework_replan", "control_decision": "replan", "human_prompt_hint": ""},
+            "missing_context": {"verdict": "needs_human_context", "control_decision": "wait_human", "human_prompt_hint": "Missing context."},
+        },
+        "role_gates": {},
+    }
+
+
+QUALITY_FAILURE_CLASSES = {
+    "missing_context", "human_judgment_required", "correctable_replan",
+    "transient_retryable", "policy_blocked", "permanent_failure",
+}
+
+
+def quality_routing_for_failure_class(policy: dict[str, Any], failure_class: str) -> dict[str, Any]:
+    routing = policy.get("failure_class_routing", {})
+    entry = routing.get(failure_class) or routing.get("default", {})
+    return {
+        "verdict": str(entry.get("verdict", "rework_replan")),
+        "control_decision": str(entry.get("control_decision", "replan")),
+        "human_prompt_hint": str(entry.get("human_prompt_hint", "")),
+    }
+
+
+def _parse_json_list(value: str | None, path: str | None, label: str) -> list[Any]:
+    if path:
+        with open(Path(path).expanduser(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+    elif value:
+        try:
+            data = json.loads(value)
+        except json.JSONDecodeError as exc:
+            print(f"office-system: invalid {label} JSON: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+    else:
+        return []
+    if not isinstance(data, list):
+        print(f"office-system: {label} JSON must be an array", file=sys.stderr)
+        raise SystemExit(2)
+    return data
+
+
+def evaluate_quality_score(
+    root: Path,
+    *,
+    stage: str = "evaluate",
+    role_gate: str = "",
+    score: int,
+    failure_class: str = "",
+    rubric_hits: dict[str, Any] | None = None,
+    strengths: list[Any] | None = None,
+    defects: list[Any] | None = None,
+    agent_id: str = "",
+    workflow_run_id: str = "",
+    task_id: str = "",
+    artifact_ref: str = "",
+    judge_profile: str = "office-judge",
+    reason: str = "",
+) -> dict[str, Any]:
+    policy = quality_scoring_policy(root)
+    scale = policy.get("score_scale", {})
+    score_min = int(scale.get("min", 1))
+    score_max = int(scale.get("max", 7))
+    # Stage-differentiated threshold: context=4, decide/act=5, evaluate=6.
+    # Falls back to global pass_threshold if stage_thresholds not configured.
+    stage_thresholds = policy.get("stage_thresholds", {})
+    pass_threshold = int(stage_thresholds.get(stage, scale.get("pass_threshold", 6)))
+
+    if not isinstance(score, int) or score < score_min or score > score_max:
+        raise SystemExit(f"office-system: quality score must be int in [{score_min},{score_max}], got {score!r}")
+
+    rubric_hits = rubric_hits or {}
+    strengths = strengths or []
+    defects = defects or []
+    passed = score >= pass_threshold
+
+    capped_by_hard_disqualifier = False
+    role_gates = policy.get("role_gates", {})
+    gate_def = role_gates.get(role_gate, {}) if role_gate else {}
+    hard_disqualifiers = set(gate_def.get("hard_disqualifiers", []))
+    hit_disqualifiers = []
+    if hard_disqualifiers:
+        for key, val in rubric_hits.items():
+            hit = False
+            if isinstance(val, dict):
+                hit = bool(val.get("hard_disqualifier") and val.get("hit"))
+            elif key in hard_disqualifiers and val:
+                hit = True
+            if hit:
+                hit_disqualifiers.append(key)
+    if hit_disqualifiers and score > 4:
+        score = 4
+        capped_by_hard_disqualifier = True
+        passed = False
+
+    if not passed and not defects:
+        raise SystemExit(
+            f"office-system: quality score {score} < pass_threshold {pass_threshold} requires at least one defect with fix_suggestion"
+        )
+
+    if passed:
+        verdict = "pass"
+        control_decision = "continue"
+        human_prompt_hint = ""
+    else:
+        if failure_class not in QUALITY_FAILURE_CLASSES:
+            failure_class = "correctable_replan"
+        route = quality_routing_for_failure_class(policy, failure_class)
+        verdict = route["verdict"]
+        control_decision = route["control_decision"]
+        human_prompt_hint = route["human_prompt_hint"]
+        if verdict.startswith("needs_human_") and not human_prompt_hint:
+            human_prompt_hint = f"Quality score {score}/{score_max} below threshold {pass_threshold}. failure_class={failure_class}. Human input required."
+
+    return {
+        "version": "1.0.0",
+        "kind": "digital-office-quality-score",
+        "stage": normalize_loop_stage(stage),
+        "role_gate": safe_component(role_gate, "role gate") if role_gate else "",
+        "score": score,
+        "raw_score": score,
+        "capped_by_hard_disqualifier": capped_by_hard_disqualifier,
+        "score_min": score_min,
+        "score_max": score_max,
+        "pass_threshold": pass_threshold,
+        "passed": passed,
+        "verdict": verdict,
+        "failure_class": failure_class,
+        "rubric_hits": rubric_hits,
+        "strengths": strengths,
+        "defects": defects,
+        "recommended_control_decision": control_decision,
+        "human_prompt_hint": human_prompt_hint,
+        "agent_id": registered_agent(root, agent_id) if agent_id else "",
+        "workflow_run_id": safe_claim(workflow_run_id, "workflow run id", required=False),
+        "task_id": safe_claim(task_id, "task id", required=False),
+        "artifact_ref": artifact_ref,
+        "judge_profile": judge_profile,
+        "reason": reason,
+        "created_at": now_iso(),
+    }
+
+
+def quality_score_evaluate(args: argparse.Namespace) -> int:
+    root = system_root()
+    rubric = parse_json_value(args.rubric_json, args.rubric_file, "rubric", required=False)
+    strengths = _parse_json_list(args.strengths_json, args.strengths_file, "strengths")
+    defects = _parse_json_list(args.defects_json, args.defects_file, "defects")
+    result = evaluate_quality_score(
+        root,
+        stage=args.stage,
+        role_gate=args.role_gate or "",
+        score=args.score,
+        failure_class=args.failure_class or "",
+        rubric_hits=rubric,
+        strengths=strengths,
+        defects=defects,
+        agent_id=args.agent or "",
+        workflow_run_id=args.workflow_run or "",
+        task_id=args.task_id or "",
+        artifact_ref=args.artifact_ref or "",
+        judge_profile=args.judge_profile or "office-judge",
+        reason=args.reason or "",
+    )
+    out_dir = root / "quality_scores"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    import secrets
+    record_id = safe_component(f"qs-{now_iso().replace(':', '').replace('-', '')[:15]}-{secrets.token_hex(3)}", "quality score id")
+    result["id"] = record_id
+    write_json(out_dir / f"{record_id}.json", result)
+    print(json.dumps({"quality_score": result}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def quality_score_list(args: argparse.Namespace) -> int:
+    root = system_root()
+    records = []
+    for rec in read_records(root / "quality_scores", "digital-office-quality-score"):
+        if args.verdict and rec.get("verdict") != args.verdict:
+            continue
+        if args.workflow_run and rec.get("workflow_run_id") != args.workflow_run:
+            continue
+        if args.role_gate and rec.get("role_gate") != args.role_gate:
+            continue
+        records.append(rec)
+        if len(records) >= args.limit:
+            break
+    print(json.dumps({"quality_scores": records}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def open_judgment_cases(root: Path, run: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     if run is not None:
@@ -6202,6 +6401,7 @@ def telemetry_payload(root: Path, consent: dict[str, Any]) -> dict[str, Any]:
         "knowledge_registry": (root / "knowledge.registry.json").exists(),
         "rules_registry": (root / "rules" / "rules.registry.json").exists(),
         "judgment_policy": (root / "judgment.policy.json").exists(),
+        "quality_scoring_policy": (root / "quality-scoring.policy.json").exists(),
         "multimodal_pipeline": (root / "multimodal.pipeline.json").exists(),
         "rag_pipeline": (root / "rag.pipeline.json").exists(),
         "tesseract": bool(shutil.which("tesseract")),
@@ -7208,6 +7408,68 @@ def loop_start(args: argparse.Namespace) -> int:
     return 0
 
 
+def load_quality_score(root: Path, score_id: str) -> dict[str, Any] | None:
+    path = root / "quality_scores" / f"{safe_component(score_id, 'quality score id')}.json"
+    if path.exists():
+        return read_json(path)
+    return None
+
+
+def _load_loop_manifest(root: Path) -> dict[str, Any]:
+    path = root / "ai-native-loop.manifest.json"
+    if path.exists():
+        return read_json(path)
+    return {}
+
+
+def _bump_stage_quality_rework_count(run: dict[str, Any], stage: str) -> int:
+    stages = run.setdefault("stages", {})
+    st = stages.setdefault(stage, {})
+    cur = int(st.get("quality_rework_count", 0)) + 1
+    st["quality_rework_count"] = cur
+    return cur
+
+
+def quality_gate_block(root: Path, run_id: str, stage: str, score_id: str) -> dict[str, Any] | None:
+    if not score_id:
+        return None
+    score = load_quality_score(root, score_id)
+    if score is None:
+        return {"reason": "quality_score_not_found", "score_id": score_id, "stage": stage}
+    if score.get("passed"):
+        return None
+    run_path = root / "runs" / run_id / "run.json"
+    run = read_json(run_path) if run_path.exists() else {"stages": {}}
+    cap = int(_load_loop_manifest(root).get("controller", {}).get("default_budgets", {}).get("max_quality_rework_per_stage", 2))
+    new_count = _bump_stage_quality_rework_count(run, stage)
+    import json as _json
+    if run_path.exists():
+        run_path.write_text(_json.dumps(run, ensure_ascii=False, indent=2))
+    original_ctrl = score.get("recommended_control_decision", "")
+    original_hint = score.get("human_prompt_hint", "")
+    escalated = new_count > cap
+    if escalated:
+        ctrl = "wait_human"
+        hint = f"Quality rework cap exhausted ({new_count-1}/{cap} for stage '{stage}'). Original failure_class={score.get('failure_class')}. Escalating to human to prevent infinite loop. {original_hint}".strip()
+    else:
+        ctrl = original_ctrl
+        hint = original_hint
+    return {
+        "reason": "quality_score_below_threshold",
+        "score_id": score_id,
+        "stage": stage,
+        "score": score.get("score"),
+        "pass_threshold": score.get("pass_threshold"),
+        "verdict": score.get("verdict"),
+        "failure_class": score.get("failure_class"),
+        "recommended_control_decision": ctrl,
+        "human_prompt_hint": hint,
+        "quality_rework_count": new_count,
+        "quality_rework_cap": cap,
+        "escalated_to_human": escalated,
+    }
+
+
 def loop_stage(args: argparse.Namespace) -> int:
     root = system_root()
     run_id = safe_component(args.run_id, "run id")
@@ -7306,6 +7568,11 @@ def loop_stage(args: argparse.Namespace) -> int:
         if missing_artifacts or incomplete_gates:
             stage_state["status"] = prior_status
             print(json.dumps({"status": "blocked", "stage": stage, "missing_artifacts": missing_artifacts, "incomplete_gates": incomplete_gates}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
+        quality_block = quality_gate_block(root, run_id, stage, args.quality_score_id or "")
+        if quality_block:
+            stage_state["status"] = prior_status
+            print(json.dumps({"status": "blocked", "stage": stage, "quality_gate": quality_block}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
             return 2
     if args.status == "started":
         run["status"] = LOOP_STATUS_BY_STAGE[stage]
@@ -8438,6 +8705,7 @@ def health_checks(root: Path) -> dict[str, Any]:
         "user_preferences_configured": onboarding_preferences_path(root).exists(),
         "rules_registry": (root / "rules" / "rules.registry.json").exists(),
         "judgment_policy": (root / "judgment.policy.json").exists(),
+        "quality_scoring_policy": (root / "quality-scoring.policy.json").exists(),
         "coordination_policy": (root / "coordination.policy.json").exists(),
         "multimodal_pipeline": (root / "multimodal.pipeline.json").exists(),
         "rag_pipeline": (root / "rag.pipeline.json").exists(),
@@ -9183,6 +9451,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "task_inbox", "status": "ready", "commands": ["task-list", "task-status", "task-update"]},
         {"id": "approval_center", "status": "ready", "commands": ["approval-create", "approval-list", "approval-decision"]},
         {"id": "human_judgment_gates", "status": "ready", "commands": ["judgment-evaluate", "judgment-list", "judgment-decision", "judgment-resume"]},
+        {"id": "quality_scoring", "status": "ready", "commands": ["quality-score-evaluate", "quality-score-list"]},
         {"id": "collaborative_rule_intake", "status": "ready", "commands": ["rule-elicit", "rule-suggest", "rule-proposal-list", "rule-proposal-decision"]},
         {"id": "notification_center", "status": "ready", "commands": ["notification-list", "notification-mark-read"]},
         {"id": "audit_events", "status": "ready", "commands": ["audit-events"]},
@@ -10693,7 +10962,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role")
     p.set_defaults(func=judgment_evaluate)
 
+    p = sub.add_parser("quality-score-evaluate")
+    p.add_argument("--stage", choices=LOOP_STAGE_CHOICES, default="evaluate")
+    p.add_argument("--role-gate", choices=["product", "design", "implementation", "writing", "delivery", ""])
+    p.add_argument("--score", type=int, required=True)
+    p.add_argument("--failure-class", choices=["", "missing_context", "human_judgment_required", "correctable_replan", "transient_retryable", "policy_blocked", "permanent_failure"], default="")
+    p.add_argument("--rubric-json")
+    p.add_argument("--rubric-file")
+    p.add_argument("--strengths-json")
+    p.add_argument("--strengths-file")
+    p.add_argument("--defects-json")
+    p.add_argument("--defects-file")
+    p.add_argument("--agent")
+    p.add_argument("--workflow-run")
+    p.add_argument("--task-id")
+    p.add_argument("--artifact-ref")
+    p.add_argument("--judge-profile", default="office-judge")
+    p.add_argument("--reason")
+    p.set_defaults(func=quality_score_evaluate)
+
+    p = sub.add_parser("quality-score-list")
+    p.add_argument("--verdict", choices=["pass", "needs_human_context", "needs_human_review", "rework_replan", "rework_retry", "fail"])
+    p.add_argument("--workflow-run")
+    p.add_argument("--role-gate")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=quality_score_list)
+
     p = sub.add_parser("judgment-list")
+
     p.add_argument("--status", choices=sorted(JUDGMENT_STATUSES))
     p.add_argument("--workflow-run")
     p.add_argument("--required-human-role")
@@ -10800,6 +11096,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--body")
     p.add_argument("--artifact", action="append")
     p.add_argument("--gate", action="append")
+    p.add_argument("--quality-score-id")
     p.set_defaults(func=loop_stage)
 
     p = sub.add_parser("loop-status")

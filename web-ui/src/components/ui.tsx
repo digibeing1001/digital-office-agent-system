@@ -9,8 +9,8 @@ export function StatusBadge({ children, tone = 'gray' }: { children: ReactNode; 
   return <span className={`status-badge ${tone}`}><StatusDot tone={tone} />{children}</span>
 }
 
-export function EmptyState({ title, body }: { title: string; body: string }) {
-  return <div className="empty-state"><strong>{title}</strong><p>{body}</p></div>
+export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+  return <div className="empty-state"><strong>{title}</strong><p>{body}</p>{action}</div>
 }
 
 export function PageHeading({ title, description, action }: { title: string; description: string; action?: ReactNode }) {
