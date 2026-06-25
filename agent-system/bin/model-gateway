@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import random
+import shlex
 import shutil
 import socket
 import stat
+import subprocess
 import sys
 import time
 import urllib.error
@@ -203,29 +206,124 @@ def validate_url(url: str) -> None:
         raise GatewayError("plain HTTP model APIs are limited to localhost", code="insecure_base_url")
 
 
+def command_parts(command: str) -> list[str]:
+    command = command.strip()
+    if not command:
+        return []
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return [command]
+
+
+def first_existing_path(paths: list[Path]) -> str:
+    return next((str(path) for path in paths if path.exists()), "")
+
+
+def probe_local_runtime(command: str, runtime_id: str) -> tuple[bool, str]:
+    parts = command_parts(command)
+    if not parts:
+        return False, "command_not_found"
+    try:
+        probe_timeout = float(os.environ.get("DIGITAL_OFFICE_LOCAL_RUNTIME_PROBE_TIMEOUT", "3"))
+    except ValueError:
+        probe_timeout = 3.0
+    probe_timeout = max(0.2, min(probe_timeout, 30.0))
+    probe_args = ["--version"]
+    if runtime_id in {"hermes", "claude_code"}:
+        probe_args = ["--help"]
+    elif runtime_id == "codex":
+        probe_args = ["exec", "--help"]
+    try:
+        proc = subprocess.run(
+            [*parts, *probe_args],
+            text=True,
+            capture_output=True,
+            timeout=probe_timeout,
+            env={**os.environ, "NO_COLOR": "1"},
+        )
+    except FileNotFoundError:
+        return False, "command_not_found"
+    except subprocess.TimeoutExpired:
+        return False, "probe_timeout"
+    except OSError as exc:
+        return False, f"probe_failed: {exc}"
+    combined = f"{proc.stdout}\n{proc.stderr}"
+    if "Missing optional dependency" in combined:
+        return False, "probe_failed: missing optional dependency"
+    if proc.returncode == 0:
+        return True, "probe_ok"
+    detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+    if detail:
+        return False, f"probe_failed: {detail[0][:220]}"
+    return False, f"probe_failed: exit {proc.returncode}"
+
+
 def discover_local_runtimes(root: Path) -> list[dict[str, Any]]:
     home = root.parent
     candidates = [
-        ("hermes", "Hermes", "hermes", [home / "bin" / "hermes", Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes"], [home / "config.yaml", Path.home() / ".hermes" / "config.yaml"], "native"),
-        ("codex", "Codex", "codex", [Path.home() / ".codex" / "bin" / "codex"], [Path.home() / ".codex" / "config.toml", Path.home() / ".codex" / "auth.json"], "cli"),
-        ("claude_code", "Claude Code", "claude", [Path.home() / ".claude" / "local" / "claude", Path.home() / ".claude" / "bin" / "claude"], [Path.home() / ".claude.json", Path.home() / ".claude" / "settings.json"], "cli"),
-        ("openclaw", "OpenClaw", "openclaw", [Path.home() / ".openclaw" / "bin" / "openclaw"], [Path.home() / ".openclaw" / "config.yaml"], "detected_only"),
+        (
+            "hermes",
+            "Hermes",
+            "hermes",
+            [home / "bin" / "hermes", Path.home() / ".local" / "bin" / "hermes", Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes"],
+            [home / "config.yaml", Path.home() / ".hermes" / "config.yaml"],
+            "cli",
+        ),
+        (
+            "codex",
+            "Codex",
+            "codex",
+            [Path.home() / ".hermes" / "node" / "bin" / "codex", Path.home() / ".local" / "bin" / "codex", Path.home() / ".codex" / "bin" / "codex"],
+            [Path.home() / ".codex" / "config.toml", Path.home() / ".codex" / "auth.json"],
+            "cli",
+        ),
+        (
+            "claude_code",
+            "Claude Code",
+            "claude",
+            [Path.home() / ".claude" / "local" / "claude", Path.home() / ".claude" / "bin" / "claude", Path.home() / ".local" / "bin" / "claude"],
+            [Path.home() / ".claude.json", Path.home() / ".claude" / "settings.json"],
+            "cli",
+        ),
+        (
+            "openclaw",
+            "OpenClaw",
+            "openclaw",
+            [Path.home() / ".openclaw" / "bin" / "openclaw", Path.home() / ".local" / "bin" / "openclaw"],
+            [Path.home() / ".openclaw" / "config.yaml"],
+            "cli",
+        ),
     ]
     result = []
+    pending: dict[concurrent.futures.Future[tuple[bool, str]], int] = {}
     for runtime_id, display_name, command_name, executables, configs, support in candidates:
         env_name = f"DIGITAL_OFFICE_{runtime_id.upper()}_COMMAND"
         command = os.environ.get(env_name, "").strip()
-        discovered = next((str(path) for path in executables if path.exists()), "") or str(shutil.which(command_name) or "")
+        discovered = first_existing_path(executables) or str(shutil.which(command_name) or "")
         detected = bool(command or discovered)
         result.append({
             "id": runtime_id,
             "display_name": display_name,
             "detected": detected,
-            "ready": detected and support in {"native", "cli"},
+            "ready": False,
+            "ready_reason": "probing" if detected else "command_not_found",
             "command": command or discovered,
             "config_detected": any(path.exists() for path in configs),
             "execution_support": support,
         })
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(candidates))) as executor:
+        for index, item in enumerate(result):
+            if item.get("detected"):
+                pending[executor.submit(probe_local_runtime, str(item.get("command", "")), str(item.get("id", "")))] = index
+        for future in concurrent.futures.as_completed(pending):
+            index = pending[future]
+            try:
+                ready, reason = future.result()
+            except Exception as exc:
+                ready, reason = False, f"probe_failed: {exc}"
+            result[index]["ready"] = ready
+            result[index]["ready_reason"] = reason
     return result
 
 

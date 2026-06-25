@@ -6,6 +6,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 cp -a "$SOURCE_ROOT/agent-system" "$tmp/agent-system"
+mkdir -p "$tmp/scripts"
+cp -a "$SOURCE_ROOT/scripts/agent-router" "$tmp/scripts/agent-router"
 export DIGITAL_OFFICE_SYSTEM_HOME="$tmp/agent-system"
 export DIGITAL_OFFICE_CODEX_COMMAND="/bin/echo"
 export DIGITAL_OFFICE_CLAUDE_CODE_COMMAND="/bin/echo"
@@ -78,6 +80,17 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 runtime = data["runtime"]
 assert runtime["preferred_local_runtime"] == "codex", runtime
 assert runtime["agents"]["secretary"]["local_runtime"] == "codex", runtime
+PY
+
+"$office" secretary-chat --execute --runtime host --message "hello" --user smoke --role owner >"$tmp/hello-execute.json"
+python3 - "$tmp/hello-execute.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+assert data["status"] == "chat", data
+assert data["execution"]["status"] == "completed", data
+assert "exec" in data["reply"] or "hello" in data["reply"].lower(), data
 PY
 
 "$gateway" resolve --agent secretary >"$tmp/resolve.json"

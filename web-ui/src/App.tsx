@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { AdminApp } from './features/admin/AdminApp'
 import { UserApp } from './features/user/UserApp'
-import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, UploadKnowledgeInput } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, CreateWorkflowInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, UploadKnowledgeInput } from './types'
 
 export default function App() {
   const [state, setState] = useState<GuiState | null>(null)
@@ -52,7 +52,7 @@ export default function App() {
   const actions = {
     secretaryChat: (input: SecretaryChatInput) => mutate('正在理解你的意思...', () => api.secretaryChat(input)),
     createProject: (input: CreateProjectInput) => mutate('正在创建项目…', () => api.createProject(input)),
-    createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) =>
+    createWorkflow: (input: CreateWorkflowInput) =>
       mutate('正在交给秘书…', () => api.createWorkflow(input)),
     createAgent: (input: CreateAgentInput) => mutate('正在创建数字员工…', () => api.createAgent(input)),
     setAgentStatus: (agentId: string, status: AgentStatus, reason?: string) =>

@@ -1,4 +1,4 @@
-import type { AgentStatus, CreateAgentInput, CreateProjectInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, SecretaryChatResponse, UploadKnowledgeInput } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, CreateWorkflowInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, SecretaryChatResponse, UploadKnowledgeInput } from './types'
 
 const TOKEN_KEY = 'digital-office-web-token'
 
@@ -30,7 +30,7 @@ export const api = {
     request<SecretaryChatResponse>('/api/secretary/chat', { method: 'POST', body: JSON.stringify(input) }),
   createProject: (input: CreateProjectInput) =>
     request<Record<string, unknown>>('/api/projects', { method: 'POST', body: JSON.stringify(input) }),
-  createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) =>
+  createWorkflow: (input: CreateWorkflowInput) =>
     request<Record<string, unknown>>('/api/workflows', { method: 'POST', body: JSON.stringify(input) }),
   createAgent: (input: CreateAgentInput) =>
     request<Record<string, unknown>>('/api/agents', { method: 'POST', body: JSON.stringify(input) }),

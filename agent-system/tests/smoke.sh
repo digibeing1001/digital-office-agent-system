@@ -114,16 +114,22 @@ cd "$WORK_DIR/repo"
 bash -n agent-system/tests/smoke.sh
 bash -n agent-system/tests/web-pwa-smoke.sh
 bash -n agent-system/tests/secretary-intent-and-runtime-smoke.sh
+bash -n agent-system/tests/workflow-execute-smoke.sh
 bash -n digital-office-gui
 bash -n agent-system/bin/digital-office-gui
 python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/model-gateway agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
 python3 -m py_compile agent-system/bin/install-skill-sources
 python3 agent-system/tests/model-gateway-smoke.py
 bash agent-system/tests/secretary-intent-and-runtime-smoke.sh
+bash agent-system/tests/workflow-execute-smoke.sh
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   json_files="$(git ls-files "*.json")"
 else
-  json_files="$(find agent-system scripts skills profiles -type f -name "*.json" | sort)"
+  json_roots=()
+  for candidate in agent-system scripts skills profiles; do
+    [ -e "$candidate" ] && json_roots+=("$candidate")
+  done
+  json_files="$(find "${json_roots[@]}" -type f -name "*.json" | sort)"
 fi
 for file in $json_files; do
   python3 -m json.tool "$file" >/dev/null

@@ -212,7 +212,7 @@ export interface GuiState {
       local_runtime_order?: string[]
       agents: Record<string, { mode: string; provider: string; model: string; local_runtime?: string }>
     }
-    local_runtimes: Array<{ id: string; display_name: string; detected: boolean; ready: boolean; config_detected: boolean; execution_support: string }>
+    local_runtimes: Array<{ id: string; display_name: string; detected: boolean; ready: boolean; ready_reason?: string; command?: string; config_detected: boolean; execution_support: string }>
   }
 }
 
@@ -266,6 +266,9 @@ export interface ModelRuntimeInput {
 
 export interface SecretaryChatInput {
   message: string
+  execute?: boolean
+  runtime?: 'auto' | 'host' | 'direct_api'
+  execution_timeout?: number
 }
 
 export interface SecretaryChatResponse {
@@ -274,9 +277,21 @@ export interface SecretaryChatResponse {
   should_create_project: boolean
   confidence: number
   reply: string
+  assistant_response?: string
+  execution?: { status: string; assistant_response?: string; diagnostics_excerpt?: string; return_code?: number; error?: string; message?: string }
   suggested_project_name?: string
   suggested_project_id?: string
   next_actions?: string[]
+}
+
+export interface CreateWorkflowInput {
+  task: string
+  priority: string
+  agent_id?: string
+  project_id?: string
+  execute?: boolean
+  runtime?: 'auto' | 'host' | 'direct_api'
+  execution_timeout?: number
 }
 
 export interface PreferenceInput {
@@ -289,7 +304,7 @@ export interface PreferenceInput {
 export interface AppActions {
   secretaryChat: (input: SecretaryChatInput) => Promise<SecretaryChatResponse>
   createProject: (input: CreateProjectInput) => Promise<Record<string, unknown>>
-  createWorkflow: (input: { task: string; priority: string; agent_id?: string; project_id?: string }) => Promise<Record<string, unknown>>
+  createWorkflow: (input: CreateWorkflowInput) => Promise<Record<string, unknown>>
   createAgent: (input: CreateAgentInput) => Promise<Record<string, unknown>>
   setAgentStatus: (agentId: string, status: AgentStatus, reason?: string) => Promise<Record<string, unknown>>
   deleteAgent: (agentId: string) => Promise<Record<string, unknown>>

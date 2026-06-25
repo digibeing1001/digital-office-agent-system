@@ -14,10 +14,14 @@
     },
     {
       "id": "web_context_controls_present",
-      "type": "file_contains",
+      "type": "command",
       "cwd": "hermes_home",
-      "path": "web-ui/src/features/user/SecretaryPanel.tsx",
-      "patterns": ["confirmProjectIntent", "请至少回答三个关键问题", "confirmProjectContext", "uploadKnowledge"]
+      "timeout_seconds": 30,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; test -f agent-system/web/app/index.html; grep -q 'confirmProjectIntent' agent-system/web/app/assets/index-*.js; grep -q 'confirmProjectContext' agent-system/web/app/assets/index-*.js; grep -q 'updateProjectContext' agent-system/web/app/assets/index-*.js; grep -q 'uploadKnowledge' agent-system/web/app/assets/index-*.js; grep -q 'secretary-intake-toolbar' agent-system/web/app/assets/index-*.css"
+      ]
     },
     {
       "id": "context_gate_is_server_enforced",

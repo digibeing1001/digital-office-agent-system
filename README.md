@@ -65,7 +65,7 @@ Digital Office 把重点放在四件事上：
 - 数字员工页面可查看每个 Agent 的介绍、能力、调用次数、Token 消耗、成功失败和系统建议补齐的岗位
 - 管理员可创建、停用、归档和删除自定义 Agent
 - 健康检查、权限控制、审计记录和专用 Web 操作接口
-- 同时支持已安装的 Agent 主机与模型 API；内置 MiniMax、MiMo、Kimi、智谱 GLM、OpenAI、Anthropic、Gemini 和自定义兼容服务
+- 同时支持已安装的 Agent 主机与模型 API；本地可选择 Hermes、OpenClaw、Codex、Claude Code，API 内置 MiniMax、MiMo、Kimi、智谱 GLM、OpenAI、Anthropic、Gemini 和自定义兼容服务
 - API Key 与 Token Plan 分开管理，可自行填写 API 地址、模型和密钥，并设置本地优先或 API 优先的自动选路
 - 新安装、保留原规则安装、明确覆盖安装和一条命令升级
 
@@ -132,14 +132,15 @@ curl -fsSL https://raw.githubusercontent.com/digibeing1001/digital-office-agent-
 
 ### 接入本地 Agent、大模型 API 或 Token Plan
 
-打开管理中心的“模型接入”，可以直接选择两类连接：
+打开管理中心的“模型接入”，可以直接选择三类连接：
 
+- **本地 Agent**：自动发现 Hermes、OpenClaw、Codex、Claude Code，并允许用户指定某个本地 Agent 运行任务。
 - **API**：MiniMax、MiMo、Kimi、智谱 GLM、OpenAI、Anthropic、Gemini，或者任意 OpenAI 兼容服务。
 - **Token Plan**：MiniMax Coding Plan、MiMo Token Plan、Kimi Code，或者用户自行填写地址的兼容套餐。
 
 每个连接都可以修改 API 地址、模型和密钥，并进行一次真实的小请求测试。密钥保存在服务器本机的私有文件中，权限为 `0600`；浏览器、GUI 状态、审计和运行日志只会看到脱敏尾号。旧有环境变量方式继续兼容。
 
-系统会同时发现本机 Hermes/OpenClaw 和已经配置的 API。你可以选择“本地优先，API 兜底”或“API 优先，本地兜底”，并调整模型顺序。每次选路、模型调用、输入输出 Token 和失败结果都会写入 Loop 预算与运行账本；缺少可用连接时会明确失败，不会伪造成功。
+系统会同时发现本机 Hermes/OpenClaw/Codex/Claude Code 和已经配置的 API。你可以选择“本地优先，API 兜底”或“API 优先，本地兜底”，也可以在单次任务里明确指定运行时。每次选路、模型调用、输入输出 Token、Agent 输出产物和失败结果都会写入 Loop 预算与运行账本；缺少可用连接时会明确失败，不会伪造成功。
 
 命令行也可以查看连接状态：
 

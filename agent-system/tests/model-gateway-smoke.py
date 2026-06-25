@@ -70,6 +70,10 @@ class ModelGatewaySmokeTest(unittest.TestCase):
         local_hermes.parent.mkdir(parents=True)
         local_hermes.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         local_hermes.chmod(0o700)
+        local_codex = cls.temp_path / "bin" / "codex"
+        local_codex.write_text("#!/bin/sh\nif [ \"$1\" = \"exec\" ] && [ \"$2\" = \"--help\" ]; then echo codex-help; exit 0; fi\necho codex-local-ok \"$@\"\n", encoding="utf-8")
+        local_codex.chmod(0o700)
+        cls.local_codex = local_codex
         shutil.copy2(ROOT / "agent-system" / "ai-native-loop.manifest.json", cls.system_root / "ai-native-loop.manifest.json")
         shutil.copy2(ROOT / "agent-system" / "agents.registry.json", cls.system_root / "agents.registry.json")
         port = cls.server.server_address[1]
@@ -104,6 +108,9 @@ class ModelGatewaySmokeTest(unittest.TestCase):
             "TEST_COMPATIBLE_KEY": "compatible-secret",
             "TEST_ANTHROPIC_KEY": "anthropic-secret",
             "TEST_GEMINI_KEY": "gemini-secret",
+            "DIGITAL_OFFICE_CODEX_COMMAND": str(self.local_codex),
+            "DIGITAL_OFFICE_CLAUDE_CODE_COMMAND": "/bin/echo",
+            "DIGITAL_OFFICE_OPENCLAW_COMMAND": "/bin/echo",
         }
 
     def invoke(self, provider: str, model: str) -> dict[str, Any]:
@@ -211,6 +218,16 @@ class ModelGatewaySmokeTest(unittest.TestCase):
         local_resolve = subprocess.run([str(GATEWAY), "resolve", "--agent", "researcher", "--requested-mode", "auto", "--host-provider", "host-provider", "--host-model", "host-model"], text=True, capture_output=True, env=env, timeout=5)
         self.assertEqual(local_resolve.returncode, 0, local_resolve.stderr)
         self.assertEqual(json.loads(local_resolve.stdout)["execution"]["mode"], "host")
+
+    def test_router_executes_selected_local_runtime(self) -> None:
+        env = self.environment()
+        configure = subprocess.run([str(GATEWAY), "configure", "--agent", "writer", "--mode", "host", "--local-runtime", "codex", "--confirmed"], text=True, capture_output=True, env=env, timeout=5)
+        self.assertEqual(configure.returncode, 0, configure.stderr)
+        router = subprocess.run([str(ROOT / "scripts" / "agent-router"), "--agent", "writer", "--runtime", "host", "draft local runtime note"], text=True, capture_output=True, env=env, timeout=10)
+        self.assertEqual(router.returncode, 0, router.stderr)
+        self.assertIn("runtime: host", router.stdout)
+        self.assertIn("codex-local-ok", router.stdout)
+        self.assertIn("exec", router.stdout)
 
 
 if __name__ == "__main__":

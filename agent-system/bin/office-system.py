@@ -1130,6 +1130,45 @@ def secretary_chat(args: argparse.Namespace) -> int:
         print("office-system: secretary-chat requires --message or stdin body", file=sys.stderr)
         return 2
     preview = secretary_chat_preview(message)
+    execution: dict[str, Any] | None = None
+    if args.execute and not preview.get("should_create_project"):
+        router = root.parent / "scripts" / "agent-router"
+        if router.exists():
+            command = [str(router), "--agent", "secretary", "--runtime", args.runtime or "auto"]
+            prompt = "\n".join(
+                [
+                    "You are the Digital Office secretary. Answer the user's message naturally.",
+                    "If the user seems to want formal project execution, suggest using the New Project button and do not create the project yourself.",
+                    "Keep the answer short, useful, and conversational.",
+                    "",
+                    f"User message: {message}",
+                ]
+            )
+            try:
+                proc = subprocess.run(
+                    command,
+                    text=True,
+                    input=prompt,
+                    capture_output=True,
+                    env={**os.environ, "HERMES_HOME": str(root.parent), "DIGITAL_OFFICE_SYSTEM_HOME": str(root)},
+                    timeout=max(30, int(args.execution_timeout or 120)),
+                )
+                if proc.returncode == 0 and proc.stdout.strip():
+                    execution = {
+                        "status": "completed",
+                        "assistant_response": clean_long_text(proc.stdout.strip(), limit=5000),
+                        "diagnostics_excerpt": clean_long_text(proc.stderr.strip(), limit=1200),
+                    }
+                else:
+                    execution = {
+                        "status": "failed",
+                        "return_code": proc.returncode,
+                        "diagnostics_excerpt": clean_long_text((proc.stderr or proc.stdout).strip(), limit=1200),
+                    }
+            except subprocess.TimeoutExpired:
+                execution = {"status": "failed", "error": "secretary_agent_timeout"}
+        else:
+            execution = {"status": "failed", "error": "agent_router_missing", "message": str(router)}
     append_audit_event(
         root,
         "secretary_chat_intent_previewed",
@@ -1141,7 +1180,13 @@ def secretary_chat(args: argparse.Namespace) -> int:
         reason="explicit_project_creation_required",
         extra={"should_create_project": preview.get("should_create_project", False), "confidence": preview.get("confidence", 0)},
     )
-    print(json.dumps({"message": message, **preview}, ensure_ascii=False, indent=2, sort_keys=True))
+    payload = {"message": message, **preview}
+    if execution:
+        payload["execution"] = execution
+        if execution.get("assistant_response"):
+            payload["assistant_response"] = execution["assistant_response"]
+            payload["reply"] = execution["assistant_response"]
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -3926,6 +3971,205 @@ def create_task_record(
     return task
 
 
+def workflow_exists(root: Path, workflow: str) -> bool:
+    if not workflow:
+        return False
+    registry = effective_agents_registry(root)
+    return workflow in registry.get("workflows", {})
+
+
+def context_pack_body(root: Path, context_pack: dict[str, Any] | None) -> str:
+    if not context_pack:
+        return ""
+    raw_path = str(context_pack.get("path", "")).strip()
+    if not raw_path:
+        return ""
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = root / raw_path
+    try:
+        return clean_long_text(path.read_text(encoding="utf-8", errors="replace"), limit=30000)
+    except OSError:
+        return ""
+
+
+def agent_execution_prompt(root: Path, *, task: str, project_id: str, route: dict[str, Any], context_pack: dict[str, Any] | None) -> str:
+    parts = [
+        "Digital Office governed execution request.",
+        "",
+        "User task:",
+        clean_long_text(task, limit=12000),
+        "",
+        "Routing decision:",
+        json.dumps(route, ensure_ascii=False, indent=2, sort_keys=True),
+    ]
+    if project_id:
+        parts.extend(["", f"Project id: {project_id}"])
+    context_body = context_pack_body(root, context_pack)
+    if context_body:
+        parts.extend(["", "Project context pack:", context_body])
+    parts.extend(
+        [
+            "",
+            "Execution requirements:",
+            "- Produce useful user-facing work, not only an acknowledgement.",
+            "- Preserve facts, assumptions, missing context, decisions, and evidence references.",
+            "- If context is insufficient, say exactly what is missing and what can safely proceed.",
+            "- Keep the output concise enough to become a project artifact.",
+        ]
+    )
+    return "\n".join(parts)
+
+
+def mark_stage_complete(stage_state: dict[str, Any], *, artifact_ref: str, summary: str, succeeded: bool = True) -> None:
+    stage_state["status"] = "completed" if succeeded else "failed"
+    for required in stage_state.get("required_artifacts", []) or []:
+        artifact_id = safe_claim(str(required), "stage artifact")
+        stage_state.setdefault("artifacts", []).append(
+            {
+                "artifact": f"{artifact_id}:{artifact_ref}",
+                "artifact_id": artifact_id,
+                "time": now_iso(),
+            }
+        )
+    for gate in stage_state.get("gates", []) or []:
+        gate["status"] = "passed" if succeeded else "failed"
+        gate["updated_at"] = now_iso()
+    stage_state.setdefault("notes", []).append({"time": now_iso(), "summary": summary})
+
+
+def execute_agent_task(
+    root: Path,
+    *,
+    run_id: str,
+    task_id: str,
+    task: str,
+    agent_id: str,
+    route: dict[str, Any],
+    project_id: str,
+    context_pack: dict[str, Any] | None,
+    user: str,
+    role: str,
+    runtime_mode: str = "auto",
+    timeout_seconds: int = 300,
+) -> dict[str, Any]:
+    router = root.parent / "scripts" / "agent-router"
+    if not router.exists():
+        return {"status": "failed", "error": "agent_router_missing", "message": str(router)}
+    run = load_run_record(root, run_id)
+    update_task_status(root, task_id, "running", message="agent execution started", actor_id=user, actor_role=role)
+    run["status"] = "acting"
+    run["current_stage"] = "act"
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "agent_execution_started", "agent_id": agent_id})
+    write_json(run_record_path(root, run_id), run)
+
+    prompt = agent_execution_prompt(root, task=task, project_id=project_id, route=route, context_pack=context_pack)
+    command = [str(router), "--agent", agent_id or "auto", "--run-id", run_id, "--runtime", runtime_mode]
+    workflow = str(route.get("workflow", ""))
+    if workflow_exists(root, workflow):
+        command.extend(["--workflow", workflow])
+    env = {
+        **os.environ,
+        "HERMES_HOME": str(root.parent),
+        "DIGITAL_OFFICE_SYSTEM_HOME": str(root),
+        "DIGITAL_OFFICE_RUN_ID": run_id,
+        "DIGITAL_OFFICE_ROUTER_JUDGMENT_BYPASS": "1",
+    }
+    started = dt.datetime.now(dt.timezone.utc)
+    try:
+        proc = subprocess.run(command, text=True, input=prompt, capture_output=True, env=env, timeout=max(30, timeout_seconds))
+    except subprocess.TimeoutExpired as exc:
+        proc = subprocess.CompletedProcess(command, 124, exc.stdout or "", exc.stderr or "agent execution timed out")
+    duration_ms = int((dt.datetime.now(dt.timezone.utc) - started).total_seconds() * 1000)
+    succeeded = proc.returncode == 0
+
+    artifact_dir = run_dir(root, run_id) / "artifacts"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    artifact_name = f"{task_id}-agent-output.md"
+    artifact_path = artifact_dir / artifact_name
+    artifact_body = [
+        "# Agent Execution Output",
+        "",
+        f"- run_id: {run_id}",
+        f"- task_id: {task_id}",
+        f"- agent_id: {agent_id}",
+        f"- status: {'completed' if succeeded else 'failed'}",
+        f"- return_code: {proc.returncode}",
+        f"- duration_ms: {duration_ms}",
+        "",
+        "## Output",
+        proc.stdout.strip() or "(no stdout)",
+    ]
+    if proc.stderr.strip():
+        artifact_body.extend(["", "## Diagnostics", proc.stderr.strip()])
+    artifact_path.write_text("\n".join(artifact_body).strip() + "\n", encoding="utf-8")
+    artifact_ref = str(artifact_path.relative_to(root))
+
+    task_record = load_task(root, task_id)
+    task_record.setdefault("artifacts", []).append(artifact_ref)
+    task_record["status"] = "completed" if succeeded else "failed"
+    task_record["updated_at"] = now_iso()
+    task_record.setdefault("history", []).append(
+        {
+            "time": task_record["updated_at"],
+            "status": task_record["status"],
+            "message": "agent execution completed" if succeeded else "agent execution failed",
+            "actor_id": user,
+            "actor_role": role,
+        }
+    )
+    write_json(task_path(root, task_id), task_record)
+
+    run = load_run_record(root, run_id)
+    stages = run.setdefault("stages", loop_stage_records(root))
+    mark_stage_complete(stages.setdefault("context", fresh_loop_stage_state(root, "context")), artifact_ref=artifact_ref, summary="Context pack and routing decision were supplied to the Agent.", succeeded=True)
+    mark_stage_complete(stages.setdefault("decide", fresh_loop_stage_state(root, "decide")), artifact_ref=artifact_ref, summary="Router selected the Agent and workflow before execution.", succeeded=True)
+    mark_stage_complete(stages.setdefault("act", fresh_loop_stage_state(root, "act")), artifact_ref=artifact_ref, summary="Registered Agent/local runtime executed the task.", succeeded=succeeded)
+    mark_stage_complete(stages.setdefault("evaluate", fresh_loop_stage_state(root, "evaluate")), artifact_ref=artifact_ref, summary="One-shot execution result recorded for user review.", succeeded=succeeded)
+    run["status"] = "completed" if succeeded else "failed"
+    run["current_stage"] = "evaluate"
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "agent_execution_completed" if succeeded else "agent_execution_failed", "artifact": artifact_ref})
+    write_json(run_record_path(root, run_id), run)
+    append_run_ledger_event(
+        root,
+        run_id,
+        "agent_execution_completed" if succeeded else "agent_execution_failed",
+        stage="act",
+        action="agent-router.execute",
+        agent_id=agent_id,
+        actor_id=user,
+        actor_role=role,
+        input_payload={"command": command, "task_id": task_id, "runtime_mode": runtime_mode, "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()},
+        output_payload={"return_code": proc.returncode, "duration_ms": duration_ms, "stdout_chars": len(proc.stdout), "stderr_chars": len(proc.stderr)},
+        artifact_refs=[artifact_ref],
+    )
+    append_audit_event(
+        root,
+        "agent_execution_completed" if succeeded else "agent_execution_failed",
+        actor_id=user,
+        actor_role=role,
+        project_id=project_id,
+        agent_id=agent_id,
+        resource_type="workflow_run",
+        resource_id=run_id,
+        workflow_run_id=run_id,
+        task_id=task_id,
+        outcome="completed" if succeeded else "failed",
+        reason="agent-router execution",
+        extra={"return_code": proc.returncode, "duration_ms": duration_ms, "artifact": artifact_ref},
+    )
+    return {
+        "status": "completed" if succeeded else "failed",
+        "return_code": proc.returncode,
+        "duration_ms": duration_ms,
+        "artifact": artifact_ref,
+        "output_excerpt": clean_long_text(proc.stdout.strip(), limit=2000),
+        "diagnostics_excerpt": clean_long_text(proc.stderr.strip(), limit=1200),
+    }
+
+
 def auth_decision(args: argparse.Namespace) -> int:
     root = system_root()
     decision = compute_authorization_decision(
@@ -4148,6 +4392,30 @@ def workflow_start(args: argparse.Namespace) -> int:
         resource_id=run_id,
         severity="warning" if judgment_required or needs_clarification else "info",
     )
+    execution = None
+    if args.execute:
+        if judgment_required or needs_clarification:
+            execution = {
+                "status": "skipped",
+                "reason": "human_judgment_or_clarification_required",
+            }
+        else:
+            execution = execute_agent_task(
+                root,
+                run_id=run_id,
+                task_id=task_id,
+                task=body,
+                agent_id=agent,
+                route=route,
+                project_id=project,
+                context_pack=context_pack,
+                user=args.user,
+                role=args.role,
+                runtime_mode=args.runtime or "auto",
+                timeout_seconds=int(args.execution_timeout or 300),
+            )
+            run_status = str(execution.get("status") or run_status)
+            task_status = "completed" if execution.get("status") == "completed" else ("failed" if execution.get("status") == "failed" else task_status)
     print(
         json.dumps(
             {
@@ -4162,6 +4430,7 @@ def workflow_start(args: argparse.Namespace) -> int:
                 "context_pack": run.get("context_pack", {}),
                 "context_checkpoint": context_checkpoint,
                 "audit_event_id": event["event_id"],
+                "execution": execution,
                 "next_actions": ["judgment-list", "judgment-decision", "workflow-status"] if judgment_required else ["workflow-status", "task-status", "approval-create"],
             },
             ensure_ascii=False,
@@ -4523,7 +4792,27 @@ def agent_invoke(args: argparse.Namespace) -> int:
         judgment_case = create_judgment_case(root, judgment_eval, task=body, reason="direct Agent invocation requires human judgment before dispatch", created_by=args.user, created_by_role=args.role)
     event = append_audit_event(root, "agent_invoked", actor_id=args.user, actor_role=args.role, tenant_id=args.tenant, deployment_id=args.deployment, project_id=project, agent_id=agent, resource_type="agent", resource_id=agent, workflow_run_id=run_id, task_id=task_id, outcome="created", reason=args.reason or "direct GUI @Agent invocation")
     emit_notification(root, user_id=args.user, title="Agent task needs human judgment" if judgment_required else "Agent task queued", body=task["title"], topic="agent", resource_type="workflow_run", resource_id=run_id, severity="warning" if judgment_required else "info")
-    print(json.dumps({"status": run["status"], "invocation_mode": "direct_agent", "agent_id": agent, "project_id": project, "requested_by": args.user, "workflow_run_id": run_id, "task_id": task_id, "active_revision_id": initial_revision["revision_id"], "authorization": auth, "audit_event_id": event["event_id"], "judgment": judgment_eval, "judgment_case": judgment_case, "context_pack": run.get("context_pack", {}), "context_checkpoint": context_checkpoint}, ensure_ascii=False, indent=2, sort_keys=True))
+    execution = None
+    if args.execute:
+        if judgment_required:
+            execution = {"status": "skipped", "reason": "human_judgment_required"}
+        else:
+            execution = execute_agent_task(
+                root,
+                run_id=run_id,
+                task_id=task_id,
+                task=body,
+                agent_id=agent,
+                route=route,
+                project_id=project,
+                context_pack=context_pack,
+                user=args.user,
+                role=args.role,
+                runtime_mode=args.runtime or "auto",
+                timeout_seconds=int(args.execution_timeout or 300),
+            )
+            run["status"] = str(execution.get("status") or run["status"])
+    print(json.dumps({"status": run["status"], "invocation_mode": "direct_agent", "agent_id": agent, "project_id": project, "requested_by": args.user, "workflow_run_id": run_id, "task_id": task_id, "active_revision_id": initial_revision["revision_id"], "authorization": auth, "audit_event_id": event["event_id"], "judgment": judgment_eval, "judgment_case": judgment_case, "context_pack": run.get("context_pack", {}), "context_checkpoint": context_checkpoint, "execution": execution}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -6823,8 +7112,21 @@ def loop_start(args: argparse.Namespace) -> int:
     manifest = loop_manifest(root)
     project = safe_component(args.project, "project id") if args.project else ""
     agent = registered_agent(root, args.agent) if args.agent else ""
+    context_pack = None
     if project:
-        ensure_project(root, project)
+        project_file = ensure_project(root, project) / "project.json"
+        project_record = read_json(project_file)
+        context_assessment = assess_project_context(root, project, project_record)
+        if context_assessment["required"] and not context_assessment["confirmed"]:
+            print(json.dumps({
+                "status": "needs_context",
+                "reason": "project_context_not_confirmed",
+                "project_id": project,
+                "context_readiness": context_assessment,
+                "next_actions": ["project-context-update", "project-context-confirm"],
+            }, ensure_ascii=False, indent=2, sort_keys=True))
+            return 4
+        context_pack = refresh_project_context_pack(root, project, reason="loop_start", created_by=args.requested_by or "")
     run_id = safe_component(args.run_id, "run id") if args.run_id else f"{dt.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
     task_id = f"work-{run_id}"
     task = args.task if args.task is not None else sys.stdin.read()
@@ -8838,10 +9140,13 @@ def model_runtime_summary(root: Path) -> dict[str, Any]:
     gateway = root / "bin" / "model-gateway"
     if not gateway.exists():
         return {"status": "missing", "providers": [], "runtime": {"default_mode": "host", "agents": {}}}
+    env = os.environ.copy()
+    env["DIGITAL_OFFICE_SYSTEM_HOME"] = str(root)
+    env.setdefault("DIGITAL_OFFICE_LOCAL_RUNTIME_PROBE_TIMEOUT", "0.8")
     try:
-        proc = subprocess.run([str(gateway), "status"], text=True, capture_output=True, timeout=10)
+        proc = subprocess.run([str(gateway), "status"], text=True, capture_output=True, timeout=5, env=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"status": "error", "providers": [], "runtime": {}, "error": str(exc)}
+        return {"status": "degraded", "providers": [], "runtime": {}, "local_runtimes": [], "error": str(exc), "configure_command": "model-gateway connection-set --provider PROVIDER --base-url URL --model MODEL --secret-stdin --confirmed"}
     if proc.returncode != 0:
         return {"status": "error", "providers": [], "runtime": {}, "error": (proc.stderr or proc.stdout)[-1000:]}
     try:
@@ -9409,7 +9714,16 @@ def web_serve(args: argparse.Namespace) -> int:
                 if not message:
                     web_json_response(self, 400, {"status": "error", "error": "message is required"})
                     return
-                self.command_response(["secretary-chat", "--message", message, "--user", user, "--role", role])
+                command = ["secretary-chat", "--message", message, "--user", user, "--role", role]
+                if bool(body.get("execute", False)):
+                    command.append("--execute")
+                runtime = str(body.get("runtime", "")).strip()
+                if runtime in {"auto", "host", "direct_api"}:
+                    command.extend(["--runtime", runtime])
+                timeout = str(body.get("execution_timeout", "")).strip()
+                if timeout:
+                    command.extend(["--execution-timeout", timeout])
+                self.command_response(command)
                 return
 
             if parsed.path == "/api/workflows":
@@ -9423,6 +9737,14 @@ def web_serve(args: argparse.Namespace) -> int:
                     value = str(body.get(field, "")).strip()
                     if value:
                         command.extend([flag, value])
+                if bool(body.get("execute", False)):
+                    command.append("--execute")
+                runtime = str(body.get("runtime", "")).strip()
+                if runtime in {"auto", "host", "direct_api"}:
+                    command.extend(["--runtime", runtime])
+                timeout = str(body.get("execution_timeout", "")).strip()
+                if timeout:
+                    command.extend(["--execution-timeout", timeout])
                 self.command_response(command, success_status=201)
                 return
 
@@ -9920,6 +10242,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--message")
     p.add_argument("--user", default="")
     p.add_argument("--role", default="")
+    p.add_argument("--execute", action="store_true")
+    p.add_argument("--runtime", choices=["auto", "host", "direct_api"], default="auto")
+    p.add_argument("--execution-timeout", type=int, default=120)
     p.set_defaults(func=secretary_chat)
 
     p = sub.add_parser("project-context-status")
@@ -10223,6 +10548,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--task-id")
     p.add_argument("--idempotency-key")
     p.add_argument("--reason")
+    p.add_argument("--execute", action="store_true")
+    p.add_argument("--runtime", choices=["auto", "host", "direct_api"], default="auto")
+    p.add_argument("--execution-timeout", type=int, default=300)
     p.set_defaults(func=workflow_start)
 
     p = sub.add_parser("agent-invoke")
@@ -10238,6 +10566,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run-id")
     p.add_argument("--task-id")
     p.add_argument("--reason")
+    p.add_argument("--execute", action="store_true")
+    p.add_argument("--runtime", choices=["auto", "host", "direct_api"], default="auto")
+    p.add_argument("--execution-timeout", type=int, default=300)
     p.set_defaults(func=agent_invoke)
 
     p = sub.add_parser("workflow-status")

@@ -108,7 +108,7 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
         setMode('existing')
         setLocalMessages((items) => [...items, { from: 'user', text: clean }, { from: 'secretary', text: `我理解你希望围绕「${project?.name || targetName}」推进：${clean.slice(0, 80)}。请先确认我的理解，再回答下方至少三个关键问题；我会据此整理项目底稿。` }])
       } else if (!selectedProject) {
-        const preview = await actions.secretaryChat({ message: clean })
+        const preview = await actions.secretaryChat({ message: clean, execute: true, runtime: 'auto', execution_timeout: 120 })
         setLocalMessages((items) => [...items, { from: 'user', text: clean }, { from: 'secretary', text: preview.reply }])
         if (preview.should_create_project) {
           setSuggestedProject({ name: preview.suggested_project_name || titleFromMessage(clean), id: preview.suggested_project_id || slugSuggestion(clean) })
@@ -118,8 +118,16 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
       } else if (setupRequired) {
         setLocalMessages((items) => [...items, { from: 'user', text: clean }, { from: 'secretary', text: '我已经把这条补充记在当前对话里。为了让它真正进入项目底稿，请继续填写下方最关键的三个问题。' }])
       } else {
-        await actions.createWorkflow({ task: clean, priority: 'normal', project_id: selectedProject.project_id })
-        setLocalMessages((items) => [...items, { from: 'user', text: clean }, { from: 'secretary', text: `已确认意图和项目底稿。我会把这项工作放进「${selectedProject.name}」，并按 Loop 记录过程、用量和交付物。` }])
+        const activeProject = selectedProject!
+        const workflow = await actions.createWorkflow({ task: clean, priority: 'normal', project_id: activeProject.project_id, execute: true, runtime: 'auto', execution_timeout: 300 })
+        const execution = workflow.execution as { status?: string; output_excerpt?: string; diagnostics_excerpt?: string } | null | undefined
+        const reply = execution?.status === 'completed'
+          ? `\u5df2\u786e\u8ba4\u610f\u56fe\u548c\u9879\u76ee\u5e95\u7a3f\uff0c\u5e76\u5b8c\u6210\u7b2c\u4e00\u8f6e Agent \u6267\u884c\u3002${execution.output_excerpt ? `\n\n${execution.output_excerpt.slice(0, 600)}` : ''}`
+          : `\u5df2\u628a\u8fd9\u9879\u5de5\u4f5c\u653e\u8fdb\u300c${activeProject.name}\u300d\u7684 Loop \u8bb0\u5f55\u3002${execution?.diagnostics_excerpt ? `\n\n\u6267\u884c\u8bca\u65ad\uff1a${execution.diagnostics_excerpt.slice(0, 400)}` : '\u5982\u679c\u672c\u5730 Agent \u6216 API \u8fd8\u672a\u5c31\u7eea\uff0c\u8bf7\u5728\u7ba1\u7406\u4e2d\u5fc3\u9009\u62e9\u53ef\u7528\u8fd0\u884c\u65b9\u5f0f\u3002'}`
+        setLocalMessages((items) => [...items, { from: 'user', text: clean }, { from: 'secretary', text: reply }])
+        setMessage('')
+        if (mode !== 'new') setProjectName('')
+        return
       }
       setMessage('')
       if (mode !== 'new') setProjectName('')
