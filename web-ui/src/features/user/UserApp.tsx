@@ -1,29 +1,31 @@
-import { Database, LayoutDashboard, Settings, Users } from 'lucide-react'
+import { Archive, Database, LayoutDashboard, Settings, Users } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell, type NavItem, type ProjectNavigation } from '../../components/AppShell'
 import type { AppActions, GuiState } from '../../types'
 import { EmployeesPage } from './EmployeesPage'
 import { OfficePage } from './OfficePage'
 import { ProjectsPage } from './ProjectsPage'
-import { KnowledgePage, SettingsPage } from './UserPages'
+import { ArchivePage, KnowledgePage, SettingsPage } from './UserPages'
 
 const navItems: NavItem[] = [
   { id: 'office', label: '我的办公室', icon: LayoutDashboard },
   { id: 'employees', label: '数字员工', icon: Users },
   { id: 'knowledge', label: '知识库', icon: Database },
+  { id: 'archive', label: '归档', icon: Archive },
 ]
 
 const bottomNavItems: NavItem[] = [
   { id: 'settings', label: '设置', icon: Settings },
 ]
 
-type UserPage = 'office' | 'employees' | 'knowledge' | 'projects' | 'settings'
+type UserPage = 'office' | 'employees' | 'knowledge' | 'projects' | 'archive' | 'settings'
 
 const pageLabels: Record<UserPage, string> = {
   office: '我的办公室',
   employees: '数字员工',
   knowledge: '知识库',
   projects: '项目',
+  archive: '归档',
   settings: '设置',
 }
 
@@ -33,7 +35,7 @@ interface UserLocation {
   conversationId?: string
 }
 
-const pages = new Set<UserPage>(['office', 'employees', 'knowledge', 'projects', 'settings'])
+const pages = new Set<UserPage>(['office', 'employees', 'knowledge', 'projects', 'archive', 'settings'])
 
 function safeDecode(value: string | undefined) {
   if (!value) return ''
@@ -156,6 +158,7 @@ export function UserApp({ state, actions }: { state: GuiState | null; actions: A
   else if (location.page === 'employees') content = <EmployeesPage actions={actions} state={state} />
   else if (location.page === 'knowledge') content = <KnowledgePage actions={actions} onOpenProject={openProject} state={state} />
   else if (location.page === 'projects') content = <ProjectsPage actions={actions} createProjectKey={createProjectKey} onOpenConversation={(conversationId) => location.projectId && openConversation(location.projectId, conversationId)} onSelectProject={openProject} selectedConversationId={location.conversationId || ''} selectedId={location.projectId || ''} state={state} />
+  else if (location.page === 'archive') content = <ArchivePage actions={actions} onOpenProject={openProject} state={state} />
   else content = <SettingsPage actions={actions} state={state} />
 
   return <AppShell activePage={location.page} backLabel={backLabel} breadcrumbs={breadcrumbs.filter(Boolean)} bottomNavItems={bottomNavItems} demoMode={demoMode} health={state?.health.status || 'degraded'} navItems={navItems} onBack={location.page === 'office' ? undefined : goBack} onNavigate={openPage} onToggleDemo={toggleDemo} pageTitle={pageTitle} projectNavigation={projectNavigation} surface="user" unread={state?.notifications.unread || 0}>{content}</AppShell>

@@ -56,6 +56,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  archiveProject: (projectId: string, restore = false) =>
+    request<Record<string, unknown>>(`/api/projects/${encodeURIComponent(projectId)}/archive`, { method: 'POST', body: JSON.stringify({ restore }) }),
+  archiveWorkflow: (runId: string, restore = false) =>
+    request<Record<string, unknown>>(`/api/workflows/${encodeURIComponent(runId)}/archive`, { method: 'POST', body: JSON.stringify({ restore }) }),
   uploadKnowledge: (input: UploadKnowledgeInput) =>
     request<Record<string, unknown>>('/api/knowledge/uploads', { method: 'POST', body: JSON.stringify(input) }),
   updateProjectContext: (projectId: string, context: ProjectContextInput) =>

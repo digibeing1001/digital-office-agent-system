@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Archive, Briefcase, ChevronRight, Database, FileText, Filter, FolderKanban, MoreHorizontal, Search, Settings, TrendingUp, UploadCloud, UserRound, Wifi, WifiOff, Cpu, UserCog, File, Image, FileType, FileSpreadsheet } from 'lucide-react'
+import {Archive, Briefcase, ChevronRight, Database, FileText, Filter, FolderKanban, MoreHorizontal, Search, Settings, TrendingUp, UploadCloud, UserRound, Wifi, WifiOff, Cpu, UserCog, File, Image, FileType, FileSpreadsheet, ArchiveRestore, MessageSquarePlus} from 'lucide-react'
 import { EmptyState, PageHeading, StatusBadge } from '../../components/ui'
 import { formatTime } from '../../lib/presentation'
 import type { AppActions, GuiState } from '../../types'
@@ -141,5 +141,65 @@ export function SettingsPage({ state, actions }: { state: GuiState | null; actio
       <div className="connection-status-card"><div className="connection-status-icon"><Cpu size={18} /><span className={`status-dot ${readyModels ? 'green' : 'gray'}${readyModels ? ' pulse' : ''}`} /></div><div className="connection-status-info"><strong>大模型</strong><span>{readyModels ? `${readyModels} 个 API 已连接，也可以继续使用本地 Agent` : '当前使用本地 Agent，可在管理中心接入模型 API'}</span></div><StatusBadge tone={readyModels ? 'green' : 'gray'}>{readyModels ? '已连接' : '本地模式'}</StatusBadge></div>
       <div className="connection-status-card"><div className="connection-status-icon"><UserCog size={18} /><span className={`status-dot ${state?.settings.configured ? 'green' : 'amber'}`} /></div><div className="connection-status-info"><strong>个人设置</strong><span>{state?.settings.configured ? '已经配置' : '尚未完成首次设置'}</span></div><StatusBadge tone={state?.settings.configured ? 'green' : 'amber'}>{state?.settings.configured ? '已配置' : '待配置'}</StatusBadge></div>
     </div></section>
+  </div>
+}
+
+/* ── Archive Page ── */
+
+export function ArchivePage({ state, actions, onOpenProject }: { state: GuiState | null; actions: AppActions; onOpenProject: (projectId: string) => void }) {
+  const archivedProjects = (state?.projects.items || []).filter((p) => p.archived)
+  const archivedConversations = (state?.workflows.recent || []).filter((w) => w.archived)
+  const [tab, setTab] = useState<'projects' | 'conversations'>('projects')
+  return <div className="standard-page archive-page">
+    <PageHeading title="归档" description="已归档的项目和对话会保留在这里。归档不是删除，随时可以恢复。" />
+    <div className="knowledge-tabs" role="tablist">
+      <div className="knowledge-tabs-track">
+        <button className={`knowledge-tab-pill${tab === 'projects' ? ' active' : ''}`} onClick={() => setTab('projects')}>
+          <Archive size={15} /><span>已归档项目</span>{archivedProjects.length > 0 && <span className="knowledge-tab-count">{archivedProjects.length}</span>}
+        </button>
+        <button className={`knowledge-tab-pill${tab === 'conversations' ? ' active' : ''}`} onClick={() => setTab('conversations')}>
+          <Archive size={15} /><span>已归档对话</span>{archivedConversations.length > 0 && <span className="knowledge-tab-count">{archivedConversations.length}</span>}
+        </button>
+      </div>
+    </div>
+    {tab === 'projects' ? (
+      <section className="archive-list">
+        {archivedProjects.length > 0 ? archivedProjects.map((p) => (
+          <article key={p.project_id} className="archive-row">
+            <span className="archive-icon"><FolderKanban size={18} /></span>
+            <div className="archive-info">
+              <strong>{p.name}</strong>
+              <small>项目编号：{p.project_id} · 最近更新 {formatTime(p.updated_at)}</small>
+            </div>
+            <div className="archive-actions">
+              <button className="text-button" onClick={() => onOpenProject(p.project_id)}>查看</button>
+              <button className="secondary-button" onClick={() => void actions.archiveProject(p.project_id, true)}>
+                <ArchiveRestore size={15} />恢复项目
+              </button>
+            </div>
+          </article>
+        )) : <EmptyState title="暂无已归档项目" body="归档后的项目会出现在这里。" />}
+      </section>
+    ) : (
+      <section className="archive-list">
+        {archivedConversations.length > 0 ? archivedConversations.map((w) => {
+          const project = (state?.projects.items || []).find((p) => p.project_id === w.project_id)
+          return (
+            <article key={w.run_id} className="archive-row">
+              <span className="archive-icon"><MessageSquarePlus size={18} /></span>
+              <div className="archive-info">
+                <strong>{w.title || '未命名对话'}</strong>
+                <small>所属项目：{project?.name || w.project_id} · {formatTime(w.updated_at)}</small>
+              </div>
+              <div className="archive-actions">
+                <button className="secondary-button" onClick={() => void actions.archiveWorkflow(w.run_id, true)}>
+                  <ArchiveRestore size={15} />恢复对话
+                </button>
+              </div>
+            </article>
+          )
+        }) : <EmptyState title="暂无已归档对话" body="归档后的对话会出现在这里。" />}
+      </section>
+    )}
   </div>
 }

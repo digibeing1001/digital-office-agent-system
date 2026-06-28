@@ -72,6 +72,8 @@ export default function App() {
     testModelConnection: (providerId: string) => mutate('正在测试模型连接…', () => api.testModelConnection(providerId)),
     deleteModelConnection: (providerId: string) => mutate('正在断开模型连接…', () => api.deleteModelConnection(providerId)),
     updateModelRuntime: (input: ModelRuntimeInput) => mutate('正在更新自动选路…', () => api.updateModelRuntime(input)),
+    archiveProject: (projectId: string, restore = false) => mutate(restore ? '正在恢复项目…' : '正在归档项目…', () => api.archiveProject(projectId, restore)),
+    archiveWorkflow: (runId: string, restore = false) => mutate(restore ? '正在恢复对话…' : '正在归档对话…', () => api.archiveWorkflow(runId, restore)),
     updatePreferences: (input: PreferenceInput) => mutate('正在保存使用偏好…', () => api.updatePreferences(input)),
   }
 

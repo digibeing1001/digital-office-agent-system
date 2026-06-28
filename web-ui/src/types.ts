@@ -25,6 +25,7 @@ export interface WorkflowSummary {
   run_id: string
   title: string
   status: string
+  archived?: boolean
   project_id: string
   agent_id: string
   workflow: string
@@ -73,6 +74,7 @@ export interface ProjectSummary {
   project_id: string
   name: string
   status: string
+  archived?: boolean
   agent_roster: string[]
   updated_at: string
   context_readiness?: ProjectContextReadiness
@@ -338,5 +340,7 @@ export interface AppActions {
   testModelConnection: (providerId: string) => Promise<Record<string, unknown>>
   deleteModelConnection: (providerId: string) => Promise<Record<string, unknown>>
   updateModelRuntime: (input: ModelRuntimeInput) => Promise<Record<string, unknown>>
+  archiveProject: (projectId: string, restore?: boolean) => Promise<Record<string, unknown>>
+  archiveWorkflow: (runId: string, restore?: boolean) => Promise<Record<string, unknown>>
   updatePreferences: (input: PreferenceInput) => Promise<Record<string, unknown>>
 }

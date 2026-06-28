@@ -189,6 +189,21 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
     setLocalMessages((items) => [...items, { from: 'secretary', text: `已把「${file.name}」放进项目资料库。它会作为后续判断的来源，而不是被反复复制进上下文。` }])
     event.target.value = ''
   }
+  const canUpload = Boolean(selectedProject) || projects.length > 0
+  const handleUploadClick = () => {
+    if (selectedProject) {
+      fileRef.current?.click()
+      return
+    }
+    if (!projects.length) {
+      setLocalMessages((items) => [...items, { from: 'secretary', text: '还没有项目可以上传资料。请先点击上方「新建项目」，把这件事正式立成一个项目，再上传相关资料。' }])
+      return
+    }
+    setMode('existing')
+    if (!projectId && projects[0]?.project_id) setProjectId(projects[0].project_id)
+    setLocalMessages((items) => [...items, { from: 'secretary', text: '请先在上方选择一个项目，再点击上传按钮，资料会归到所选项目里。' }])
+  }
+
 
   return <section className={`secretary-panel ${compact ? 'compact' : ''}`}>
     <header><span className="secretary-orb">秘</span><div><strong>秘书</strong><small>{selectedProject ? `${selectedProject.name} · 项目对话` : '我的办公室 · 普通对话'}</small></div>{readiness && <span className={`context-score ${readiness.confirmed ? 'ready' : ''}`}>{readiness.confirmed ? '底稿已确认' : `准备度 ${readiness.readiness_score}%`}</span>}</header>
@@ -198,7 +213,7 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
       {suggestedProject && <div className="secretary-suggestion-card"><span>秘书建议</span><strong>这句话可能适合新建项目</strong><p>如果这项工作需要沉淀资料、交付物和过程记录，请进入项目流程；如果只是聊天，可以继续直接问我。</p><div className="secretary-suggestion-card__actions"><button className="suggestion-pill suggestion-pill--primary" type="button" onClick={() => startNewProject(suggestedProject.name, suggestedProject.id)}><FolderPlus size={16} />新建项目</button><button className="suggestion-pill" type="button" onClick={() => setSuggestedProject(null)}>
 继续聊天</button></div></div>}
       {setupRequired && readiness?.intent && <div className="intent-confirmation"><span>秘书对你的意图理解</span><strong>{readiness.intent.summary || '尚未形成意图摘要'}</strong><p>请检查目标和对象是否准确。确认后，核心目标发生变化会要求重新确认。</p>{!readiness.intent.confirmed ? <button className="suggestion-pill suggestion-pill--primary" onClick={() => void confirmIntent()}><Check size={16} />这就是我的意思</button> : <span className="confirmed-mark"><Check size={15} />意图已确认</span>}</div>}
-      {setupRequired && <div className="socratic-questions"><div className="question-heading"><div><span>建立项目底稿</span><strong>请至少回答三个关键问题</strong></div><button className="tool-chip" disabled={!selectedProject} onClick={() => fileRef.current?.click()}><FileUp size={16} />
+      {setupRequired && <div className="socratic-questions"><div className="question-heading"><div><span>建立项目底稿</span><strong>请至少回答三个关键问题</strong></div><button className="tool-chip" disabled={!canUpload} onClick={handleUploadClick}><FileUp size={16} />
 上传依据</button></div>{questions.map((question, index) => <label key={`${question.field}-${index}`}><span>{index + 1}</span><div><strong>{question.prompt}</strong><small>{question.why}</small><textarea rows={2} value={answers[`${question.field}-${index}`] || ''} onChange={(event) => setAnswers({ ...answers, [`${question.field}-${index}`]: event.target.value })} placeholder="把你的判断、事实或不确定之处写在这里" /></div></label>)}{contextError && <p className="form-error">{contextError}</p>}<div className="question-actions"><button className="suggestion-pill suggestion-pill--primary" onClick={() => void saveAnswers()}>
 交给秘书整理</button>{readiness?.ready && readiness.intent?.confirmed && <button className="suggestion-pill" onClick={() => selectedProject && void actions.confirmProjectContext(selectedProject.project_id)}><Check size={16} />
 确认项目底稿并开始工作</button>}</div></div>}
@@ -215,7 +230,7 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
       {mode === 'existing' && <select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.project_id} value={project.project_id}>{project.name}</option>)}</select>}
       {mode === 'new' && <input value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder="项目名称可留空，秘书会根据你的说明命名" />}
     </div>}
-    <form className="secretary-compose" onSubmit={createOrDispatch}><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={!selectedProject ? (mode === 'new' ? '说明这个新项目要完成什么...' : '直接问秘书问题；正式工作请先点上方「新建项目」...') : setupRequired ? '补充你的想法；正式信息请填写上方问题...' : '在这个项目里继续安排工作...'} rows={compact ? 3 : 4} /><div className="compose-actions"><button className="compose-file-btn" disabled={!selectedProject} onClick={() => fileRef.current?.click()} title="上传项目资料" type="button"><FileUp size={18} /></button><button className={`compose-send-btn ${message.trim() && !submitting ? 'compose-send-btn--active' : ''}`} disabled={!message.trim() || submitting} type="submit">{submitting ? '...' : <Send size={16} />}</button></div></form>
+    <form className="secretary-compose" onSubmit={createOrDispatch}><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={!selectedProject ? (mode === 'new' ? '说明这个新项目要完成什么...' : '直接问秘书问题；正式工作请先点上方「新建项目」...') : setupRequired ? '补充你的想法；正式信息请填写上方问题...' : '在这个项目里继续安排工作...'} rows={compact ? 3 : 4} /><div className="compose-actions"><button className="compose-file-btn" disabled={!canUpload} onClick={handleUploadClick} title="上传项目资料" type="button"><FileUp size={18} /></button><button className={`compose-send-btn ${message.trim() && !submitting ? 'compose-send-btn--active' : ''}`} disabled={!message.trim() || submitting} type="submit">{submitting ? '...' : <Send size={16} />}</button></div></form>
     <input ref={fileRef} className="visually-hidden" type="file" onChange={(event) => void uploadFile(event)} />
   </section>
 }

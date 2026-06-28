@@ -4807,6 +4807,69 @@ def workflow_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def project_archive(args: argparse.Namespace) -> int:
+    root = system_root()
+    project_path = root / "projects" / args.project / "project.json"
+    if not project_path.exists():
+        print(f"office-system: project not found: {args.project}", file=sys.stderr)
+        return 2
+    data = read_json(project_path)
+    if args.restore:
+        data["archived"] = False
+        event_name = "project_restored"
+        outcome = "restored"
+    else:
+        data["archived"] = True
+        event_name = "project_archived"
+        outcome = "archived"
+    data["updated_at"] = now_iso()
+    write_json(project_path, data)
+    append_audit_event(
+        root,
+        event_name,
+        actor_id=args.requested_by or "",
+        actor_role=args.role or "",
+        project_id=args.project,
+        resource_type="project",
+        resource_id=args.project,
+        outcome=outcome,
+        reason=args.reason or "",
+    )
+    print(json.dumps({"project_id": args.project, "archived": not args.restore}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def workflow_archive(args: argparse.Namespace) -> int:
+    root = system_root()
+    run = load_run_record(root, args.run_id)
+    if args.restore:
+        run["archived"] = False
+        event_name = "workflow_restored"
+        outcome = "restored"
+    else:
+        run["archived"] = True
+        event_name = "workflow_archived"
+        outcome = "archived"
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": event_name, "reason": args.reason or ""})
+    write_json(run_record_path(root, args.run_id), run)
+    append_audit_event(
+        root,
+        event_name,
+        actor_id=args.requested_by or "",
+        actor_role=args.role or "",
+        project_id=run.get("project_id", ""),
+        agent_id=run.get("agent_id", ""),
+        resource_type="workflow_run",
+        resource_id=args.run_id,
+        workflow_run_id=args.run_id,
+        outcome=outcome,
+        reason=args.reason or "",
+    )
+    print(json.dumps({"run_id": args.run_id, "archived": not args.restore}, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def workflow_retry(args: argparse.Namespace) -> int:
     root = system_root()
     run = load_run_record(root, args.run_id)
@@ -8920,6 +8983,7 @@ def project_summaries(root: Path, limit: int) -> list[dict[str, Any]]:
                 "project_id": data.get("project_id", path.parent.name),
                 "name": data.get("name", path.parent.name),
                 "status": data.get("status", ""),
+                "archived": bool(data.get("archived", False)),
                 "agent_roster": data.get("agent_roster", []),
                 "updated_at": data.get("updated_at", data.get("created_at", "")),
                 "context_readiness": {key: assessment[key] for key in ("required", "readiness_score", "readiness_threshold", "ready", "confirmed", "context_version", "blockers", "suggestions", "question_policy", "intent", "context")},
@@ -9604,7 +9668,7 @@ def build_gui_state_payload(root: Path, *, project: str = "", user: str = "", ro
             "active_count": len(active_workflows),
             "draft_revision_count": draft_revision_count,
             "by_status": status_counts(runs),
-            "recent": compact_records(runs, ["run_id", "title", "status", "project_id", "agent_id", "workflow", "invocation_mode", "active_revision_id", "requested_by", "created_at", "updated_at"], limit),
+            "recent": compact_records(runs, ["run_id", "title", "status", "archived", "project_id", "agent_id", "workflow", "invocation_mode", "active_revision_id", "requested_by", "created_at", "updated_at"], limit),
         },
         "tasks": {
             "count": len(tasks),
@@ -10260,6 +10324,28 @@ def web_serve(args: argparse.Namespace) -> int:
                 command = ["judgment-resume", "--run-id", run_id, "--requested-by", user, "--role", role]
                 if body.get("reason"):
                     command.extend(["--reason", str(body["reason"])])
+                self.command_response(command)
+                return
+
+            project_archive_match = re.fullmatch(r"/api/projects/([^/]+)/archive", parsed.path)
+            if project_archive_match:
+                project_id = urllib.parse.unquote(project_archive_match.group(1))
+                command = ["project-archive", "--project", project_id, "--requested-by", user, "--role", role]
+                if body.get("reason"):
+                    command.extend(["--reason", str(body["reason"])])
+                if body.get("restore"):
+                    command.append("--restore")
+                self.command_response(command)
+                return
+
+            workflow_archive_match = re.fullmatch(r"/api/workflows/([^/]+)/archive", parsed.path)
+            if workflow_archive_match:
+                run_id = urllib.parse.unquote(workflow_archive_match.group(1))
+                command = ["workflow-archive", "--run-id", run_id, "--requested-by", user, "--role", role]
+                if body.get("reason"):
+                    command.extend(["--reason", str(body["reason"])])
+                if body.get("restore"):
+                    command.append("--restore")
                 self.command_response(command)
                 return
 
@@ -10924,6 +11010,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", required=True)
     p.add_argument("--reason")
     p.set_defaults(func=workflow_resume)
+
+    p = sub.add_parser("project-archive")
+    p.add_argument("--project", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--restore", action="store_true")
+    p.set_defaults(func=project_archive)
+
+    p = sub.add_parser("workflow-archive")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--restore", action="store_true")
+    p.set_defaults(func=workflow_archive)
 
     p = sub.add_parser("workflow-retry")
     p.add_argument("--run-id", required=True)
