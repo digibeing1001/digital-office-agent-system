@@ -9792,7 +9792,7 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
         "pwa": {
             "installable_shell": checks.get("pwa_manifest") and checks.get("service_worker") and checks.get("web_index"),
             "offline_shell": True,
-            "cache_name": "digital-office-shell-v2",
+            "cache_name": "digital-office-shell",
         },
         "deployment": {
             "recommended": "Serve behind HTTPS reverse proxy such as Caddy or Nginx. Bind web-serve to 127.0.0.1 for reverse proxy deployments, or to 0.0.0.0 only on trusted LAN/VPN networks.",

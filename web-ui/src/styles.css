@@ -491,7 +491,7 @@ h1, .office-wall span { font-family: "SF Pro Display", "PingFang SC", "Source Ha
 .office-dashboard { padding: 28px; }
 .dashboard-main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
 .dashboard-left { min-width: 0; display: grid; gap: 16px; }
-.dashboard-hero { min-height: 188px; display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 26px; border: 1px solid rgba(168, 188, 177, .75); border-radius: 12px; background: linear-gradient(135deg, #ffffff 0%, #edf5f0 100%); box-shadow: var(--shadow-sm); }
+.dashboard-hero { min-height: 188px; display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 26px; border: 1px solid rgba(184, 196, 255, .75); border-radius: 12px; background: linear-gradient(135deg, #ffffff 0%, #e5e9ff 100%); box-shadow: var(--shadow-sm); }
 .dashboard-hero h1 { max-width: 620px; margin-top: 8px; font-size: 30px; line-height: 1.2; font-family: inherit; letter-spacing: 0; }
 .dashboard-hero p { max-width: 680px; margin-top: 10px; color: var(--muted); font-size: 13px; line-height: 1.7; }
 .eyebrow { color: var(--brand); font-size: 12px; font-weight: 800; letter-spacing: .06em; }
@@ -523,7 +523,7 @@ h1, .office-wall span { font-family: "SF Pro Display", "PingFang SC", "Source Ha
 .secretary-context { display: flex; align-items: center; gap: 8px; margin: 14px; padding: 10px 12px; border-radius: 8px; background: var(--brand-soft); color: var(--brand-dark); font-size: 12px; }
 .project-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 14px 14px; }
 .project-choice button { min-height: 34px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); font-size: 12px; cursor: pointer; }
-.project-choice button.active { color: var(--brand-dark); border-color: #9fc0b0; background: var(--brand-soft); font-weight: 700; }
+.project-choice button.active { color: var(--brand-dark); border-color: #b8c4ff; background: var(--brand-soft); font-weight: 700; }
 .project-choice select, .project-choice input { grid-column: 1 / -1; height: 38px; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: white; }
 .secretary-messages { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 14px; overflow: auto; }
 .secretary-message, .chat-bubble { max-width: 80%; padding: 10px 14px; border-radius: 16px; font-size: 12px; line-height: 1.65; word-break: break-word; }
@@ -531,7 +531,6 @@ h1, .office-wall span { font-family: "SF Pro Display", "PingFang SC", "Source Ha
 .secretary-message--user, .chat-bubble.user { align-self: flex-end; background: #0065fd; color: #fff; border-top-right-radius: 4px; }
 .chat-bubble.system { align-self: stretch; max-width: none; border: 1px solid var(--line); background: #fff; }
 .secretary-compose { border: 1px solid #e7eaef; border-radius: 22px; margin: 8px 14px 14px; padding: 0; display: flex; flex-direction: column; background: #fff; transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
-.secretary-compose:focus-within { border-color: #557fff; box-shadow: 0 0 0 3px rgba(85, 127, 255, 0.18); }
 .secretary-compose textarea { width: 100%; min-height: 86px; border: none; border-radius: 0; padding: 10px 18px 8px; background: transparent; color: var(--ink); line-height: 1.55; resize: none; outline: none; }
 .secretary-compose button:not(.compose-send-btn):not(.compose-file-btn) { width: auto; margin-top: 0; }
 
@@ -575,7 +574,7 @@ h1, .office-wall span { font-family: "SF Pro Display", "PingFang SC", "Source Ha
 
 .knowledge-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
 .knowledge-tabs button { min-height: 38px; display: inline-flex; align-items: center; gap: 8px; padding: 0 13px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); cursor: pointer; }
-.knowledge-tabs button.active { color: var(--brand-dark); border-color: #9fc0b0; background: var(--brand-soft); font-weight: 700; }
+.knowledge-tabs button.active { color: var(--brand-dark); border-color: #b8c4ff; background: var(--brand-soft); font-weight: 700; }
 .knowledge-panel { margin-top: 16px; }
 .people-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
 .people-metrics > div { min-height: 92px; display: grid; grid-template-columns: 32px 1fr; grid-template-rows: 1fr 1fr; align-items: center; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow-sm); }
@@ -732,7 +731,6 @@ h1, .office-wall span { font-family: "SF Pro Display", "PingFang SC", "Source Ha
 .secretary-context { margin: 14px 18px 4px; border: 1px solid #d0d7e8; border-radius: 8px; }
 .secretary-messages { min-height: 310px; max-height: 660px; padding: 22px 24px; background: #f7f8fa; }
 .secretary-compose { border: 1px solid #e7eaef; border-radius: 22px; margin: 8px 18px 18px; padding: 0; display: flex; flex-direction: column; background: #fff; transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
-.secretary-compose:focus-within { border-color: #557fff; box-shadow: 0 0 0 3px rgba(85, 127, 255, 0.18); }
 .secretary-compose button:not(.compose-send-btn):not(.compose-file-btn) { width: auto; margin-top: 0; }
 .plain-card { border-radius: 8px; background: #fff; }
 .project-chat { grid-row: 1; width: min(100%, 980px); margin: 0 auto; }
@@ -988,7 +986,7 @@ h1, .office-wall span { font-family: "SF Pro Display", "PingFang SC", "Source Ha
   width: 3px;
   height: 42px;
   border-radius: 3px;
-  background: #8ca097;
+  background: #7f8d9f;
 }
 
 .workspace-divider button {
@@ -1324,7 +1322,7 @@ h1, h2, h3, .office-wall span { font-family: "Stack Sans Text", "PingFang SC", "
   border-bottom: 0;
   border-radius: 4px 4px 0 0;
   background: #eff1f4;
-  color: #829089;
+  color: #7f8d9f;
   font: 7px "IBM Plex Mono", monospace;
   letter-spacing: .11em;
 }
@@ -1384,8 +1382,8 @@ h1, h2, h3, .office-wall span { font-family: "Stack Sans Text", "PingFang SC", "
 }
 .office-system-card > header > div { display: flex; align-items: center; gap: 8px; }
 .office-system-card > header strong { font-size: 12px; }
-.office-system-card > header > span { color: #8fa69b; font: 9px "IBM Plex Mono", monospace; }
-.system-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #55c792; box-shadow: 0 0 0 4px rgba(85,199,146,.11), 0 0 12px rgba(85,199,146,.55); }
+.office-system-card > header > span { color: #7f8d9f; font: 9px "IBM Plex Mono", monospace; }
+.system-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #0065fd; box-shadow: 0 0 0 4px rgba(0,101,253,.11), 0 0 12px rgba(0,101,253,.55); }
 .system-capabilities { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 11px 8px 10px; }
 .system-capabilities > div { min-width: 0; display: grid; grid-template-columns: 15px 1fr; gap: 2px 5px; padding: 2px 6px; border-right: 1px solid rgba(255,255,255,.08); }
 .system-capabilities > div:last-child { border-right: 0; }
@@ -1405,7 +1403,7 @@ h1, h2, h3, .office-wall span { font-family: "Stack Sans Text", "PingFang SC", "
 .office-system-card > footer { min-height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 11px; border-top: 1px solid rgba(255,255,255,.07); color: #91a69c; font-size: 8px; }
 .office-system-card > footer svg { color: #6fc99f; }
 
-.office-side-card { border-color: #d1dbd6; background: rgba(255,255,255,.9); box-shadow: 0 7px 20px rgba(18, 40, 29, .055); }
+.office-side-card { border-color: #e7eaef; background: rgba(255,255,255,.9); box-shadow: 0 7px 20px rgba(15, 28, 48, .055); }
 .office-side-card > header { background: #fbfcfe; }
 .rail-board { gap: 9px; }
 .rail-board .board-item-tools { opacity: .42; }
@@ -1542,7 +1540,7 @@ h1, h2, h3, .office-wall span { font-family: "Stack Sans Text", "PingFang SC", "
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--muted, #8a9b92);
+  background: var(--muted, #7f8d9f);
   animation: thinking-bounce 1.4s infinite ease-in-out both;
 }
 .thinking-dots i:nth-child(1) { animation-delay: -0.32s; }
