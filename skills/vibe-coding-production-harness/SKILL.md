@@ -17,7 +17,7 @@ These four principles sit above every phase below. When a phase rule conflicts w
 3. **Surgical Changes** — Touch only what the request demands. Do not "improve" adjacent code, comments, or formatting. Match existing style. Remove only YOUR orphans. Every changed line must trace to the user's request.
 4. **Goal-Driven Execution** — Transform tasks into verifiable goals with concrete pass/fail signals ("Add validation" → "Write tests for invalid inputs, then make them pass"). State a brief plan with verify steps for multi-step work.
 
-These principles also live in each Coder Agent's SOUL.md (`kenny-vibe-coder` personal + `office-coder` product). When invoking this harness, treat the four principles as binding unless an explicit user override is given.
+These principles also live in the Coder Agent's SOUL.md (`office-coder` product). When invoking this harness, treat the four principles as binding unless an explicit user override is given.
 
 ## Operating Principle
 

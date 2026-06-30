@@ -3492,7 +3492,7 @@ def evaluate_quality_score(
     workflow_run_id: str = "",
     task_id: str = "",
     artifact_ref: str = "",
-    judge_profile: str = "office-judge",
+    judge_profile: str = "secretary",
     reason: str = "",
 ) -> dict[str, Any]:
     policy = quality_scoring_policy(root)
@@ -3597,7 +3597,7 @@ def quality_score_evaluate(args: argparse.Namespace) -> int:
         workflow_run_id=args.workflow_run or "",
         task_id=args.task_id or "",
         artifact_ref=args.artifact_ref or "",
-        judge_profile=args.judge_profile or "office-judge",
+        judge_profile=args.judge_profile or "secretary",
         reason=args.reason or "",
     )
     out_dir = root / "quality_scores"
@@ -11138,7 +11138,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workflow-run")
     p.add_argument("--task-id")
     p.add_argument("--artifact-ref")
-    p.add_argument("--judge-profile", default="office-judge")
+    p.add_argument("--judge-profile", default="secretary")
     p.add_argument("--reason")
     p.set_defaults(func=quality_score_evaluate)
 
