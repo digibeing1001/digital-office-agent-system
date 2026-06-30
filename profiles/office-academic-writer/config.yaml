@@ -14,6 +14,11 @@ skills:
   - citation-generation
   - bibtex-management
   - latex-syntax-check
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 12
 max_tool_calls: 60

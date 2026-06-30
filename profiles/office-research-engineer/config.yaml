@@ -17,6 +17,11 @@ skills:
   - rl-benchmark
   - reproducibility-export
   - failure-archiving
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 15
 max_tool_calls: 75

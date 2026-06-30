@@ -11,6 +11,11 @@ skills:
   - approval-routing
   - supervisor-orchestration
   - approval-gate
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 12
 max_tool_calls: 60

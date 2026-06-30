@@ -15,6 +15,11 @@ skills:
   - text-plagiarism-check
   - ai-content-detection
   - image-forensics
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 8
 max_tool_calls: 40

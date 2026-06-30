@@ -12,6 +12,11 @@ skills:
   - fact-check
   - claim-verification
   - image-integrity-check
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 8
 max_tool_calls: 40

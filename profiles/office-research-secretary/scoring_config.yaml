@@ -1,0 +1,86 @@
+# 科研团队评分卡配置
+# 依据:NeurIPS/ICLR/ACL 审稿 rubric + Si et al. 2024 (arXiv:2409.04109) idea 六维评估
+# 合格线 75 分,任一维度 < 50% 触发一票否决直接返工
+
+scoring:
+  total_max: 100
+  pass_threshold: 75
+  veto_threshold_percent: 50  # 任一维度低于此百分比触发一票否决
+
+  dimensions:
+    - id: soundness
+      name: 严谨性
+      weight: 25
+      description: 方法正确、推理无漏洞、实验充分、统计显著、引用真实
+      tool_checks:
+        - citation_verification    # 引用真实性核查(工具)
+        - reproducibility_check     # 可复现性核查
+        - statistical_significance  # 统计显著性
+      veto_eligible: true
+
+    - id: novelty
+      name: 新颖性
+      weight: 20
+      description: 与已有工作的区别,是否撞车近 2 年文献
+      tool_checks:
+        - literature_comparison   # 与近 2 年相关工作比对
+      veto_eligible: true
+
+    - id: clarity
+      name: 清晰度
+      weight: 20
+      description: 表达清楚、结构合理、图表规范
+      tool_checks:
+        - grammar_check            # 语法检查
+        - format_check             # 格式规范
+      veto_eligible: false
+
+    - id: feasibility
+      name: 可行性
+      weight: 15
+      description: 资源/时间/数据可得性,能否在约束内完成
+      tool_checks:
+        - resource_assessment      # 资源评估
+      veto_eligible: true
+
+    - id: significance
+      name: 影响力
+      weight: 10
+      description: 问题是否值得做,结论是否有用
+      tool_checks: []
+      veto_eligible: false
+
+    - id: confidence
+      name: 置信度
+      weight: 10
+      description: 评分者对本次评分的自评置信度,用于加权或多人投票
+      tool_checks: []
+      veto_eligible: false
+
+# 返工循环配置(Reflexion 式)
+rework:
+  max_rounds: 3                  # 同一产出最多返工 3 次
+  reflection_required: true      # 返工前必须先生成反思文本
+  reflection_storage: checkpointer  # 反思存入 checkpointer(单会话)
+  escalation_after: 2            # 同一维度连续返工 >=2 次升级为跨会话经验
+
+# 跨项目经验积累(ExpeL 式)
+experience:
+  storage: skills/experience/    # 经验库目录
+  extraction_trigger: project_end  # 项目结束时触发经验抽取
+  dedup_enabled: true            # 经验去重
+  decay_enabled: true            # 经验衰减(长期不用的降低权重)
+  retrieval_top_k: 5             # 新项目启动时检索 top-k 经验注入 prompt
+
+# 用户纠正内化
+preference_internalization:
+  target: SOUL.md                # 通用偏好写入 SOUL.md
+  one_off_target: checkpointer   # 一次性指正存 checkpointer
+  marker_format: "[用户偏好 YYYY-MM-DD] 规则内容"
+
+# 多评审员辩论(可选,进阶)
+multi_reviewer:
+  enabled: false                 # 默认关闭,进阶启用
+  reviewer_count: 3              # 3 个 reviewer 实例
+  personas: [strict, lenient, methodological_critic]
+  convergence_rounds: 2          # 辩论收敛轮数

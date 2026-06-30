@@ -10,6 +10,11 @@ skills:
   - reproduction-verification
   - outlier-detection
   - publication-plotting
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 10
 max_tool_calls: 50

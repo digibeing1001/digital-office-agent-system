@@ -15,6 +15,11 @@ skills:
   - arxiv-search
   - scholar-search
   - semantic-scholar-search
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 15
 max_tool_calls: 75

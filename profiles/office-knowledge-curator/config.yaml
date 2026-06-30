@@ -17,6 +17,11 @@ skills:
   - dedup-engine
   - citation-network
   - entity-extraction
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
 default_model: auto
 max_iterations: 20
 max_tool_calls: 100
