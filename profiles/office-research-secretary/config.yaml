@@ -1,0 +1,14 @@
+# 研究秘书:负责立项引导、团队组建、风险评分与审批路由
+# 关键技能:agent-team-staffing(团队组建)、project-intake(立项引导)、risk-scoring(风险评分)、approval-routing(审批路由)
+# 需要更多轮协调,因此 max_iterations 设为 12
+name: office-research-secretary
+display_name: Research Secretary
+role: secretary
+skills:
+  - agent-team-staffing
+  - project-intake
+  - risk-scoring
+  - approval-routing
+default_model: auto
+max_iterations: 12
+max_tool_calls: 60

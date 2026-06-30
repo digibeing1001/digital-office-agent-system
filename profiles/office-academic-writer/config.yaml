@@ -1,0 +1,15 @@
+# 学术写作员:负责学术论文撰写、LaTeX 排版、图表标注与引用整合
+# 关键技能:academic-writing(学术写作)、latex-formatting(LaTeX 排版)、figure-captioning(图表标注)、genre-switching(体裁切换)、citation-integration(引用整合)、abstract-compression(摘要压缩)
+name: office-academic-writer
+display_name: Academic Writer
+role: academic-writer
+skills:
+  - academic-writing
+  - latex-formatting
+  - figure-captioning
+  - genre-switching
+  - citation-integration
+  - abstract-compression
+default_model: auto
+max_iterations: 12
+max_tool_calls: 60

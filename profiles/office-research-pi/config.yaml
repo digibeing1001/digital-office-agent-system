@@ -1,0 +1,14 @@
+# 研究项目负责人(PI):负责研究问题结构化、假设构建、创新点定位与路线图规划
+# 关键技能:research-question-structuring(研究问题结构化)、hypothesis-building(假设构建)、innovation-positioning(创新点定位)、roadmap-planning(路线图规划)、milestone-tracking(里程碑跟踪)
+name: office-research-pi
+display_name: Principal Investigator
+role: pi
+skills:
+  - research-question-structuring
+  - hypothesis-building
+  - innovation-positioning
+  - roadmap-planning
+  - milestone-tracking
+default_model: auto
+max_iterations: 10
+max_tool_calls: 50

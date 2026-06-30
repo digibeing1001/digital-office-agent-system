@@ -1,0 +1,16 @@
+# 文献研究员:负责文献检索、PRISMA 筛选、分类体系构建与引用核验
+# 关键技能:literature-retrieval(文献检索)、prisma-screening(PRISMA 筛选)、taxonomy-building(分类体系构建)、citation-verification(引用核验)、gap-identification(研究空白识别)、bibtex-management(BibTeX 管理)
+# 文献检索需要多轮迭代,max_iterations 设为 15
+name: office-literature-researcher
+display_name: Literature Researcher
+role: literature-researcher
+skills:
+  - literature-retrieval
+  - prisma-screening
+  - taxonomy-building
+  - citation-verification
+  - gap-identification
+  - bibtex-management
+default_model: auto
+max_iterations: 15
+max_tool_calls: 75
