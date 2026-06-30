@@ -4,6 +4,7 @@ name: office-peer-reviewer
 display_name: Peer Reviewer
 role: peer-reviewer
 skills:
+  - peer-review
   - review-simulation
   - methodology-critique
   - claim-calibration

@@ -8,7 +8,6 @@ role: knowledge-curator
 skills:
   - knowledge-curation
   - source-collection
-  - deduplication
   - taxonomy-tagging
   - collection-logging
   - rss-aggregation

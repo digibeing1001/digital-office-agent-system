@@ -98,7 +98,7 @@ def full_dedup(papers):
     print(f"输入: {len(papers)} 篇")
     s1, rest1, g1 = dedup_by_doi(papers)
     s2, rest2 = dedup_by_arxiv(rest1)
-    s3 = dedup_by_title(s1 + s2)
+    s3 = dedup_by_title(s1 + s2 + rest2)
     s4 = dedup_by_minhash(s3)
     print(f"DOI 去重: {len(g1)} 组重复")
     print(f"最终: {len(s4)} 篇(去重 {len(papers)-len(s4)} 篇)")

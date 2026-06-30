@@ -11,7 +11,7 @@ skills:
   - citation-verification
   - gap-identification
   - bibtex-management
-  - pdf-parsing(grobid)
+  - pdf-parsing
   - arxiv-search
   - scholar-search
   - semantic-scholar-search

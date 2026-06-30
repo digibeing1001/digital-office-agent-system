@@ -38,13 +38,13 @@ Training takes 8 hours on a single RTX 4090.
 # FActScore 自动拆 claim + 检索 + 判定
 result = scorer.score("ImageNet model claim", passage)
 
-print(f"FActScore: {result['fact_score']:.3f}")
-print(f"总 claim 数: {result['nclaims']}")
-for claim in result["claims"]:
+print(f"FActScore: {result.get('score', 0):.3f}")
+print(f"总 claim 数: {len(result.get('facts', []))}")
+for claim in result.get('facts', []):
     print(f"\nclaim: {claim['claim']}")
-    print(f"  判定: {claim['factuality']}")  # Supported / Refuted / NotEnoughInfo
+    print(f"  判定: {claim.get('factuality', 'NOT_ENOUGH_INFO')}")  # Supported / Refuted / NotEnoughInfo
     if claim.get("evidence"):
-        for ev in claim["evidence"][:2]:
+        for ev in claim.get('evidence', [])[:2]:
             print(f"  证据: {ev['text'][:80]}... (来源: {ev.get('source','')})")
 ```
 

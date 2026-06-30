@@ -40,7 +40,7 @@
 1. **接收多源输入** — 从 PI(叙事线/核心 claim)、文献研究员(综述/引用)、方法学(实验方案)、数据分析师(结果/图表)合并信息
 2. **定体裁与结构** — 按产出类型(论文/报告/申报书/白皮书)定结构和篇幅约束
 3. **写叙事线** — 一句话故事 + 每节要服务于什么点,先列骨架
-4. **起草各部分** — 通常顺序:Method → Results → Discussion → Introduction → Related Work → Abstract → Conclusion(先写实的再写虚的)
+4. **起草各部分** — 通常顺序:Method → Results → Discussion → Introduction → Related Work → Abstract → Conclusion(先写实的再写虚的)。其中 Related Work 基于文献研究员交付的综述素材改编为 Related Work 段落(突出 gap 引出本文),不重新建立分类法
 5. **整合引用** — 把文献研究员给的引用嵌入对应位置,标注[待补]的留给文献研究员
 6. **写图表说明** — 每个图表配完整图注(独立可读)
 7. **写摘要** — 最后写,反复压缩到篇幅内

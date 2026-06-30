@@ -68,7 +68,11 @@ def reflect_and_rewrite(artifact, score_report, agent_id, thread_id):
     new_score = score_artifact(rewritten, run_tool_checks(rewritten))
 
     # 5. 同一维度连续返工 >= 2 次,升级为 anti-pattern
-    if new_score.get("veto_dim") == dim and score_report.get("round", 1) >= 2:
+    # 找触发否决的维度(低于50%的veto_eligible维度)
+    new_veto_dims = [d for d, info in new_score.get("scores", {}).items()
+                     if info.get("veto_eligible") and info.get("score", 100) < 50]
+    new_dim = new_veto_dims[0] if new_veto_dims else "overall"
+    if new_dim == dim and score_report.get("round", 1) >= 2:
         escalate_to_experience(agent_id, dim, reflection)  # 交 experience-extraction
 
     return {"reflection": reflection, "rewritten": rewritten, "new_score": new_score}
