@@ -11,6 +11,12 @@ skills:
   - version-management
   - benchmark-runner
   - reproducibility-packaging
+  - mlflow-tracking
+  - optuna-hpo
+  - hydra-config
+  - rl-benchmark
+  - reproducibility-export
+  - failure-archiving
 default_model: auto
 max_iterations: 15
 max_tool_calls: 75

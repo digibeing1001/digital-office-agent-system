@@ -11,6 +11,10 @@ skills:
   - conflict-of-interest
   - misconduct-detection
   - llm-usage-declaration
+  - code-plagiarism-check
+  - text-plagiarism-check
+  - ai-content-detection
+  - image-forensics
 default_model: auto
 max_iterations: 8
 max_tool_calls: 40

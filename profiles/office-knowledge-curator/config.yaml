@@ -11,6 +11,12 @@ skills:
   - deduplication
   - taxonomy-tagging
   - collection-logging
+  - rss-aggregation
+  - ocr-pipeline
+  - metadata-extraction
+  - dedup-engine
+  - citation-network
+  - entity-extraction
 default_model: auto
 max_iterations: 20
 max_tool_calls: 100

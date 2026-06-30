@@ -9,6 +9,8 @@ skills:
   - project-intake
   - risk-scoring
   - approval-routing
+  - supervisor-orchestration
+  - approval-gate
 default_model: auto
 max_iterations: 12
 max_tool_calls: 60

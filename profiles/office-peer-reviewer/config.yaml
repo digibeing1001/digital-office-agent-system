@@ -9,6 +9,9 @@ skills:
   - claim-calibration
   - logic-consistency-check
   - reproducibility-assessment
+  - fact-check
+  - claim-verification
+  - image-integrity-check
 default_model: auto
 max_iterations: 8
 max_tool_calls: 40

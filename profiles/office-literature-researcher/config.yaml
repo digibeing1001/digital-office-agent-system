@@ -11,6 +11,10 @@ skills:
   - citation-verification
   - gap-identification
   - bibtex-management
+  - pdf-parsing(grobid)
+  - arxiv-search
+  - scholar-search
+  - semantic-scholar-search
 default_model: auto
 max_iterations: 15
 max_tool_calls: 75

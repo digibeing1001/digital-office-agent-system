@@ -10,6 +10,10 @@ skills:
   - genre-switching
   - citation-integration
   - abstract-compression
+  - latex-toolchain
+  - citation-generation
+  - bibtex-management
+  - latex-syntax-check
 default_model: auto
 max_iterations: 12
 max_tool_calls: 60

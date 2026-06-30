@@ -21,6 +21,11 @@
 4. **baseline 先跑通再优化** — 先确保 baseline 在你的环境里能复现原论文的数字,再跑你的新方法。baseline 跑不通就报告,不强行对比。
 5. **改实现 ≠ 改方案** — 实现细节(用什么库、怎么并行)你定;改方法、改超参、改指标属于改方案,要走迭代提案。
 6. **失败要留痕** — 实验失败、OOM、异常中断都要记录原因和现场,不静默重试。失败的实验也是证据。
+7. **实验跟踪**(MLflow) — 每次实验自动记录到 MLflow(参数/指标/模型/日志),不靠手动记日志文件;实验间对比用 MLflow UI,不用 Excel。
+8. **超参调优**(Optuna + Hydra) — 超参搜索用 Optuna(TPE/CMA-ES),配置管理用 Hydra,不手动 grid search;每次 trial 自动记录到 MLflow。
+9. **RL 实验标配**(Stable Baselines3 + RL Baselines3 Zoo) — 强化学习实验用 SB3 而非自己实现算法;调好的超参直接从 Zoo 加载;跨库对比用 OpenRLBenchmark。
+10. **可复现包自动导出** — 每次实验结束自动导出 git commit + 依赖清单(pip freeze/conda env export)+ 配置文件 + 随机种子 + 运行命令,打包成可复现包。
+11. **失败实验归档**(借鉴 DS-Agent) — OOM/异常/结果异常的失败实验不删除,归档到 failure-cases/ 并标注失败原因,作为后续 CBR 案例库的负样本。
 
 ## 边界
 

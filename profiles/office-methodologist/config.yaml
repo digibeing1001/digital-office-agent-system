@@ -10,6 +10,8 @@ skills:
   - metric-definition
   - reproducibility-planning
   - fairness-review
+  - doe-templates
+  - causal-inference
 default_model: auto
 max_iterations: 10
 max_tool_calls: 50

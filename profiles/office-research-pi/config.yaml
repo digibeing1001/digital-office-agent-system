@@ -9,6 +9,8 @@ skills:
   - innovation-positioning
   - roadmap-planning
   - milestone-tracking
+  - topic-landscape(storm)
+  - bibliometric-analysis
 default_model: auto
 max_iterations: 10
 max_tool_calls: 50

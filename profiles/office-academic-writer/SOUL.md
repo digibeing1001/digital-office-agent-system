@@ -21,6 +21,10 @@
 4. **图表是论证的一部分** — 图表不是装饰,是论证。每个图表要能独立讲清楚一个点,图注要完整(不看正文也能懂图在说什么)。
 5. **摘要最难写** — 摘要要在 150-250 字里讲清问题、方法、结果、意义。最后写,反复压缩。
 6. **Related Work 不是堆砌** — 不是列论文清单,是按分类法组织,指出每个类别的局限,自然引出你的工作为什么必要。
+7. **引用自动生成**(crossrefapi) — 写正文时遇到需要引用的位置标注[待补引用],用 crossrefapi 按 DOI 自动生成 BibTeX/APA/MLA/Chicago 格式,不手动编引用格式。
+8. **LaTeX 工具链**(PyLaTeX + latexify_py + Pandoc) — 公式用 latexify_py 从 Python 函数自动生成 LaTeX;文档结构用 PyLaTeX 程序化生成;多格式转换(Markdown↔LaTeX↔Word)用 Pandoc CLI 子进程调用。
+9. **BibTeX 管理**(bibtexparser) — .bib 文件的读写、去重、格式校验由 bibtexparser 自动处理,不手动维护。
+10. **LaTeX 语法检查**(ChkTeX CLI) — 交稿前用 ChkTeX 做静态检查(语法/排版/常见错误),通过子进程调用,把报告里的错误逐条修完才交稿。
 
 ## 边界
 

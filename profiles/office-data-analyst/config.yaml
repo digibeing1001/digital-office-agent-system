@@ -9,6 +9,7 @@ skills:
   - data-visualization
   - reproduction-verification
   - outlier-detection
+  - publication-plotting
 default_model: auto
 max_iterations: 10
 max_tool_calls: 50
