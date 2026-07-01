@@ -208,6 +208,78 @@
       "type": "git-candidate",
       "use_case": "PRC statutory-law legal reasoning atomic skills for retrieval, norm validity, element extraction, risk assessment, and document summarization.",
       "notes": "README and CONTRIBUTING identify CC BY-NC-ND 4.0 terms; do not vendor, modify, redistribute, or use commercially until licensing is cleared."
+    },
+    {
+      "candidate_for": ["secretary", "researcher", "pi", "academic-writer", "peer-reviewer"],
+      "name": "academic-research-skills",
+      "remote": "https://github.com/Imbad0202/academic-research-skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "Claude Code native research skills: 13-agent deep research, 12-agent academic writing, 7-agent peer review, 10-stage pipeline with integrity gates",
+      "notes": "1:1 aligned with research-team roles; 7-mode integrity gates already adapted to research-integrity-gates.policy.json"
+    },
+    {
+      "candidate_for": ["researcher", "knowledge-curator"],
+      "name": "gpt-researcher",
+      "remote": "https://github.com/assafelovic/gpt-researcher.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "Deep research agent with tree-recursive exploration, MCP integration, multi-agent collaboration",
+      "notes": "Deep research pattern already adapted to skills/deep-research"
+    },
+    {
+      "candidate_for": ["secretary", "researcher"],
+      "name": "paper-qa",
+      "remote": "https://github.com/Future-House/paper-qa.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "Scientific literature high-precision RAG with retraction check, contradiction detection",
+      "notes": "PaperQA2 pattern already adapted to skills/paper-qa-rag and skills/retraction-check"
+    },
+    {
+      "candidate_for": ["secretary"],
+      "name": "Langfuse",
+      "remote": "https://github.com/langfuse/langfuse.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "Open-source LLM observability platform: tracing, metrics, evals, prompt management",
+      "notes": "Tracing design already adapted to observability.policy.json and skills/langfuse-integration"
+    },
+    {
+      "candidate_for": ["secretary", "methodologist"],
+      "name": "ruflo",
+      "remote": "https://github.com/ruvnet/ruflo.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "GOAP A* planner, autopilot loop, 32 Claude Code plugins for closed-loop engineering",
+      "notes": "GOAP planner pattern already adapted to skills/goap-planner"
+    },
+    {
+      "candidate_for": ["secretary"],
+      "name": "ECC",
+      "remote": "https://github.com/affaan-m/ECC.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "232 skills + 60 agents, verification loops, quality gates, SQLite state store, NanoClaw session REPL",
+      "notes": "Verification loops pattern already adapted to skills/verification-loops; loop-status.py adapted from ecc status command"
+    },
+    {
+      "candidate_for": ["secretary", "researcher", "academic-writer"],
+      "name": "storm",
+      "remote": "https://github.com/stanford-oval/storm.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "Two-stage survey generation: perspective-guided questioning + simulated dialogue",
+      "notes": "Survey generation pattern already adapted to skills/storm-survey"
+    },
+    {
+      "candidate_for": ["secretary"],
+      "name": "OpenHive",
+      "remote": "https://github.com/aden-hive/hive.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "Production-grade multi-agent harness: three-state circuit breaker, rate limiting, Prometheus metrics",
+      "notes": "Circuit breaker and rate limiting patterns already adapted to cost-control.policy.json"
     }
   ],
   "description": "Portable manifest for updating installed skills from their source repositories or registries.",

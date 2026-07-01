@@ -141,11 +141,55 @@ python agent-system/bin/loop-status.py --run-id <run_id> --exit-code
 - [ ] 所有 JSON 文件格式合法
 - [ ] 所有策略文件有 version 和 kind 字段，遵循现有约定
 
-## 后续可扩展方向
+## 已落实的可扩展 Skill（10 个新 skill）
 
-1. **接入 Langfuse 自托管**：设置 `OBSERVABILITY_EXPORTER=langfuse` 环境变量即可导出 trace 到 Langfuse
-2. **接入 PaperQA2 作为知识库后端**：增强资料员和文献研究员的 RAG 能力
-3. **安装 academic-research-skills 插件**：`/plugin marketplace add Imbad0202/academic-research-skills`，其 13+12+7+10 四套 Agent 团队可作为现有角色的能力增强
-4. **安装 gpt-researcher skill**：`npx skills add assafelovic/gpt-researcher`，增强深度研究能力
-5. **引入 ECC 的 Verification Loops**：selective install loop/quality-gate/state-store/nanoclaw 四个组件
-6. **引入 Ruflo 的 GOAP 规划器**：增强 Decide 节点的规划能力
+基于调研结果，已将 6 个可扩展方向落实为 10 个内置 skill，避免与现有 40+ skill 重复：
+
+| 新 Skill | 补强方向 | 参考来源 | 核心能力 | 与现有 skill 的关系 |
+|---|---|---|---|---|
+| `langfuse-integration` | 可观测性导出 | Langfuse | 全链路 trace 导出 + Prompt 版本同步 + A/B 测试 | 与 observability.policy.json 协同 |
+| `paper-qa-rag` | 科学文献 RAG | PaperQA2 | 文献问答 + 撤稿检查 + 矛盾检测 + 元数据增强 | 与 arxiv-search 互补（检索 vs 问答） |
+| `deep-research` | 树状递归深度研究 | gpt-researcher | 问题树 + 并行执行 + 多源检索 + 综合去重 | 与 arxiv-search/paper-qa-rag 协同 |
+| `verification-loops` | 多样本投票验证 | ECC | 3 样本独立采样 + 解耦 judge + 多数表决 + 分歧检测 | 与 quality-scoring final_delivery 协同 |
+| `goap-planner` | GOAP A* 目标规划 | Ruflo | 状态空间搜索 + 动作库 + 最短路径 + 失败重规划 | 与 ai-native-loop Decide 节点协同 |
+| `reflexion-loop` | 4 策略反思循环 | Reflexion 论文 | NONE/LAST_ATTEMPT/REFLEXION/组合 + 情景记忆 | 与 experience-extraction 互补（任务级 vs 项目级） |
+| `storm-survey` | 综述生成 | STORM | 视角引导提问 + 模拟对话 + 大纲 + 全文写作 | 与 academic-writing 协同 |
+| `retraction-check` | 撤稿专项检查 | PaperQA2 + Retraction Watch | 三源交叉检查 + 依赖性评估 | 与 citation-verification 互补 |
+| `cross-model-verification` | 跨模型交叉验证 | academic-research-skills | 不同家族模型评分 + 一致性计算 + 第三方仲裁 | 与 verification-loops 互补（跨模型 vs 同模型） |
+| `socratic-elicitation` | Socratic 引导立项 | academic-research-skills | 意图探测 + Socratic 问题 + 对话引导 + 立项摘要 | 与 ai-native-loop context 节点协同 |
+
+### Skill 与角色的映射
+
+| 角色 | 新增可用 Skill |
+|---|---|
+| 科研秘书 (secretary) | socratic-elicitation, goap-planner, langfuse-integration |
+| 课题规划师 (pi) | socratic-elicitation, goap-planner, deep-research |
+| 文献研究员 (literature-researcher) | deep-research, paper-qa-rag, storm-survey, retraction-check |
+| 学术写作员 (academic-writer) | storm-survey, reflexion-loop |
+| 方法学专家 (methodologist) | goap-planner, reflexion-loop |
+| 实现工程师 (research-engineer) | goap-planner, reflexion-loop |
+| 数据分析师 (data-analyst) | reflexion-loop |
+| 质检员 (peer-reviewer) | verification-loops, cross-model-verification, retraction-check |
+| 伦理员 (ethics) | retraction-check |
+| 资料员 (knowledge-curator) | paper-qa-rag, deep-research |
+
+### 候选源注册
+
+同时在 `skills.sources.json` 的 `candidate_sources` 中新增 9 个 GitHub 候选源，标记为 `research_only_stage_before_install` 或 `research_only_reference`，未来可按需走 `check_stage_verify_approve` 流程安装：
+
+- academic-research-skills (Imbad0202)
+- gpt-researcher (assafelovic)
+- paper-qa (Future-House)
+- Langfuse
+- ruflo (ruvnet)
+- ECC (affaan-m)
+- storm (stanford-oval)
+- OpenHive (aden-hive)
+- Reflexion (noahshinn — 通过论文引用)
+
+## 后续可扩展方向（未落实，待评估）
+
+1. **安装 academic-research-skills 插件**：`/plugin marketplace add Imbad0202/academic-research-skills`，其 13+12+7+10 四套 Agent 团队可作为现有角色的能力增强（已作为候选源注册）
+2. **安装 gpt-researcher skill**：`npx skills add assafelovic/gpt-researcher`（已作为候选源注册）
+3. **引入 ECC 的 selective install**：loop/quality-gate/state-store/nanoclaw 四个组件（已作为候选源注册）
+4. **引入 Ruflo 的 GOAP 规划器原版**：已将理念落实为 skills/goap-planner，可考虑安装原版插件获得更多能力
