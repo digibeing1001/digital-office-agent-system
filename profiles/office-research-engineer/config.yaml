@@ -17,6 +17,7 @@ skills:
   - rl-benchmark
   - reproducibility-export
   - failure-archiving
+  - failure-mode-archiving
   - research-scoring
   - self-reflection
   - experience-extraction

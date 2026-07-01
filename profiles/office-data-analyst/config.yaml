@@ -15,6 +15,7 @@ skills:
   - experience-extraction
   - preference-internalization
   - cross-run-memory
+  - failure-mode-archiving
 default_model: auto
 max_iterations: 10
 max_tool_calls: 50
