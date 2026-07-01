@@ -1,0 +1,121 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-observability-policy",
+  "description": "全链路可观测性策略。参考 Langfuse 的 Tracing/Metrics/Evals/Prompt Management 设计，为 Loop 工程的每个节点、每次 Agent 调用、每次工具调用提供可追溯的执行视图。直接解决'可控性/透明度不足'痛点。",
+  "research_foundations": [
+    {
+      "name": "Langfuse Tracing",
+      "source": "https://github.com/langfuse/langfuse",
+      "principle": "全链路 trace 覆盖每次 LLM 调用、工具调用、Agent 切换，按 span 组织成树状结构，支持按 run_id / agent_id / skill_id 检索"
+    },
+    {
+      "name": "OpenTelemetry semantic conventions for LLM",
+      "source": "https://opentelemetry.io/docs/specs/semconv/gen-ai/",
+      "principle": "使用标准化属性名（llm.request.type, llm.response.model, gen_ai.usage.prompt_tokens）保证可移植性"
+    },
+    {
+      "name": "ECC status command",
+      "source": "https://github.com/affaan-m/ECC",
+      "principle": "单命令输出 readiness / active sessions / skill-run health / install health / pending governance events，支持 --exit-code 用于 CI 门控"
+    }
+  ],
+  "trace_model": {
+    "root_span": {
+      "type": "loop_run",
+      "fields": ["run_id", "context_id", "task_id", "user_intent_hash", "started_at", "controller_decision_final"]
+    },
+    "node_spans": {
+      "context": ["context_snapshot_hash", "sources_count", "unknowns_count", "intent_confirmed"],
+      "decide": ["decision_record_hash", "route_selected", "risk_level", "next_action_contract_hash"],
+      "act": ["agent_id", "skill_id", "tool_calls", "model_calls", "side_effects_count", "artifacts_count"],
+      "evaluate": ["score", "verdict", "failure_class", "rubric_hits", "recommended_control_decision"]
+    },
+    "child_spans": {
+      "llm_call": ["model", "prompt_tokens", "completion_tokens", "latency_ms", "cost_microunits", "temperature"],
+      "tool_call": ["tool_name", "input_hash", "output_hash", "latency_ms", "success", "error_class"],
+      "agent_handoff": ["from_agent", "to_agent", "handoff_contract_hash", "acknowledged"]
+    }
+  },
+  "metrics": {
+    "per_run": [
+      "total_cycles",
+      "total_llm_calls",
+      "total_tool_calls",
+      "total_cost_microunits",
+      "total_duration_seconds",
+      "rework_count",
+      "stagnation_count"
+    ],
+    "per_agent": [
+      "tasks_assigned",
+      "tasks_completed",
+      "tasks_reworked",
+      "avg_score",
+      "avg_duration_seconds",
+      "avg_cost_microunits"
+    ],
+    "per_skill": [
+      "invocation_count",
+      "success_rate",
+      "avg_latency_ms",
+      "failure_class_distribution"
+    ],
+    "system_health": [
+      "active_runs",
+      "waiting_human_count",
+      "budget_exhausted_count_24h",
+      "circuit_breaker_trips_24h",
+      "rate_limit_hits_24h"
+    ]
+  },
+  "eval_hooks": {
+    "stage_gate": {
+      "trigger": "after each node completes",
+      "action": "record score + rubric_hits + failure_class to trace",
+      "block_on": ["score <= stage_threshold - 2", "hard_disqualifier_hit"]
+    },
+    "final_delivery": {
+      "trigger": "before controller issues complete",
+      "action": "run multi-sample voting (3 samples, temp=0.7), record disagreement",
+      "block_on": ["disagreement > threshold", "any sample score < pass_threshold"]
+    }
+  },
+  "prompt_management": {
+    "versioned": true,
+    "storage": "agent-system/prompts/<prompt_id>/<version>.json",
+    "fields": ["prompt_text", "model", "temperature", "variables_schema", "created_at", "parent_version", "change_reason"],
+    "rollback_supported": true,
+    "a_b_testing": {
+      "enabled": true,
+      "traffic_split": "hash-based deterministic",
+      "min_sample_size": 30
+    }
+  },
+  "export": {
+    "native_format": "jsonl traces in agent-system/runs/<run_id>/traces.jsonl",
+    "langfuse_compatible": {
+      "enabled_by_env": "OBSERVABILITY_EXPORTER=langfuse",
+      "endpoint_env": "LANGFUSE_HOST",
+      "auth_env": ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY"]
+    },
+    "otel_compatible": {
+      "enabled_by_env": "OBSERVABILITY_EXPORTER=otel",
+      "endpoint_env": "OTEL_EXPORTER_OTLP_ENDPOINT"
+    }
+  },
+  "gui_contract": {
+    "display_fields": ["run_status", "current_node", "score_trend", "cost_so_far", "budget_remaining", "active_agents"],
+    "drill_down": ["trace_tree", "score_history", "cost_breakdown_by_agent", "failure_class_distribution"],
+    "block_color": {
+      "healthy": "green",
+      "degraded": "amber",
+      "critical": "red"
+    }
+  },
+  "retention": {
+    "traces_days": 90,
+    "metrics_days": 365,
+    "aggregated_metrics_days": 2555,
+    "pii_redaction": true
+  }
+}

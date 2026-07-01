@@ -68,5 +68,25 @@
     "Every pause/resume boundary has a checkpoint with state_hash and resume_cursor.",
     "Every cross-Agent handoff has a typed envelope and contract hash.",
     "Every release-critical behavior is covered by deterministic eval cases."
-  ]
+  ],
+  "cost_controls": {
+    "policy_ref": "agent-system/cost-control.policy.json",
+    "max_parallel_agents_with_cost_awareness": "max_parallel_agents 受 cost-control.policy.json rate_limiting.concurrent 约束，两者取较小值",
+    "budget_escalation": "Agent 预算耗尽时，orchestrator 不可自行提高预算，必须走 human_gate",
+    "model_routing_alignment": "复杂任务路由到 strong 模型前，先检查 cost-control.policy.json model_routing 的 max_tokens 限制"
+  },
+  "observability_controls": {
+    "policy_ref": "agent-system/observability.policy.json",
+    "trace_every_handoff": "每次 Agent 交接必须记录 agent_handoff span（from/to/contract_hash/acknowledged）",
+    "trace_every_node_transition": "每次 controller 节点跳转必须记录 node_span，包含该节点的 required_artifacts 哈希",
+    "score_trajectory": "每次评分记录到 observability trace 和 research-integrity-gates.scoring_trajectory_tracking"
+  },
+  "integrity_controls": {
+    "policy_ref": "agent-system/research-integrity-gates.policy.json",
+    "applies_to_research_team_only": true,
+    "gate_precedence": "research-integrity-gates 触发时覆盖 quality-scoring.policy.json 的常规评分路由",
+    "block_delivery_on_gate_fail": "任何 integrity_gate 触发时，controller 不可发出 complete 决策"
+  },
+  "enhancement_version": "2026-07-01",
+  "enhancement_source": "基于 getnote+GitHub 调研结果补强，参考 Langfuse/OpenHive/academic-research-skills"
 }

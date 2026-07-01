@@ -1,0 +1,176 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-cost-control-policy",
+  "description": "成本控制与预算管理策略。参考 OpenHive 的三态熔断器、滑动窗口限速、Token 桶模式，以及 ECC 的 cost-tracking skill 设计。直接解决'Token 成本居高不下'痛点。与 ai-native-loop.manifest.json 的 controller.default_budgets 协同工作。",
+  "research_foundations": [
+    {
+      "name": "OpenHive three-state circuit breaker",
+      "source": "https://github.com/aden-hive/hive",
+      "principle": "熔断器有 closed / open / half-open 三态，open 状态快速失败不消耗 Token，half-open 放行探测请求验证恢复"
+    },
+    {
+      "name": "Token bucket + sliding window rate limit",
+      "source": "https://github.com/aden-hive/hive",
+      "principle": "Token 桶允许突发但限制总量，滑动窗口平滑流量，两者组合防止 QPS 超限和预算超支"
+    },
+    {
+      "name": "ECC cost-tracking skill",
+      "source": "https://github.com/affaan-m/ECC",
+      "principle": "本地数据库追踪每次 token 使用，按 project/tool/session/date 分解，支持预算告警和自动熔断"
+    },
+    {
+      "name": "Cost-aware model routing",
+      "source": "ECC cost-aware-llm-pipeline skill",
+      "principle": "按任务复杂度路由模型：简单任务用便宜模型，复杂任务用强模型，降低平均成本"
+    }
+  ],
+  "budget_layers": {
+    "run_level": {
+      "description": "单次 loop 运行的总预算，与 ai-native-loop.manifest.json controller.default_budgets 对齐",
+      "limits": {
+        "max_cost_microunits": 5000000,
+        "max_model_calls": 30,
+        "max_tool_calls": 60,
+        "max_duration_seconds": 7200
+      },
+      "action_on_exhausted": "controller transitions to budget_exhausted"
+    },
+    "agent_level": {
+      "description": "单个 Agent 在一次 run 中的预算",
+      "limits": {
+        "max_cost_microunits_per_agent": 1000000,
+        "max_model_calls_per_agent": 10,
+        "max_rework_cycles_per_agent": 2
+      },
+      "action_on_exhausted": "agent marked as budget_exhausted, orchestrator reassigns or escalates"
+    },
+    "daily_level": {
+      "description": "每日累计预算，防止失控循环",
+      "limits": {
+        "max_cost_microunits_per_day": 50000000,
+        "max_runs_per_day": 100,
+        "max_rework_total_per_day": 50
+      },
+      "action_on_exhausted": "new runs blocked, human notified"
+    },
+    "monthly_level": {
+      "description": "月度累计预算上限",
+      "limits": {
+        "max_cost_microunits_per_month": 1000000000
+      },
+      "action_on_exhausted": "system enters read-only mode, human must approve budget increase"
+    }
+  },
+  "model_routing": {
+    "strategy": "complexity_based",
+    "routes": [
+      {
+        "complexity": "trivial",
+        "examples": ["formatting", "simple lookup", "yes/no judgment"],
+        "model_tier": "cheap",
+        "max_tokens": 500
+      },
+      {
+        "complexity": "moderate",
+        "examples": ["summarization", "single-doc analysis", "drafting section"],
+        "model_tier": "standard",
+        "max_tokens": 2000
+      },
+      {
+        "complexity": "complex",
+        "examples": ["multi-doc synthesis", "experiment design", "paper writing"],
+        "model_tier": "strong",
+        "max_tokens": 8000
+      },
+      {
+        "complexity": "critical",
+        "examples": ["final delivery scoring", "integrity gate", "human-facing summary"],
+        "model_tier": "strong",
+        "max_tokens": 8000,
+        "requires_judge_decoupling": true
+      }
+    ],
+    "fallback": "if strong tier unavailable, use standard with human notification"
+  },
+  "circuit_breaker": {
+    "description": "三态熔断器，参考 OpenHive 设计",
+    "states": {
+      "closed": {
+        "behavior": "正常放行请求",
+        "transition_to_open": {
+          "when": "failure_rate >= 50% in last 10 requests OR 3 consecutive failures",
+          "cooldown_seconds": 60
+        }
+      },
+      "open": {
+        "behavior": "快速失败，不调用模型/工具，直接返回降级响应",
+        "transition_to_half_open": {
+          "after_seconds": 60,
+          "condition": "no new budget exhaustion"
+        }
+      },
+      "half_open": {
+        "behavior": "放行单个探测请求验证恢复",
+        "transition_to_closed": {
+          "when": "探测请求成功"
+        },
+        "transition_to_open": {
+          "when": "探测请求失败",
+          "cooldown_seconds": 120
+        }
+      }
+    },
+    "scoped_to": ["per_tool", "per_model", "per_agent", "per_skill"],
+    "metrics_tracked": ["failure_count", "failure_rate", "avg_latency_ms", "last_failure_at", "state_transitions"],
+    "controller_interaction": {
+      "open_state": "熔断器 open 时，controller 的 retry 决策应降级为 wait_human，等待 cooldown_seconds 后由定时器触发 half_open 探测",
+      "half_open_success": "探测请求成功后熔断器转 closed，controller 可恢复 retry/continue 决策",
+      "half_open_failure": "探测请求失败后熔断器重回 open，cooldown 加倍至 120 秒"
+    }
+  },
+  "rate_limiting": {
+    "token_bucket": {
+      "capacity": 100,
+      "refill_rate_per_minute": 60,
+      "description": "允许短时突发 100 请求，持续速率 60/分钟"
+    },
+    "sliding_window": {
+      "window_seconds": 60,
+      "max_requests": 30,
+      "description": "60 秒内最多 30 请求，平滑流量"
+    },
+    "concurrent": {
+      "max_concurrent_runs": 3,
+      "max_concurrent_agents_per_run": 3,
+      "description": "与 coordination.policy.json max_parallel_agents 对齐"
+    }
+  },
+  "alerting": {
+    "thresholds": [
+      {
+        "metric": "run_cost_microunits",
+        "warning_at": 0.7,
+        "critical_at": 0.9,
+        "of": "max_cost_microunits"
+      },
+      {
+        "metric": "daily_cost_microunits",
+        "warning_at": 0.7,
+        "critical_at": 0.9,
+        "of": "max_cost_microunits_per_day"
+      },
+      {
+        "metric": "rework_cycles_per_run",
+        "warning_at": 2,
+        "critical_at": 3
+      }
+    ],
+    "channels": ["gui_notification", "trace_event", "human_judgment_gate_when_critical"]
+  },
+  "cost_recording": {
+    "storage": "agent-system/runs/<run_id>/costs.jsonl",
+    "fields": ["timestamp", "agent_id", "skill_id", "model", "prompt_tokens", "completion_tokens", "cost_microunits", "complexity_tier"],
+    "aggregation": ["by_run", "by_agent", "by_skill", "by_model", "by_day", "by_month"],
+    "gui_display": ["cost_so_far", "budget_remaining", "cost_breakdown_pie", "cost_trend_line"]
+  }
+}
