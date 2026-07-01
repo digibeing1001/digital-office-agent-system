@@ -235,10 +235,15 @@ json_assert agent-system/context-envelope.schema.json 'data["properties"]["versi
 json_assert agent-system/context-handoff.policy.json 'data["default_mode"] == "hybrid" and set(data["acknowledgment"]["decisions"]) == {"accept","request_context","reject"}'
 json_assert agent-system/judgment.policy.json '"regulated_professional_domain" in [item["id"] for item in data["categories"]]'
 json_assert agent-system/coordination.policy.json '"parallel_expert_dag" in data["modes"] and "human_gated" in data["modes"]'
+json_assert agent-system/coordination.policy.json '"debate_council" in data["modes"] and "subagent_compression" in data["modes"]["parallel_expert_dag"]'
+json_assert agent-system/ai-native-loop.manifest.json '"subagent_compression_contract" in data["stages"]["act"]'
 json_assert agent-system/evals/runtime-replay-and-multilingual.json 'len(data["cases"]) >= 6'
 json_assert agent-system/host-injection.policy.json 'data["default_agent_role"] == "secretary" and data["supported_hosts"]["openclaw"]["default_agent_injection"] == "AGENTS.md"'
+json_assert agent-system/observability.registry.json '"phoenix" in data["backends"] and "langfuse" in data["backends"]'
+json_assert agent-system/guardrails.registry.json '"input_guardrails" in data["layers"] and "output_guardrails" in data["layers"]'
+json_assert agent-system/model-providers.registry.json '"litellm_gateway" in data and "litellm-proxy" in data["providers"]'
 json_assert agent-system/ai-native-loop.manifest.json 'list(data["stages"]) == ["context","decide","act","evaluate"]'
-json_assert agent-system/ai-native-loop.manifest.json 'set(data["controller"]["decisions"]) == {"continue","replan","retry","wait_human","complete","fail","cancel","budget_exhausted"}'
+json_assert agent-system/ai-native-loop.manifest.json 'set(data["controller"]["decisions"]) == {"continue","replan","retry","wait_human","complete","fail","cancel","budget_exhausted","debate"}'
 json_assert agent-system/ai-native-loop.manifest.json '"run_ledger" in data["stages"]["act"]["required_artifacts"]'
 test -f skills/vibe-coding-production-harness/SKILL.md || fail "missing vibe coding harness skill"
 test -f skills/vibe-design-production-harness/SKILL.md || fail "missing vibe design harness skill"

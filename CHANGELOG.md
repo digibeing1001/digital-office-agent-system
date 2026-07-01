@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-07-01
+
+### Loop 工程与 Agent Team 能力补强
+
+基于 GitHub 开源生态调研，落实五项补强：
+
+- **协调策略新增 debate_council**：`coordination.policy.json` 新增第 6 种协调模式，用于法律复核、设计评审等需要多 voice 对抗审查的场景；min 2 reviewers，高风险需双通过，分歧记录在案。
+- **subagent context compression 契约显式化**：`ai-native-loop.manifest.json` 的 act 节点新增 `subagent_compression_contract`，要求并行 subagent 返回蒸馏信封而非全量 trace；基于 Anthropic Multi-Agent Research System（比单 agent 强 90.2%）。
+- **引入 litellm 模型网关**：`model-providers.registry.json` 新增 `litellm_gateway` 块，提供 least-cost routing、金额预算、circuit breaker、fallback；把预算控制从 controller 解耦到网关层。
+- **新增 observability 与 guardrails registry**：`observability.registry.json` 接入 Phoenix/Langfuse/Helicone；`guardrails.registry.json` 定义 input/output 内容安全 guardrail（NeMo / OpenAI Agents SDK），补齐流程 guard 之外的内容安全层。
+- **AutoGen 迁移路径文档**：新增 `docs/autogen-migration.zh-CN.md`，规划从已停更的 AutoGen 迁移到 microsoft/agent-framework 的三阶段路径。
+- **smoke 测试同步更新**：新增 debate_council、subagent_compression_contract、observability、guardrails、litellm_gateway 断言；全部通过。
+
 ## 2026-06-21
 
 ### 项目上下文、模型接入与专业版 GUI

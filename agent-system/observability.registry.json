@@ -1,0 +1,67 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-observability",
+  "purpose": "Visualize hash-chained run ledgers, traces, and agent trajectories; back deterministic eval cases with a queryable store.",
+  "backends": {
+    "phoenix": {
+      "display_name": "Arize Phoenix",
+      "repository": "https://github.com/Arize-ai/phoenix",
+      "category": "self_hosted",
+      "strength": "Deep agent trajectory evaluation; pytest/vitest integration; span-based tracing.",
+      "endpoint_env": "PHOENIX_ENDPOINT",
+      "protocol": "opentelemetry_otlp",
+      "enable_when_env": "PHOENIX_ENDPOINT",
+      "captures": [
+        "llm_spans",
+        "tool_calls",
+        "agent_trajectory",
+        "run_ledger_events"
+      ],
+      "notes": "Recommended when deep agent behavior evaluation is the priority."
+    },
+    "langfuse": {
+      "display_name": "Langfuse",
+      "repository": "https://github.com/langfuse/langfuse",
+      "category": "self_hosted",
+      "strength": "Full LLM observability stack: trace, metrics, evals, prompt management, datasets, playground.",
+      "endpoint_env": "LANGFUSE_ENDPOINT",
+      "public_key_env": "LANGFUSE_PUBLIC_KEY",
+      "secret_key_env": "LANGFUSE_SECRET_KEY",
+      "protocol": "langfuse_sdk",
+      "enable_when_env": "LANGFUSE_ENDPOINT",
+      "captures": [
+        "traces",
+        "generations",
+        "spans",
+        "events",
+        "scores",
+        "datasets"
+      ],
+      "notes": "Recommended when prompt management and self-hosted data sovereignty are priorities."
+    },
+    "helicone": {
+      "display_name": "Helicone",
+      "repository": "https://github.com/Helicone/helicone",
+      "category": "proxy",
+      "strength": "Lightweight proxy-mode observability; minimal code changes; cost and latency monitoring.",
+      "endpoint_env": "HELICONE_PROXY_URL",
+      "protocol": "proxy",
+      "enable_when_env": "HELICONE_PROXY_URL",
+      "captures": [
+        "request_response_pairs",
+        "cost",
+        "latency",
+        "token_usage"
+      ],
+      "notes": "Minimum-intrusion option when Phoenix/Langfuse are too heavy."
+    }
+  },
+  "integration_points": {
+    "run_ledger": "Every hash-chained run ledger entry emits a trace span with run_id, cycle, stage, and controller_decision.",
+    "model_calls": "litellm_gateway emits OpenTelemetry spans for each model call; consumed by configured backend.",
+    "handoffs": "Typed handoff envelopes emit spans with from_agent, to_agent, and contract_hash.",
+    "eval_cases": "Deterministic eval cases are stored as datasets in the configured backend for regression runs."
+  },
+  "selection_guidance": "Configure one primary backend. Phoenix for agent-eval depth; Langfuse for full-stack + prompt management; Helicone for lightweight proxy mode. All three are self-hostable.",
+  "disabled_by_default": true
+}

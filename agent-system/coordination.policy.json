@@ -1,8 +1,9 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "digital-office-coordination-policy",
-  "decision": "Choose the smallest collaboration topology that can satisfy the task without increasing drift. High-risk work is human-gated; independent specialist work may run as a parallel DAG; ordered specialist work runs as a sequential chain.",
+  "decision": "Choose the smallest collaboration topology that can satisfy the task without increasing drift. High-risk work is human-gated; independent specialist work may run as a parallel DAG; ordered specialist work runs as a sequential chain; adversarial review work runs as a debate council.",
   "max_parallel_agents": 3,
+  "parallel_elastic_max": 8,
   "modes": {
     "single_agent": {
       "use_when": [
@@ -47,8 +48,45 @@
       "required_controls": [
         "explicit_agent_scope_assignment",
         "no_file_or_artifact_overlap_without_merge_plan",
-        "synthesis_checkpoint"
-      ]
+        "synthesis_checkpoint",
+        "subagent_context_compression_contract"
+      ],
+      "subagent_compression": {
+        "principle": "Each subagent runs in an isolated context window and returns a distilled envelope, never the full trace. The orchestrator merges compressed envelopes only.",
+        "required_fields": [
+          "subagent_id",
+          "scope_assignment",
+          "distilled_findings",
+          "evidence_refs",
+          "confidence_and_caveats",
+          "tokens_used"
+        ],
+        "forbidden": [
+          "replaying_full_subagent_trace_into_main_context",
+          "merging_without_orchestrator_synthesis"
+        ]
+      }
+    },
+    "debate_council": {
+      "use_when": [
+        "adversarial review improves quality beyond self-evaluation",
+        "legal review, design critique, or risk assessment requires multiple voices",
+        "single-specialist confidence is below threshold",
+        "high-stakes decision benefits from structured disagreement"
+      ],
+      "required_controls": [
+        "independent_reviewer_count_at_least_two",
+        "reviewers_use_different_prompt_or_model_when_feasible",
+        "convergence_gate_or_judge_synthesis",
+        "dissent_recorded_when_no_consensus"
+      ],
+      "topology": {
+        "pattern": "n_reviewers_plus_optional_judge",
+        "min_reviewers": 2,
+        "max_reviewers": 4,
+        "judge_required_when": "reviewers_disagree_on_high_risk_decision",
+        "convergence_rule": "both_reviewers_must_pass_for_high_risk; majority_plus_judge_for_medium_risk"
+      }
     },
     "human_gated": {
       "use_when": [
@@ -67,6 +105,22 @@
     "Every production run writes a hash-chained run ledger.",
     "Every pause/resume boundary has a checkpoint with state_hash and resume_cursor.",
     "Every cross-Agent handoff has a typed envelope and contract hash.",
-    "Every release-critical behavior is covered by deterministic eval cases."
-  ]
+    "Every release-critical behavior is covered by deterministic eval cases.",
+    "Every subagent in parallel_expert_dag returns a distilled compression envelope, not a full trace.",
+    "Every debate_council run records both consensus and dissent with reviewer identities."
+  ],
+  "content_safety_guardrails": {
+    "principle": "Drift controls ensure process correctness; content safety guardrails ensure the content itself is safe. Both layers are required.",
+    "input_guardrails": [
+      "pii_detection_on_user_input_when_sensitive_scope",
+      "prompt_injection_screening_on_external_content",
+      "topic_allowlist_enforcement_when_configured"
+    ],
+    "output_guardrails": [
+      "hallucination_spot_check_on_generated_claims",
+      "regulated_profession_disclaimer_when_legal_or_medical",
+      "secret_redaction_before_delivery"
+    ],
+    "integration": "May be implemented via NeMo Guardrails, OpenAI Agents SDK guardrails, or an equivalent guard layer configured in guardrails.registry.json."
+  }
 }

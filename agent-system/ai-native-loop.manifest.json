@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "kind": "digital-office-loop-runtime",
   "name": "Context, Decide, Act, Evaluate with deterministic control",
   "description": "Production loop runtime for Digital Office. Four composable work nodes are driven by a deterministic controller and durable state. Reasoning and planning are structured outputs inside Decide; iteration is a controller transition rather than a mandatory content stage.",
@@ -80,6 +80,11 @@
       "name": "A2A task lifecycle",
       "source": "https://github.com/a2aproject/A2A/blob/main/docs/topics/life-of-a-task.md",
       "principle": "Stable context identity, immutable terminal tasks, new task ids for refinements, and artifact references improve traceability."
+    },
+    {
+      "name": "Anthropic Multi-Agent Research System",
+      "source": "https://www.anthropic.com/engineering/multi-agent-research-system",
+      "principle": "An orchestrator agent spawns parallel subagents with isolated context windows; each subagent compresses its findings before returning to the orchestrator, preventing context pollution and yielding up to 90.2% quality improvement over single-agent on open research tasks."
     }
   ],
   "stages": {
@@ -150,7 +155,8 @@
         "tool_observations",
         "changed_or_generated_artifacts",
         "checkpoint_records",
-        "typed_handoff_records"
+        "typed_handoff_records",
+        "subagent_compression_envelopes_when_parallel"
       ],
       "gates": [
         "authorization_passed",
@@ -158,8 +164,26 @@
         "retryable_and_non_retryable_failures_are_distinguished",
         "checkpoint_recorded_before_pause_or_resume",
         "typed_handoffs_are_acknowledged",
-        "open_human_gate_blocks_high_risk_side_effects"
-      ]
+        "open_human_gate_blocks_high_risk_side_effects",
+        "parallel_subagents_return_distilled_envelopes_not_full_traces"
+      ],
+      "subagent_compression_contract": {
+        "principle": "When parallel_expert_dag is used, each subagent runs in an isolated context window and returns a distilled envelope. The orchestrator merges compressed envelopes only; full subagent traces are never replayed into the main context.",
+        "envelope_schema": {
+          "subagent_id": "string",
+          "scope_assignment": "what this subagent was asked to do",
+          "distilled_findings": "compressed findings, conclusions, and recommended next steps",
+          "evidence_refs": "artifact references (paths, hashes) instead of inlined content",
+          "confidence_and_caveats": "confidence score 0.0-1.0 plus explicit caveats",
+          "tokens_used": "token budget consumed by this subagent"
+        },
+        "forbidden": [
+          "replaying_full_subagent_trace_into_main_context",
+          "merging_without_orchestrator_synthesis",
+          "inlining_large_artifacts_instead_of_referencing"
+        ],
+        "rationale": "Based on Anthropic Multi-Agent Research System: subagent compression prevents context pollution and yields up to 90.2% quality improvement over single-agent on open research tasks."
+      }
     },
     "evaluate": {
       "goal": "Judge outcome and progress against evidence, acceptance criteria, quality gates, budget, and user intent, then recommend one controller decision.",
@@ -183,7 +207,8 @@
         "acceptance_results_are_explicit",
         "progress_is_measured_against_previous_cycle",
         "failure_root_cause_and_retry_class_are_recorded",
-        "recommended_transition_has_a_target_or_terminal_reason"
+        "recommended_transition_has_a_target_or_terminal_reason",
+        "subagent_envelopes_validated_when_parallel"
       ]
     }
   },
@@ -220,6 +245,10 @@
       "budget_exhausted": {
         "target": "budget_exhausted",
         "use_when": "Any hard run budget is exhausted before acceptance passes."
+      },
+      "debate": {
+        "target": "debate_council",
+        "use_when": "Evaluate recommends adversarial review or single-specialist confidence is below threshold."
       }
     },
     "default_budgets": {
@@ -292,6 +321,9 @@
     "Private chain-of-thought is never required, persisted, or exposed; store concise decision records instead.",
     "Human input is a versioned state transition: early intent and context confirmation precede dispatch, while later interrupts are reserved for missing high-impact context, drift, risk, or irreversible actions.",
     "Do not replay full conversation history after human input; resume from the checkpoint with the confirmed context delta and authoritative artifact references.",
-    "System self-modification is never an automatic task-loop transition and always requires a confirmed proposal."
+    "System self-modification is never an automatic task-loop transition and always requires a confirmed proposal.",
+    "When parallel_expert_dag runs, every subagent returns a distilled compression envelope with evidence references; full traces are never replayed into the main context.",
+    "When debate_council runs, at least two independent reviewers must pass for high-risk decisions; dissent is recorded when no consensus is reached.",
+    "Content safety guardrails (input and output) run alongside drift controls; both layers must pass before a run can complete."
   ]
 }
