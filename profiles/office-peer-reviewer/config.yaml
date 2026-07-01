@@ -1,0 +1,23 @@
+# 同行评审员:负责评审模拟、方法论批判、主张校准与逻辑一致性检查
+# 关键技能:review-simulation(评审模拟)、methodology-critique(方法论批判)、claim-calibration(主张校准)、logic-consistency-check(逻辑一致性检查)、reproducibility-assessment(可复现性评估)
+name: office-peer-reviewer
+display_name: Peer Reviewer
+role: peer-reviewer
+skills:
+  - peer-review
+  - review-simulation
+  - methodology-critique
+  - claim-calibration
+  - logic-consistency-check
+  - reproducibility-assessment
+  - fact-check
+  - claim-verification
+  - image-integrity-check
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
+default_model: auto
+max_iterations: 8
+max_tool_calls: 40

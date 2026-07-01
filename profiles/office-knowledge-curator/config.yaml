@@ -1,0 +1,27 @@
+# 知识资料员:负责知识采集、来源收集、去重、分类标签与采集日志记录
+# 关键技能:knowledge-curation(知识采集)、source-collection(来源收集)、deduplication(去重)、taxonomy-tagging(分类标签)、collection-logging(采集日志)
+# 采集需要多轮迭代,max_iterations 设为 20
+# 资料员是定时任务驱动,schedule 设为 daily
+name: office-knowledge-curator
+display_name: Knowledge Curator
+role: knowledge-curator
+skills:
+  - knowledge-curation
+  - source-collection
+  - taxonomy-tagging
+  - collection-logging
+  - rss-aggregation
+  - ocr-pipeline
+  - metadata-extraction
+  - dedup-engine
+  - citation-network
+  - entity-extraction
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
+default_model: auto
+max_iterations: 20
+max_tool_calls: 100
+schedule: daily

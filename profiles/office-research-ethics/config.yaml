@@ -1,0 +1,25 @@
+# 研究伦理官:负责查重、署名核验、数据合规、IRB 审查与利益冲突管理
+# 关键技能:plagiarism-check(查重)、authorship-verification(署名核验)、data-compliance(数据合规)、irb-review(IRB 审查)、conflict-of-interest(利益冲突)、misconduct-detection(学术不端检测)、llm-usage-declaration(LLM 使用声明)
+name: office-research-ethics
+display_name: Research Ethics Officer
+role: ethics-officer
+skills:
+  - plagiarism-check
+  - authorship-verification
+  - data-compliance
+  - irb-review
+  - conflict-of-interest
+  - misconduct-detection
+  - llm-usage-declaration
+  - code-plagiarism-check
+  - text-plagiarism-check
+  - ai-content-detection
+  - image-forensics
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
+default_model: auto
+max_iterations: 8
+max_tool_calls: 40

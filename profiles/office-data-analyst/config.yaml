@@ -1,0 +1,21 @@
+# 数据分析师:负责统计建模、显著性检验、数据可视化与复现验证
+# 关键技能:statistical-modeling(统计建模)、significance-testing(显著性检验)、data-visualization(数据可视化)、reproduction-verification(复现验证)、outlier-detection(异常值检测)
+name: office-data-analyst
+display_name: Data Analyst
+role: data-analyst
+skills:
+  - statistical-modeling
+  - significance-testing
+  - data-visualization
+  - reproduction-verification
+  - outlier-detection
+  - publication-plotting
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
+  - failure-mode-archiving
+default_model: auto
+max_iterations: 10
+max_tool_calls: 50

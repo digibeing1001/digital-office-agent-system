@@ -1,0 +1,22 @@
+# 方法学专家:负责实验设计、统计方法选择、功效分析与可复现性规划
+# 关键技能:experiment-design(实验设计)、statistical-method-selection(统计方法选择)、power-analysis(功效分析)、metric-definition(指标定义)、reproducibility-planning(可复现性规划)、fairness-review(公平性审查)
+name: office-methodologist
+display_name: Methodologist
+role: methodologist
+skills:
+  - experiment-design
+  - statistical-method-selection
+  - power-analysis
+  - metric-definition
+  - reproducibility-planning
+  - fairness-review
+  - doe-templates
+  - causal-inference
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
+default_model: auto
+max_iterations: 10
+max_tool_calls: 50

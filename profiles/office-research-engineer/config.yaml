@@ -1,0 +1,28 @@
+# 研究工程师:负责编码规范、系统调试、实验脚本与基准测试运行
+# 关键技能:coding-standards(编码规范)、systematic-debugging(系统调试)、experiment-scripting(实验脚本)、version-management(版本管理)、benchmark-runner(基准测试运行)、reproducibility-packaging(可复现性打包)
+# 实现与调试需要更多轮迭代,max_iterations 设为 15
+name: office-research-engineer
+display_name: Research Engineer
+role: research-engineer
+skills:
+  - coding-standards
+  - systematic-debugging
+  - experiment-scripting
+  - version-management
+  - benchmark-runner
+  - reproducibility-packaging
+  - mlflow-tracking
+  - optuna-hpo
+  - hydra-config
+  - rl-benchmark
+  - reproducibility-export
+  - failure-archiving
+  - failure-mode-archiving
+  - research-scoring
+  - self-reflection
+  - experience-extraction
+  - preference-internalization
+  - cross-run-memory
+default_model: auto
+max_iterations: 15
+max_tool_calls: 75
