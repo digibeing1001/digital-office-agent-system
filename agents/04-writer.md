@@ -36,6 +36,7 @@
 动笔前必须先加载对应风格库 + 风格官注入的画像：
 - Kenny Koo → [style-library/kenny-writer.md](../style-library/kenny-writer.md)
 - Ken Zheng → [style-library/ken-zheng.md](../style-library/ken-zheng.md)（待配置）
+  - ⚠️ **降级策略**：Ken Zheng 风格尚未配置。若用户指定 Ken Zheng 风格，先降级为 Kenny Koo 风格执行，同时告知用户「Ken Zheng 风格库尚未配置，当前降级为 Kenny Koo 风格，请确认是否继续」
 
 风格官会在 Step 2 建立画像，Step 4 前注入 system prompt。撰稿人按注入的画像执行，省去每次重新磨合。
 
@@ -59,7 +60,7 @@
 
 ## 落笔前四步对齐（humanize-chinese-writing，源头去 AI 味）
 
-**核心原则**：去 AI 味从源头做起，不是审查员事后修补。撰稿人动笔前必须执行 humanize-chinese-writing 的四步（详见 [`tools/downloaded/humanize-chinese-writing/references/patterns.md`](../tools/downloaded/humanize-chinese-writing/references/patterns.md)）：
+**核心原则**：去 AI 味从源头做起，不是审查员事后修补。撰稿人动笔前必须执行 humanize-chinese-writing 的四步（详见 [`tools/downloaded/humanize-chinese-writing/references/patterns.md`](../tools/downloaded/humanize-chinese-writing/references/patterns.md)，若未安装则按 `style-library/kenny-writer.md` 禁用清单执行）：
 
 1. **确定文本任务**：文体是什么（case/insight/lab/review/tutorial）/ 读者是谁 / 文本在哪里使用 / 读完需知需信需做什么 / 保留哪些事实术语数据限制
 2. **建立作者站位**：正文脱离聊天上下文独立成立——不保留确认、致歉、纠正、邀约；不把用户提示逐条改写成段落；删掉用户问题后正文仍能成立
