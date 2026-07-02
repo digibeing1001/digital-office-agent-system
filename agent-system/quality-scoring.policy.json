@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "kind": "digital-office-quality-scoring-policy",
   "description": "7-point rubric scoring layer for LOOP engineering. Orthogonal to judgment.policy.json (risk gating). Decides rework/iterate vs wait_human based on failure_class.",
   "research_foundations": [
@@ -29,7 +29,11 @@
     "missing_context MUST be distinguished from correctable_replan; misrouting causes infinite rework loops",
     "Final delivery uses multi-sample voting; stage gates use single deterministic sample",
     "Score 5 label is 'fail_with_minor_defects' (not 'pass_with_minor_defects'): threshold=6 means 5 is a FAIL. Label must be honest about pass/fail status.",
-    "Stage-differentiated thresholds: context=4 (lenient, false-reject wastes pipeline), decide/act=5 (medium, iteration cheap), evaluate=6 (strict, delivery cost highest). Ref: SWE-bench Verified difficulty stratification + verification-loop phase-specific strictness."
+    "Stage-differentiated thresholds: context=4 (lenient, false-reject wastes pipeline), decide/act=5 (medium, iteration cheap), evaluate=6 (strict, delivery cost highest). Ref: SWE-bench Verified difficulty stratification + verification-loop phase-specific strictness.",
+    "First-layer QA (execution) should be effective but not over-invested: score=5 with minor defects is acceptable for stage progression.",
+    "Second-layer QA (product taste) uses PM-as-QA: value_validation weight ensures product value, not just functional correctness.",
+    "Third-layer QA (product survival) is human-gated and cross-task: it triggers on iteration proposals and release events, not per-run.",
+    "Secretary is the QA coordinator: collects multi-role scores at evaluate, identifies cross-role inconsistencies, provides QA basis to controller."
   ],
   "failure_class_routing": {
     "missing_context": {
@@ -89,18 +93,24 @@
       "rubric_items": [
         {
           "id": "acceptance_criteria_met",
-          "weight": 0.4,
+          "weight": 0.308,
           "hard_disqualifier": false
         },
         {
           "id": "scope_alignment",
-          "weight": 0.3,
+          "weight": 0.231,
           "hard_disqualifier": false
         },
         {
           "id": "stakeholder_concerns_addressed",
-          "weight": 0.3,
+          "weight": 0.231,
           "hard_disqualifier": false
+        },
+        {
+          "id": "value_validation",
+          "weight": 0.231,
+          "hard_disqualifier": false,
+          "description": "PM-as-QA: does the outcome create genuine product value, not just meet functional acceptance criteria? Based on context advantage (taste)."
         }
       ],
       "hard_disqualifiers": [
@@ -135,18 +145,24 @@
       "rubric_items": [
         {
           "id": "tests_pass",
-          "weight": 0.4,
+          "weight": 0.333,
           "hard_disqualifier": true
         },
         {
           "id": "code_quality",
-          "weight": 0.3,
+          "weight": 0.25,
           "hard_disqualifier": false
         },
         {
           "id": "no_regressions",
-          "weight": 0.3,
+          "weight": 0.25,
           "hard_disqualifier": true
+        },
+        {
+          "id": "iteration_effectiveness",
+          "weight": 0.167,
+          "hard_disqualifier": false,
+          "description": "Each retry carries new observation or modified assumption; no empty-loop iterations. Progress delta >= 0.02 per cycle."
         }
       ],
       "hard_disqualifiers": [
@@ -182,18 +198,24 @@
       "rubric_items": [
         {
           "id": "artifacts_complete",
-          "weight": 0.4,
+          "weight": 0.32,
           "hard_disqualifier": true
         },
         {
           "id": "handoff_documented",
-          "weight": 0.3,
+          "weight": 0.24,
           "hard_disqualifier": false
         },
         {
           "id": "secretary_acceptable",
-          "weight": 0.3,
+          "weight": 0.24,
           "hard_disqualifier": false
+        },
+        {
+          "id": "handoff_semantic_integrity",
+          "weight": 0.2,
+          "hard_disqualifier": false,
+          "description": "Handoff envelopes are semantically complete: receiver has all required fields, artifacts reachable, acknowledgment closed."
         }
       ],
       "hard_disqualifiers": [
@@ -247,5 +269,10 @@
     "decide": 5,
     "act": 5,
     "evaluate": 6
+  },
+  "qa_framework": {
+    "document": "agent-system/docs/agent-team-qa-framework.zh-CN.md",
+    "theory": "Andrew Ng three-layer Loop Engineering",
+    "principle": "QA covers three layers: execution self-test (fast), product taste (medium), product survival (slow). Secretary is the taste guardian ensuring context advantage flows to every decision node."
   }
 }

@@ -242,6 +242,10 @@ json_assert agent-system/host-injection.policy.json 'data["default_agent_role"] 
 json_assert agent-system/observability.registry.json '"phoenix" in data["backends"] and "langfuse" in data["backends"]'
 json_assert agent-system/guardrails.registry.json '"input_guardrails" in data["layers"] and "output_guardrails" in data["layers"]'
 json_assert agent-system/model-providers.registry.json '"litellm_gateway" in data and "litellm-proxy" in data["providers"]'
+json_assert agent-system/quality-scoring.policy.json '"value_validation" in [r["id"] for r in data["role_gates"]["product"]["rubric_items"]]'
+json_assert agent-system/quality-scoring.policy.json '"iteration_effectiveness" in [r["id"] for r in data["role_gates"]["implementation"]["rubric_items"]]'
+json_assert agent-system/quality-scoring.policy.json '"handoff_semantic_integrity" in [r["id"] for r in data["role_gates"]["delivery"]["rubric_items"]]'
+test -f agent-system/docs/agent-team-qa-framework.zh-CN.md || fail "missing agent team QA framework doc"
 json_assert agent-system/ai-native-loop.manifest.json 'list(data["stages"]) == ["context","decide","act","evaluate"]'
 json_assert agent-system/ai-native-loop.manifest.json 'set(data["controller"]["decisions"]) == {"continue","replan","retry","wait_human","complete","fail","cancel","budget_exhausted","debate"}'
 json_assert agent-system/ai-native-loop.manifest.json '"run_ledger" in data["stages"]["act"]["required_artifacts"]'

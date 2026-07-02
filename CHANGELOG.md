@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-02
+
+### Agent Team QA 框架：基于吴恩达三层 Loop Engineering
+
+基于吴恩达 Loop Engineering 三层框架（代码循环 / 产品品味 / 产品生死），建立 Agent Team 专项 QA 框架：
+
+- **新增 `docs/agent-team-qa-framework.zh-CN.md`**：覆盖四维度 QA（第一层执行自测、第二层产品品味、第三层产品生死、跨层协作 QA），含 QA 角色职责矩阵、流程门禁、度量指标。
+- **核心认知落实**：第一层"有效但不过度投入"；第二层"PM-as-QA + 品味=上下文优势"，secretary 作为品味守护者；第三层"慢循环 + 人类主导 + 跨任务累积"。
+- **`quality-scoring.policy.json` 升级 v1.1.0**：product role_gate 新增 `value_validation`（PM-as-QA 价值验证）；implementation 新增 `iteration_effectiveness`（防空转迭代）；delivery 新增 `handoff_semantic_integrity`（handoff 语义完整性）。
+- **smoke 测试同步更新**：新增 4 条 QA 断言，全部通过。
+
 ## 2026-07-01
 
 ### Loop 工程与 Agent Team 能力补强
