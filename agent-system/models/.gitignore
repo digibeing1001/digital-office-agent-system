@@ -1,5 +1,0 @@
-# Model files are large - never commit
-# Downloaded by install-local-models at deploy time
-*
-!.gitignore
-!cache/
