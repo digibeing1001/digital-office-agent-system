@@ -6,6 +6,18 @@
 
 ## 2026-07-02
 
+### Agent Team QA v1.2.0：调研补强（Maker-Checker / 反 AI Slop / 上下文优势 / 北极星 / 最小样本 / Comprehension Debt / 中层审查）
+
+基于吴恩达三层 Loop Engineering 参考资料，开展全网+论文+GitHub 调研，补强 7 项失效模式防御：
+
+- 集成 taste-skill（反 AI Slop）：从 GitHub 克隆到 skills/_imported/taste-skill/，vibe-designer 在 act->evaluate 边界调用
+- quality-scoring.policy.json v1.2.0：新增 anti_slop_check / comprehension_debt_check / maker_checker_isolation / minimum_sample_size / context_advantage_layers
+- coordination.policy.json v1.2.0：新增 midlayer_review_cadence（短任务 30m / 长任务 2h 强制中层审查）
+- QA 框架文档 v1.2.0：新增第十二章调研补强 9 节内容（357->464 行）
+- smoke 测试新增 9 条 json_assert 断言
+
+
+
 ### Agent Team QA 框架：基于吴恩达三层 Loop Engineering
 
 基于吴恩达 Loop Engineering 三层框架（代码循环 / 产品品味 / 产品生死），建立 Agent Team 专项 QA 框架：

@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "digital-office-coordination-policy",
   "decision": "Choose the smallest collaboration topology that can satisfy the task without increasing drift. High-risk work is human-gated; independent specialist work may run as a parallel DAG; ordered specialist work runs as a sequential chain; adversarial review work runs as a debate council.",
   "max_parallel_agents": 3,
@@ -122,5 +122,15 @@
       "secret_redaction_before_delivery"
     ],
     "integration": "May be implemented via NeMo Guardrails, OpenAI Agents SDK guardrails, or an equivalent guard layer configured in guardrails.registry.json."
+  },
+  "midlayer_review_cadence": {
+    "principle": "Second-layer QA (product taste) must not only trigger at evaluate stage; agent teams can spin in wrong direction for 30+ minutes before being caught. Midlayer review is an early-return mechanism, not an approval gate.",
+    "short_task": "30m",
+    "long_task": "2h",
+    "default": "30m",
+    "rule": "controller maintains last_midlayer_review_ts; if now - last_midlayer_review_ts >= cadence, insert a midlayer_review sub-flow after current stage completes; review covers value_validation + scope_alignment + anti_slop_check",
+    "degradation": "if cadence not configured, default 30m; if run total duration < cadence, midlayer review not triggered (short tasks do not need mid-task review)",
+    "on_failure": "midlayer review finding triggers replan, not wait_human (unless hard constraint violation)",
+    "ref": "Andrew Ng second-layer Loop: practitioner shifts from QA to PM; PM value is in-task value scoring, not post-hoc acceptance"
   }
 }

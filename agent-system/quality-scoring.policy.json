@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "kind": "digital-office-quality-scoring-policy",
   "description": "7-point rubric scoring layer for LOOP engineering. Orthogonal to judgment.policy.json (risk gating). Decides rework/iterate vs wait_human based on failure_class.",
   "research_foundations": [
@@ -86,7 +86,23 @@
       "mode": "majority_vote",
       "disagreement_threshold": 1.0
     },
-    "reference_calibration": true
+    "reference_calibration": true,
+    "maker_checker_isolation": {
+      "required": true,
+      "rule": "maker and checker must have different agent_id; evaluate-stage checker must come from a different model family (open-weight / closed-weight / some-theory) when feasible; act-stage self-check is early-return only, not a pass basis",
+      "fallback": "if only one model family available in registry, degrade to temperature=0 same-model check (statistical safety, not core safety)",
+      "ref": "Huang et al. 2024 LLMs Cannot Self-Correct Yet + Constitutional AI (Anthropic 2022)"
+    },
+    "minimum_sample_size": {
+      "default": 3,
+      "rule": "third-layer QA directional adjustments (change north_star, change product positioning, cut features) require min sample = max(3 runs, 1 full iteration cycle); below threshold, slow-loop QA records but does not adjust",
+      "hard_constraint_exceptions": [
+        "safety",
+        "compliance",
+        "brand_consistency"
+      ],
+      "ref": "statistical significance for slow-loop judgment"
+    }
   },
   "role_gates": {
     "product": {
@@ -122,18 +138,24 @@
       "rubric_items": [
         {
           "id": "architecture_coherent",
-          "weight": 0.4,
+          "weight": 0.35,
           "hard_disqualifier": false
         },
         {
           "id": "interface_contracts_clear",
-          "weight": 0.3,
+          "weight": 0.25,
           "hard_disqualifier": false
         },
         {
           "id": "tradeoffs_documented",
-          "weight": 0.3,
+          "weight": 0.2,
           "hard_disqualifier": false
+        },
+        {
+          "id": "anti_slop_check",
+          "weight": 0.2,
+          "hard_disqualifier": false,
+          "description": "Anti AI-Slop check: UI output must not trigger any slop fingerprint listed in taste-skill (purple-blue gradient hero, dark grid background, elliptical buttons, centered stacked cards). vibe-designer invokes taste-skill at act->evaluate boundary."
         }
       ],
       "hard_disqualifiers": [
@@ -198,24 +220,30 @@
       "rubric_items": [
         {
           "id": "artifacts_complete",
-          "weight": 0.32,
+          "weight": 0.28,
           "hard_disqualifier": true
         },
         {
           "id": "handoff_documented",
-          "weight": 0.24,
+          "weight": 0.2,
           "hard_disqualifier": false
         },
         {
           "id": "secretary_acceptable",
-          "weight": 0.24,
+          "weight": 0.2,
           "hard_disqualifier": false
         },
         {
           "id": "handoff_semantic_integrity",
-          "weight": 0.2,
+          "weight": 0.12,
           "hard_disqualifier": false,
           "description": "Handoff envelopes are semantically complete: receiver has all required fields, artifacts reachable, acknowledgment closed."
+        },
+        {
+          "id": "comprehension_debt_check",
+          "weight": 0.2,
+          "hard_disqualifier": false,
+          "description": "Comprehension Debt defense: in human_gated stage, human must read diff and write a >=30 char comprehension summary before approve; reject does not require summary. Prevents rubber-stamp approval."
         }
       ],
       "hard_disqualifiers": [
@@ -273,6 +301,17 @@
   "qa_framework": {
     "document": "agent-system/docs/agent-team-qa-framework.zh-CN.md",
     "theory": "Andrew Ng three-layer Loop Engineering",
-    "principle": "QA covers three layers: execution self-test (fast), product taste (medium), product survival (slow). Secretary is the taste guardian ensuring context advantage flows to every decision node."
+    "principle": "QA covers three layers: execution self-test (fast), product taste (medium), product survival (slow). Secretary is the taste guardian ensuring context advantage flows to every decision node.",
+    "context_advantage_layers": [
+      "skill_required_context: each SKILL.md declares required_context; secretary verifies before dispatch",
+      "project_memory_injection: project_memory.md accumulates cross-task product knowledge; injected into context stage at run start",
+      "soul_boundary_enforcement: each SOUL.md defines role context boundary; handoff only passes in-boundary fields"
+    ],
+    "anti_slop": {
+      "skill": "skills/_imported/taste-skill/",
+      "invoke_at": "act_to_evaluate_boundary",
+      "owner": "vibe-designer"
+    },
+    "version": "1.2.0"
   }
 }

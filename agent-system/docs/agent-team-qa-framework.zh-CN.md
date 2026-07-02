@@ -1,6 +1,6 @@
 # 数字办公室 Agent Team QA 框架
 
-> 版本：1.0.0 | 创建：2026-07-02 | 关联：loop-engineering.zh-CN.md、quality-scoring.policy.json、coordination.policy.json
+> 版本：1.2.0 | 创建：2026-07-02 | 关联：loop-engineering.zh-CN.md、quality-scoring.policy.json、coordination.policy.json
 > 理论基础：吴恩达 Loop Engineering 三层框架 + Anthropic Multi-Agent Research System + 项目已有的 Context-Decide-Act-Evaluate 确定性控制器
 
 ## 一、为什么需要这份 QA 框架
@@ -355,3 +355,110 @@ QA 框架本身需要回归保护：
 3. **第三层是长期壁垒**：慢循环的 QA 不可省略。产品方向、品牌一致性、长期健康需要跨任务累积评估，且必须人类主导。
 4. **角色融合不是角色消解**：PM-as-QA 是允许的融合点，但 coder 不做产品决策、pm 不写代码的边界不变。
 5. **QA 是未来的任务参考文档**：这份框架将作为 Agent Team 执行所有未来任务时的质量基准。每次 run 都应参照本框架执行 QA1-QA4，第三层 QA 在重大事件时触发。
+
+---
+
+## 十二、调研补强（v1.2）：基于全网 / 论文 / GitHub 调研的 7 项关键补强
+
+> 调研来源：arXiv（Self-Correct、Constitutional AI、SWE-bench）、GitHub（taste-skill、ragas、radon、midscene）、全网（吴恩达 Loop Engineering 深度解读、Addy Osmani 5+1 组件、Anthropic 多智能体实践）
+> 调研时间：2026-07-02
+> 集成状态：taste-skill 已克隆到 `skills/_imported/taste-skill/`；其余工具在 12.7 节列出推荐安装命令
+
+### 12.1 Maker-Checker 物理隔离（强制不同模型族）
+
+- **调研依据**：论文 *Large Language Models Cannot Self-Correct Yet*（Huang et al., 2024）证实，在无外部反馈的推理任务上，self-correction 反而降低准确率；同模型同温度的"自我检查"会继承 maker 的偏差盲点。*Constitutional AI*（Anthropic, 2022）进一步指出，critique-then-revise 有效的前提是 critic 与 actor 的"视角"不同。
+- **当前差距**：`quality-scoring.policy.json` 的 `debiasing.judge_agent` 已声明 "decoupled: different model/temperature"，但 `coordination.policy.json` 的 `debate_council.topology` 只说 "reviewers_use_different_prompt_or_model_when_feasible"——"when feasible" 留了后门，且对 single-agent 模式下的 self-check 没有约束。
+- **补强动作**：
+  - **强制约束**：maker 与 checker 的 `agent_id` 不能相同；act 阶段的 self-check 只能作为"快速失败早返"，不能作为通过依据；evaluate 阶段的 checker 必须来自不同模型族（open-weight vs closed-weight vs some-theory）。
+  - **模型族标记**：在 `model-providers.registry.json` 的每个 provider 新增 `family` 字段（值域：`open-weight` / `closed-weight` / `some-theory`）；controller 在派发 checker 时，强制选择与 maker 不同 family 的模型；若注册表里只有一个 family，降级为 temperature=0 的同模型检查（统计安全，非核心安全）。
+  - **smoke 断言**：`coordination.policy.json` 的 `debate_council.topology` 含 `reviewers_use_different_prompt_or_model_when_feasible`；`quality-scoring.policy.json` 的 `debiasing` 含 `maker_checker_isolation` 且 `required: true`。
+- **不要过度**：这层只防"同频共振"，不防"对抗性攻击"——后者由 `guardrails.registry.json` 负责。
+
+### 12.2 反 AI Slop 检查（taste-skill 已集成）
+
+- **调研依据**：GitHub `Leonxlnx/taste-skill`（20K+ stars）把"反 AI 模板垃圾"显性化为可加载的 SKILL.md 指令集；社区共识是 AI 生成的 UI 有高度可识别的"slop 指纹"（紫蓝渐变 Hero、深色网格背景、椭圆按钮、居中堆叠卡片）。
+- **当前差距**：`design` role_gate 只有 3 条 rubric（architecture_coherent / interface_contracts_clear / tradeoffs_documented），没有"反模板化"维度；vibe-designer 在 act 阶段没有强制的品味检查点。
+- **补强动作**：
+  - **集成 taste-skill**：已克隆到 `skills/_imported/taste-skill/`，含 14 个子 skill（brandkit / brutalist / minimalist / soft / redesign / stitch / image-to-code / imagegen-frontend-web / imagegen-frontend-mobile / output / gpt-tasteskill / llms.txt / taste-skill / taste-skill-v1）。
+  - **新增 rubric**：`design.role_gates.rubric_items` 新增 `anti_slop_check`（weight 0.2），hard_disqualifier = false。判定标准：UI 产出是否触发 taste-skill 列出的任意 slop 指纹。
+  - **调用时机**：vibe-designer 在 act→evaluate 边界必须调用 taste-skill 做一次检查；secretary 在 evaluate 阶段汇总时若发现 anti_slop_check 命中，写入 defects 并触发 replan。
+- **不要过度**：taste-skill 是品味底线（防 slop），不是品味上限（追求卓越）。卓越品味由人类 + secretary 的上下文优势共同判定，不交给自动化 rubric。
+
+### 12.3 上下文优势三层显性化（替代"品味"叙事）
+
+- **调研依据**：吴恩达原话反对"taste"这个词，主张用"context advantage"——因为"品味"暗示天赋，而"上下文优势"是可工程化的。上下文优势 = 知道别人不知道的、看到别人看不到的，它来自三层累积。
+- **当前差距**：QA 框架 v1.0 用了"品味守护者"措辞，但没说清楚品味从哪里来、如何传递。
+- **补强动作**：把上下文优势拆成三层并显性化进工程文件：
+  - **L1 任务级**：每个 `skills/*/SKILL.md` 的 `required_context` 字段显式声明该 skill 需要哪些上下文输入；secretary 在 dispatch 前核对 required_context 是否齐备，缺失则 wait_human。
+  - **L2 项目级**：`project_memory.md` 累积跨任务的产品认知（用户偏好、硬约束、工程惯例、教训）；每次 run 启动时，secretary 把 project_memory 的相关条目注入 context stage。
+  - **L3 角色级**：每个 `profiles/*/SOUL.md` 定义该角色的上下文边界（该看什么、不该看什么）；handoff 时只传递边界内的字段，防止上下文越权污染。
+- **关键认知**：上下文优势是"主动积累"的，不是"被动获取"的。secretary 的核心职责不是自己有品味，而是确保每一层的上下文优势被正确地流向每一个决策节点。
+- **smoke 断言**：`quality-scoring.policy.json` 的 `qa_framework` 含 `context_advantage_layers: ["skill_required_context", "project_memory_injection", "soul_boundary_enforcement"]`。
+
+### 12.4 北极星指标（慢循环校准锚点）
+
+- **调研依据**：第三层 QA 是慢循环，慢循环最容易失效的方式是"没有锚点"——每次评估都重新定义"什么重要"，导致跨任务无法对比。Addy Osmani 的 agent 组件模型里把 Memory 列为独立组件，正是为了承载这种跨任务的北极星校准。
+- **当前差距**：第三层 QA 只说"human_gated + cross-task"，但没说人类在 gate 上拿什么锚点做判断。
+- **补强动作**：
+  - **定义**：每个项目在 `projects/<id>/project.json` 新增可选字段 `north_star_metric`（一个字符串，描述该项目"产品是否在正确方向"的单一指标）。
+  - **使用时机**：第三层 QA 触发时（iteration proposal / release event），secretary 必须在评估报告里回答"本次迭代是否推进了 north_star_metric"，并附量化证据或定性判断。
+  - **缺失降级**：若项目未声明 north_star_metric，secretary 在第三层 QA 报告里标记 `north_star_missing: true` 并提示人类补充，但不阻塞流程——北极星是校准工具，不是审批门槛。
+- **不要过度**：北极星指标不是 KPI，不需要可量化到小数点后两位；它是"人类判断产品方向"的辅助锚点，防止 agent 团队陷入"做事正确但方向错误"的局部最优。
+
+### 12.5 最小样本量门槛（防止小样本下慢循环失效）
+
+- **调研依据**：第三层 QA 的本质是统计判断——"这个模式是不是系统性问题"。单次 run 的反馈不足以支撑统计显著性；如果一次失败就触发慢循环调整，会导致产品方向被噪声驱动。
+- **当前差距**：第三层 QA 没有声明最小样本量，理论上一次失败就可能触发方向调整。
+- **补强动作**：
+  - **默认门槛**：第三层 QA 的方向性调整（改 north_star、改产品定位、砍功能）需要最小样本量 = max(3 次 run, 1 个完整迭代周期)；低于门槛时，慢循环 QA 只记录不调整。
+  - **例外**：涉及安全 / 合规 / 品牌一致性的硬约束违反，不受最小样本量约束，单次即触发（这类是第一层 QA 的硬失败上浮，不是慢循环判断）。
+  - **记录方式**：secretary 在第三层 QA 报告里附 `sample_size` 和 `sample_size_sufficient: bool`；不足时报告标注 `advisory_only: true`。
+- **smoke 断言**：`quality-scoring.policy.json` 的 `debiasing` 含 `minimum_sample_size: { default: 3, hard_constraint_exceptions: ["safety", "compliance", "brand_consistency"] }`。
+
+### 12.6 Comprehension Debt 防御（强制人读 diff 写总结）
+
+- **调研依据**：Addy Osmani 在 *The Real Problem with AI Coding* 里提出"Comprehension Debt"——人类对 agent 产出失去理解，只看"测试通过"就 approve，长期累积后代码库变成人类无法维护的遗产。
+- **当前差距**：`judgment.policy.json` 的 human_gated 只要求人类做 approve/reject 决策，没要求人类证明自己理解了 diff。
+- **补强动作**：
+  - **强制总结**：human_gated 阶段，人类必须阅读 diff 并写一段 ≥ 30 字的"diff 理解总结"才能 approve；reject 不要求总结。
+  - **secretary 辅助**：secretary 在 handoff 时附上 `diff_summary`（机器生成的 diff 摘要），但人类的总结必须独立撰写，不能复制 diff_summary。
+  - **审计字段**：`judgment.policy.json` 的 judgment_case 新增 `human_comprehension_summary` 字段；approve 决策缺少该字段时，judgment-decision 命令拒绝执行。
+  - **smoke 断言**：`quality-scoring.policy.json` 的 delivery role_gate 含 `comprehension_debt_check` rubric。
+- **不要过度**：这层只防"rubber-stamp approval"，不防"恶意 approve"——后者由审计日志和角色权限负责。
+
+### 12.7 强制中层审查节奏（防止 agent 团队空转）
+
+- **调研依据**：第二层 QA（产品品味）若只在 evaluate 阶段触发，agent 团队可能在错误方向上空转 30 分钟才被发现；吴恩达第二层 Loop 的核心是"从业者从 QA 转向 PM"，PM 的价值在于事中价值评分，不是事后验收。
+- **当前差距**：第二层 QA 绑定在 evaluate stage，没有时间维度上的强制触发。
+- **补强动作**：
+  - **默认节奏**：第二层 QA 的 value_validation + scope_alignment + anti_slop_check 三项，每 30 分钟（短任务）或每 2 小时（长任务）强制触发一次中层审查，无论 run 是否走到 evaluate。
+  - **实现方式**：controller 在 loop 循环里维护 `last_midlayer_review_ts`；若 `now - last_midlayer_review_ts >= cadence`，在当前 stage 完成后插入一次 midlayer_review 子流程。
+  - **降级**：若 cadence 未配置，默认 30 分钟；若 run 总时长 < cadence，不触发中层审查（短任务无需中途审查）。
+  - **smoke 断言**：`coordination.policy.json` 含 `midlayer_review_cadence: { short_task: "30m", long_task: "2h", default: "30m" }`。
+- **不要过度**：中层审查是"早返机制"，不是"审批门槛"——审查发现问题时触发 replan，不触发 wait_human（除非硬约束违反）。
+
+### 12.8 推荐但未集成的工具（按需安装）
+
+以下工具经调研确认有价值，但需要额外集成代码或运行时依赖，未在本版直接安装，列出供后续按需集成：
+
+| 工具 | 来源 | 用途 | 安装命令 | 集成门槛 |
+|---|---|---|---|---|
+| ragas | `explodinggradients/ragas` | RAG / Knowledge base 健康监测（faithfulness / answer relevancy / context precision） | `pip install ragas` | 需要写 ragas 适配层 + 评估数据集 |
+| radon | `rubik/radon` | 代码复杂度 / 技术债量化（McCabe / Halstead / MI） | `pip install radon` | 需要决定扫描范围 + 阈值策略 |
+| midscene | `web-infra-dev/midscene` | 多模态 AI 自动化测试（视觉断言 / 自然语言操作） | `npm install @midscene/web` | 需要写 E2E 用例 + 接入 Playwright |
+
+**集成原则**：上述工具不是"装上就用"，需要写适配代码；本版先在 QA 框架里登记，待对应场景（RAG 监控 / 代码债 / 视觉测试）成为瓶颈时再集成，避免预先引入未使用的依赖。
+
+### 12.9 本版补强小结
+
+| 补强项 | 落实位置 | 类型 |
+|---|---|---|
+| Maker-Checker 物理隔离 | `quality-scoring.policy.json` debiasing + `coordination.policy.json` debate_council | 硬约束 |
+| 反 AI Slop 检查 | `quality-scoring.policy.json` design role_gate + `skills/_imported/taste-skill/` | 工具集成 + rubric |
+| 上下文优势三层显性化 | `quality-scoring.policy.json` qa_framework + SKILL.md / project_memory / SOUL.md | 叙事 + 工程化 |
+| 北极星指标 | `projects/<id>/project.json` north_star_metric + 第三层 QA 报告 | 软约束 |
+| 最小样本量门槛 | `quality-scoring.policy.json` debiasing.minimum_sample_size | 硬约束 |
+| Comprehension Debt 防御 | `quality-scoring.policy.json` delivery role_gate + `judgment.policy.json` | 硬约束 |
+| 强制中层审查节奏 | `coordination.policy.json` midlayer_review_cadence | 软约束 |
+
+**核心认知更新**：v1.0 的三层 QA 是"按阶段分工"，v1.2 补强的是"按失效模式防御"——Maker-Checker 防同频偏差、反 slop 防模板化、上下文优势防品味流失、北极星防方向漂移、最小样本量防噪声驱动、Comprehension Debt 防人类失能、中层审查防空转。两层防御叠加，QA 框架从"流程正确"升级为"失效模式覆盖"。
