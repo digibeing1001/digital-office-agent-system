@@ -273,6 +273,7 @@
 | **P0 必备** | mdnice | 排版师 | 🌐 在线版可用 | https://mdnice.com 多平台排版 |
 | **P0 必备** | DailyHotApi | 选题官 | 🔌 API 接入 | 40+ 平台热榜，统一路由调用 |
 | **P0 必备** | newsnow | 选题官 | 📚 方法论参考 | MCP server 接入思路 |
+| **P0 必备** | taste-skill | 风格官 / 排版师 / 审查员 | 📚 引用状态（referenced） | Anti-AI Slop 14 子技能，视觉层去 AI 味，与文本层 humanize-chinese-writing 互补 |
 | **P1 强烈推荐** | CrewAI | 秘书 | 📚 方法论参考 | Role/Task/Crew 抽象 |
 | **P1 强烈推荐** | MetaGPT | 秘书/大纲师 | 📚 方法论参考 | SOP 驱动 + 结构化交接 |
 | **P1 强烈推荐** | STORM | 研究员/大纲师 | 📚 方法论参考 | 多视角提问 + 分节撰写 |
@@ -318,4 +319,51 @@ tools/
 
 ---
 
-当前版本：v2.2（含 20+ 项外部技能，1 项已下载本地，9 项方法论提炼完成，新增 §十 QA 框架承载章节登记 DeepEval/StyleLLM/Promptfoo 三项方法论参考，对应 qa-framework.md v1.1 的 13 个方法论吸收）
+## 附录：taste-skill 接入说明
+
+> 来源：main 分支 `skills/_imported/taste-skill/`（cross-learning 2026-07）。
+> 定位：Anti-AI Slop（反 AI 糟粕）技能族，14 个子技能覆盖前端设计品味 / 输出风格 / 图像生成三条线。
+> 与本团队去 AI 味策略的关系：本团队已有的 humanize-chinese-writing（中文去 AI 味）+ humanizer 33 模式（英文参考）聚焦「文本层去 AI 味」；taste-skill 聚焦「视觉与产品层去 AI 味」，两者互补，不重叠。
+
+### taste-skill 14 个子技能概览
+
+**前端设计品味线（10 个）**：
+
+| 子技能 | 用途 | 承载角色 |
+|---|---|---|
+| design-taste-frontend v2 | 前端设计品味基准 | 风格官 / 排版师（参考） |
+| gpt-taste | 通用设计品味校准 | 风格官（参考） |
+| image-to-code | 设计稿转代码 | 排版师（参考） |
+| redesign | 重新设计 / 视觉重构 | 排版师（参考） |
+| soft-skill | 柔和风格调优 | 风格官（参考） |
+| output-skill | 输出风格控制 | 风格官（参考） |
+| minimalist-skill | 极简主义风格 | 风格官（参考） |
+| brutalist-skill | 粗野主义风格 | 风格官（参考） |
+| stitch-skill | 多素材缝合 | 排版师（参考） |
+| taste-skill-v1 | 基础品味技能 | 风格官（参考） |
+
+**图像生成线（3 个）**：
+
+| 子技能 | 用途 | 承载角色 |
+|---|---|---|
+| imagegen-frontend-web | Web 端图像生成 | 排版师（参考） |
+| imagegen-frontend-mobile | 移动端图像生成 | 排版师（参考） |
+| brandkit | 品牌素材包 | 风格官（参考） |
+
+**设置拨盘（Settings Dials）**：
+
+| 拨盘 | 含义 | 建议默认 |
+|---|---|---|
+| `DESIGN_VARIANCE` | 设计变化度 | 中（避免过度花哨） |
+| `MOTION_INTENSITY` | 动效强度 | 低（公众号以静态为主） |
+| `VISUAL_DENSITY` | 视觉密度 | 中（平衡信息量与留白） |
+
+### 接入方式
+
+- **引用状态（referenced）**：本团队是 Markdown-only 架构，不直接下载 taste-skill 代码；登记为「方法论参考」，由风格官 / 排版师在需要视觉决策时读取其 README 吸收设计原则。
+- **触发场景**：排版师做多平台排版（公众号头图 / 知乎配图）时参考 imagegen 系列的视觉风格指引；风格官做品牌一致性校准时参考 brandkit。
+- **边界**：taste-skill 不替代本团队的文本去 AI 味核心 humanize-chinese-writing；两者职责正交，文本层归审查员，视觉层归风格官 / 排版师。
+
+---
+
+当前版本：v2.3（v2.2 基础上新增 taste-skill 条目【P0 必备 · 引用状态】+ 附录「taste-skill 接入说明」含 14 子技能概览 + 3 设置拨盘，吸收自 main 分支 skills/_imported/taste-skill/，cross-learning 2026-07）
