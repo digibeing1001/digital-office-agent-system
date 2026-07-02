@@ -97,5 +97,9 @@ else
 fi
 
 echo ""
-echo "=== Status: OK ==="
+if [ "$missing" -gt 0 ]; then
+  echo "=== Status: DEGRADED ($missing missing) ==="
+else
+  echo "=== Status: OK ==="
+fi
 # Absorbed from research-team branch loop-status.py · 2026-07 cross-learning

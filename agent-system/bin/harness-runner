@@ -147,20 +147,27 @@ def json_path(data: Any, path: list[str]) -> Any:
 
 
 def json_path_gate(gate: dict[str, Any]) -> dict[str, Any]:
-    path = resolve_path(str(gate.get("path", "")), cwd_for(gate))
-    data = read_json(path)
-    value = json_path(data, [str(item) for item in gate.get("json_path", [])])
-    if "equals" in gate:
-        ok = value == gate["equals"]
-    elif "contains" in gate:
-        ok = gate["contains"] in value
-    else:
-        ok = bool(value)
-    return {
-        "status": "success" if ok else "error",
-        "summary": f"json path passed: {gate.get('json_path')}" if ok else f"json path failed: {gate.get('json_path')}",
-        "value": value,
-    }
+    try:
+        path = resolve_path(str(gate.get("path", "")), cwd_for(gate))
+        data = read_json(path)
+        value = json_path(data, [str(item) for item in gate.get("json_path", [])])
+        if "equals" in gate:
+            ok = value == gate["equals"]
+        elif "contains" in gate:
+            ok = gate["contains"] in value
+        else:
+            ok = bool(value)
+        return {
+            "status": "success" if ok else "error",
+            "summary": f"json path passed: {gate.get('json_path')}" if ok else f"json path failed: {gate.get('json_path')}",
+            "value": value,
+        }
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+        return {
+            "status": "error",
+            "summary": f"json_path_gate failed: {exc}",
+            "value": None,
+        }
 
 
 def iter_text_files(paths: list[str], base: Path) -> list[Path]:

@@ -30,14 +30,14 @@
   ],
   "hard_block_actions": [
     "external_send",
-    "publish",
+    "public_publish",
     "deploy",
     "delete",
     "overwrite",
     "payment",
     "data_export",
-    "memory_promotion",
-    "company_knowledge_promotion",
+    "long_term_memory",
+    "company_knowledge",
     "regulated_advice",
     "final_delivery"
   ],
@@ -75,7 +75,7 @@
       "required_human_role": "project_manager",
       "blocked_actions": [
         "external_send",
-        "publish",
+        "public_publish",
         "deploy",
         "delete",
         "overwrite",
@@ -131,7 +131,7 @@
       "required_human_role": "project_manager",
       "blocked_actions": [
         "final_delivery",
-        "knowledge_promotion"
+        "company_knowledge"
       ],
       "keywords": [
         "no source",
@@ -151,8 +151,8 @@
       "risk_score": 0.82,
       "required_human_role": "project_manager",
       "blocked_actions": [
-        "memory_promotion",
-        "company_knowledge_promotion"
+        "long_term_memory",
+        "company_knowledge"
       ],
       "keywords": [
         "save to memory",

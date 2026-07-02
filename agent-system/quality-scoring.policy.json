@@ -250,16 +250,46 @@
         "missing_artifact",
         "handoff_blocked"
       ]
+    },
+    "legal": {
+      "rubric_items": [
+        {
+          "id": "source_verification",
+          "weight": 0.30,
+          "hard_disqualifier": true
+        },
+        {
+          "id": "jurisdiction_accuracy",
+          "weight": 0.25,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "risk_classification",
+          "weight": 0.20,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "human_review_gate_compliance",
+          "weight": 0.25,
+          "hard_disqualifier": true
+        }
+      ],
+      "hard_disqualifiers": [
+        "fabricated_legal_citation",
+        "unauthorized_legal_advice",
+        "jurisdiction_mismatch"
+      ]
     }
   },
   "composite_score": {
     "mode": "weighted_average",
     "default_weights": {
-      "product": 0.2,
-      "design": 0.2,
-      "implementation": 0.3,
-      "writing": 0.15,
-      "delivery": 0.15
+      "product": 0.17,
+      "design": 0.17,
+      "implementation": 0.26,
+      "writing": 0.13,
+      "delivery": 0.13,
+      "legal": 0.14
     }
   },
   "judge_agent": {

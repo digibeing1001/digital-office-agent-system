@@ -388,7 +388,7 @@
         "priority": 90
       },
       "skills": [
-        "_pm-system/SKILL-INDEX.md",
+        "agent-team-staffing/SKILL.md",
         "pm-clarity",
         "product-vision",
         "opportunity-solution-tree",
@@ -775,23 +775,23 @@
             "weight": 8
           },
           {
-            "term": "??",
+            "term": "帮我安排",
             "weight": 6
           },
           {
-            "term": "???",
+            "term": "什么意思",
             "weight": 8
           },
           {
-            "term": "??",
+            "term": "怎么办",
             "weight": 6
           },
           {
-            "term": "??",
+            "term": "不确定",
             "weight": 5
           },
           {
-            "term": "??",
+            "term": "什么情况",
             "weight": 3
           }
         ],
@@ -998,7 +998,7 @@
         "keywords": [
           {
             "term": "write",
-            "weight": 2
+            "weight": 5
           },
           {
             "term": "article",
@@ -1989,7 +1989,7 @@
             "weight": 8
           },
           {
-            "term": "幻灯",
+            "term": "幻灯片",
             "weight": 6
           },
           {
@@ -1997,15 +1997,15 @@
             "weight": 8
           },
           {
-            "term": "幻灯",
+            "term": "做个PPT",
             "weight": 6
           },
           {
-            "term": "幻灯",
+            "term": "PPT模板",
             "weight": 5
           },
           {
-            "term": "幻灯",
+            "term": "制作幻灯",
             "weight": 3
           }
         ]

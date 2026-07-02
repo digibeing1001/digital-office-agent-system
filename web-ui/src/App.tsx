@@ -57,7 +57,10 @@ export default function App() {
     createAgent: (input: CreateAgentInput) => mutate('正在创建数字员工…', () => api.createAgent(input)),
     setAgentStatus: (agentId: string, status: AgentStatus, reason?: string) =>
       mutate('正在更新数字员工…', () => api.setAgentStatus(agentId, status, reason)),
-    deleteAgent: (agentId: string) => mutate('正在删除数字员工…', () => api.deleteAgent(agentId)),
+    deleteAgent: (agentId: string) => {
+      if (!window.confirm('确定删除这个数字员工吗？此操作不可撤销。')) return Promise.reject(new Error('cancelled'))
+      return mutate('正在删除数字员工…', () => api.deleteAgent(agentId, true))
+    },
     decideApproval: (approvalId: string, decision: 'approve' | 'reject') =>
       mutate('正在记录决定…', () => api.decideApproval(approvalId, decision)),
     decideJudgment: (caseId: string, decision: string, workflowRunId?: string, message?: string) =>
@@ -78,6 +81,7 @@ export default function App() {
   }
 
   return <>
+    {loading && <div className="global-message busy">正在连接数字办公室…</div>}
     {error && <div className="global-message error"><span>{error}</span><button onClick={() => void refresh()}>重新连接</button></div>}
     {busy && <div className="global-message busy">{busy}</div>}
     {isAdmin ? <AdminApp actions={actions} state={state} /> : <UserApp actions={actions} state={state} />}

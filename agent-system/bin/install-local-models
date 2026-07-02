@@ -5,10 +5,26 @@ PACK="${1:-base-ocr}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VENV_PY="$ROOT_DIR/.venv/bin/python"
+VENV_PY_WIN="$ROOT_DIR/.venv/Scripts/python.exe"
+
+detect_platform() {
+  case "$(uname -s 2>/dev/null || echo Windows)" in
+    Linux*)  echo "linux" ;;
+    Darwin*) echo "macos" ;;
+    MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
+    *)       echo "unknown" ;;
+  esac
+}
+PLATFORM="$(detect_platform)"
+
+# Use Windows venv python if available
+if [ "$PLATFORM" = "windows" ] && [ -x "$VENV_PY_WIN" ]; then
+  VENV_PY="$VENV_PY_WIN"
+fi
 
 ensure_venv() {
   if [ ! -x "$VENV_PY" ]; then
-    python3 -m venv "$ROOT_DIR/.venv"
+    python3 -m venv "$ROOT_DIR/.venv" 2>/dev/null || python -m venv "$ROOT_DIR/.venv"
     "$VENV_PY" -m pip install -U pip
   fi
 }
@@ -21,8 +37,28 @@ pip_install() {
 case "$PACK" in
   base-ocr|--pack=base-ocr)
     echo "Installing base local OCR binaries: tesseract + English/Chinese language packs + poppler."
-    sudo apt-get update
-    sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim poppler-utils
+    case "$PLATFORM" in
+      linux)
+        sudo apt-get update
+        sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim poppler-utils
+        ;;
+      macos)
+        if command -v brew >/dev/null 2>&1; then
+          brew install tesseract tesseract-lang poppler
+        else
+          echo "Homebrew not found. Please install Homebrew first: https://brew.sh" >&2
+          exit 1
+        fi
+        ;;
+      windows)
+        echo "On Windows, please install Tesseract and poppler manually or via Chocolatey:" >&2
+        echo "  choco install tesseract poppler" >&2
+        ;;
+      *)
+        echo "Unsupported platform: $PLATFORM" >&2
+        exit 1
+        ;;
+    esac
     ;;
   enhanced-ocr|--pack=enhanced-ocr)
     echo "Installing enhanced OCR Python packages. This may download local model weights on first use."

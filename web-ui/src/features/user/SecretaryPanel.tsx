@@ -134,6 +134,9 @@ export function SecretaryPanel({ actions, state, fixedProject, compact = false }
       }
       setMessage('')
       if (mode !== 'new') setProjectName('')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '操作失败，请重试'
+      setLocalMessages((items) => [...items, { from: 'secretary', text: `抱歉，遇到了一个问题：${msg}。请稍后再试或联系管理员。` }])
     } finally {
       setSubmitting(false)
       setThinking(false)

@@ -16,6 +16,14 @@ def read_json(path: Path) -> dict:
         return json.load(handle)
 
 
+def _safe_task_id(path: Path) -> str:
+    """Safely extract task_id from a harness task JSON, falling back to file stem."""
+    try:
+        return str(read_json(path).get("task_id", path.stem))
+    except (json.JSONDecodeError, FileNotFoundError):
+        return path.stem
+
+
 def require(condition: bool, errors: list[str], message: str) -> None:
     if not condition:
         errors.append(message)
@@ -150,7 +158,7 @@ def main() -> int:
     require(host_injection.get("suite_rules_authoritative_after_install") is True, errors, "host injection policy must make suite rules authoritative after install")
     if coordination_policy_path.exists():
         coordination = read_json(coordination_policy_path)
-        for mode in ("single_agent", "secretary_centralized", "sequential_specialist_chain", "parallel_expert_dag", "human_gated"):
+        for mode in ("single_agent", "secretary_centralized", "sequential_specialist_chain", "parallel_expert_dag", "human_gated", "debate_council"):
             require(mode in coordination.get("modes", {}), errors, f"coordination policy missing mode: {mode}")
         require("Every production run writes a hash-chained run ledger." in coordination.get("drift_controls", []), errors, "coordination policy missing ledger drift control")
     require(
@@ -183,7 +191,7 @@ def main() -> int:
         "root": str(base),
         "harness_config": harness_path.exists(),
         "harness_runner": runner_path.exists(),
-        "harness_tasks": [read_json(path).get("task_id", path.stem) for path in tasks],
+        "harness_tasks": [_safe_task_id(path) for path in tasks],
         "digital_employee_model": digital_employees_path.exists(),
         "workflow_packs": workflow_packs_path.exists(),
         "context_envelope_schema": context_envelope_path.exists(),

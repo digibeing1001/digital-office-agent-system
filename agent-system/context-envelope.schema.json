@@ -30,6 +30,7 @@
     "risk_flags",
     "permissions",
     "context_budget",
+    "handoff_id",
     "handoff_reason",
     "state_hash"
   ],

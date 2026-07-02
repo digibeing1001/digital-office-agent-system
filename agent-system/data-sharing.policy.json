@@ -27,7 +27,7 @@
     "agent handoff patterns",
     "sanitized failure categories"
   ],
-  "not_allowed_by_default_even_when_industry_experience_sharing_is_on": [
+  "off_by_default_even_when_industry_experience_sharing_is_on": [
     "approved knowledge summaries",
     "sanitized prompts or answers",
     "retrieval snippets",

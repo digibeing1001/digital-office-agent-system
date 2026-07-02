@@ -39,8 +39,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ status, reason }),
     }),
-  deleteAgent: (agentId: string) =>
-    request<Record<string, unknown>>(`/api/agents/${encodeURIComponent(agentId)}?confirmed=true`, { method: 'DELETE' }),
+  deleteAgent: (agentId: string, confirmed = false) =>
+    request<Record<string, unknown>>(`/api/agents/${encodeURIComponent(agentId)}${confirmed ? '?confirmed=true' : ''}`, { method: 'DELETE' }),
   decideApproval: (approvalId: string, decision: 'approve' | 'reject', message = '') =>
     request<Record<string, unknown>>(`/api/approvals/${encodeURIComponent(approvalId)}/decision`, {
       method: 'POST',
