@@ -29,95 +29,170 @@
       "id": "hallucinated_citation",
       "name": "幻觉引用阻断",
       "stage": "evaluate",
-      "applies_to_roles": ["academic-writer", "literature-researcher", "pi"],
+      "applies_to_roles": [
+        "academic-writer",
+        "literature-researcher",
+        "pi"
+      ],
       "check": "每条引用通过 Semantic Scholar API 验证 existence + 非撤稿",
       "block_on": "任何一条引用无法验证或已撤稿",
       "action": "controller transitions to replan, writer must rewrite with verified citations only",
       "max_rework": 2,
-      "escalation": "连续 2 次触发 → 升级为经验库教训 + human_gate"
+      "escalation": "连续 2 次触发 → 升级为经验库教训 + human_gate",
+      "required_outputs": [
+        "citation_verification_report",
+        "每条引用的✅/⚠️/🔴标注"
+      ],
+      "pass_conditions": "所有引用✅或单一信源⚠️已声明，无🔴"
     },
     {
       "id": "fabricated_method",
       "name": "方法伪造阻断",
       "stage": "evaluate",
-      "applies_to_roles": ["methodologist", "research-engineer"],
+      "applies_to_roles": [
+        "methodologist",
+        "research-engineer"
+      ],
       "check": "方法描述的每个步骤必须可追溯到实验脚本或 baseline 论文",
       "block_on": "方法步骤无对应实现或无文献依据",
       "action": "controller transitions to replan, methodologist must ground every step",
       "max_rework": 2,
-      "escalation": "连续 2 次触发 → 升级为经验库教训 + 降级该 Agent 置信度"
+      "escalation": "连续 2 次触发 → 升级为经验库教训 + 降级该 Agent 置信度",
+      "required_outputs": [
+        "methodology_checklist",
+        "统计方法适用性评估"
+      ],
+      "pass_conditions": "方法论通过统计学家审查"
     },
     {
       "id": "framework_lock_in",
       "name": "框架锁定阻断",
       "stage": "decide",
-      "applies_to_roles": ["pi", "methodologist"],
+      "applies_to_roles": [
+        "pi",
+        "methodologist"
+      ],
       "check": "PI 提出的框架不能与近 2 年已发表框架高度雷同（相似度 > 0.8）",
       "block_on": "框架与已有工作相似度 > 0.8 且未声明差异",
       "action": "controller transitions to replan, PI must differentiate or cite prior work",
       "max_rework": 2,
-      "escalation": "连续 2 次触发 → human_gate 让用户决定方向"
+      "escalation": "连续 2 次触发 → human_gate 让用户决定方向",
+      "required_outputs": [
+        "pre_registration_ref",
+        "多重比较校正记录"
+      ],
+      "pass_conditions": "假设预注册或事后分析已声明"
     },
     {
       "id": "data_fabrication",
       "name": "数据伪造阻断",
       "stage": "evaluate",
-      "applies_to_roles": ["data-analyst", "research-engineer"],
+      "applies_to_roles": [
+        "data-analyst",
+        "research-engineer"
+      ],
       "check": "所有报告的数字必须可追溯到原始数据文件 + 计算脚本",
       "block_on": "数字无法复现或与原始数据不一致",
       "action": "controller transitions to fail (data fabrication is non-negotiable)",
       "max_rework": 0,
-      "escalation": "立即 human_gate + 伦理员介入"
+      "escalation": "立即 human_gate + 伦理员介入",
+      "required_outputs": [
+        "data_provenance_log",
+        "原始数据哈希"
+      ],
+      "pass_conditions": "数据来源可追溯，无篡改痕迹（此 gate max_rework=0，直接 fail）"
     },
     {
       "id": "claim_overgeneralization",
       "name": "过度泛化阻断",
       "stage": "evaluate",
-      "applies_to_roles": ["academic-writer", "pi"],
+      "applies_to_roles": [
+        "academic-writer",
+        "pi"
+      ],
       "check": "每个 claim 的限定词必须与实验范围匹配（小样本不能下普遍结论）",
       "block_on": "claim 范围超出实验覆盖范围",
       "action": "controller transitions to replan, writer must scope claims to evidence",
       "max_rework": 2,
-      "escalation": "连续 2 次触发 → 质检员深度审查"
+      "escalation": "连续 2 次触发 → 质检员深度审查",
+      "required_outputs": [
+        "coi_disclosure"
+      ],
+      "pass_conditions": "利益冲突已披露"
     },
     {
       "id": "retracted_source_dependency",
       "name": "撤稿来源依赖阻断",
       "stage": "evaluate",
-      "applies_to_roles": ["literature-researcher", "pi", "academic-writer"],
+      "applies_to_roles": [
+        "literature-researcher",
+        "pi",
+        "academic-writer"
+      ],
       "check": "核心论点不能依赖已撤稿论文（通过 PaperQA2 / Crossref 撤稿标记检查）",
       "block_on": "核心论点依赖撤稿论文",
       "action": "controller transitions to replan, must find alternative evidence",
       "max_rework": 2,
-      "escalation": "连续 2 次触发 → human_gate"
+      "escalation": "连续 2 次触发 → human_gate",
+      "required_outputs": [
+        "retraction_check_report",
+        "核心论点依赖性评估"
+      ],
+      "pass_conditions": "核心论点不依赖撤稿论文"
     },
     {
       "id": "reproducibility_gap",
       "name": "可复现性缺口阻断",
       "stage": "evaluate",
-      "applies_to_roles": ["research-engineer", "methodologist"],
+      "applies_to_roles": [
+        "research-engineer",
+        "methodologist"
+      ],
       "check": "实验结果必须附带可复现包（代码 + 数据引用 + 配置 + 种子 + 环境）",
       "block_on": "可复现包缺失任何必要组件",
       "action": "controller transitions to replan, engineer must complete reproducibility package",
       "max_rework": 2,
-      "escalation": "连续 2 次触发 → 降级为'初步结果'而非'已验证结论'"
+      "escalation": "连续 2 次触发 → 降级为'初步结果'而非'已验证结论'",
+      "required_outputs": [
+        "reproducibility_checklist",
+        "代码/数据可用性声明"
+      ],
+      "pass_conditions": "代码和数据可用或已声明限制"
     }
   ],
   "scoring_trajectory_tracking": {
     "description": "跟踪每次评分的历史轨迹，用于趋势分析和漂移检测",
     "storage": "agent-system/runs/<run_id>/scoring_trajectory.jsonl",
-    "fields": ["cycle", "node", "agent_id", "score", "verdict", "failure_class", "rubric_hits", "gate_mode_triggered", "timestamp"],
+    "fields": [
+      "cycle",
+      "node",
+      "agent_id",
+      "score",
+      "verdict",
+      "failure_class",
+      "rubric_hits",
+      "gate_mode_triggered",
+      "timestamp"
+    ],
     "analysis": {
       "trend": "线性回归斜率，正数表示改善，负数表示恶化",
       "volatility": "最近 3 次评分的标准差",
       "stagnation": "连续 N 次评分变化 < 0.02 时标记停滞",
       "regression": "评分从 pass 降到 fail 时标记回退"
     },
-    "gui_display": ["score_trend_line", "gate_mode_frequency", "agent_score_heatmap"]
+    "gui_display": [
+      "score_trend_line",
+      "gate_mode_frequency",
+      "agent_score_heatmap"
+    ]
   },
   "cross_model_verification": {
     "description": "关键产出用不同模型交叉验证，防止单模型偏差",
-    "trigger_when": ["final_delivery", "integrity_gate_triggered", "human_gate_requested"],
+    "trigger_when": [
+      "final_delivery",
+      "integrity_gate_triggered",
+      "human_gate_requested"
+    ],
     "strategy": {
       "primary_model": "执行用模型",
       "judge_model": "不同家族模型（如执行用 Claude，评审用 GPT）",

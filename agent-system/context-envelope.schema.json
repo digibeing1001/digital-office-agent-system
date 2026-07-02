@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://digital-office.local/schemas/context-envelope.schema.json",
-  "title": "Digital Office Context Envelope",
-  "description": "A compact, versioned handoff contract. Large evidence and generated outputs stay in artifact storage and travel by reference.",
+  "title": "Digital Office Context Envelope (research-team)",
+  "description": "adapted from main branch context-envelope.schema.json v2.0.0 for research-team (cross-learning 2026-07). A compact, versioned handoff contract. Large evidence and generated outputs stay in artifact storage and travel by reference.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -38,7 +38,7 @@
       "const": "digital-office-context-envelope"
     },
     "version": {
-      "const": "2.0.0"
+      "const": "2.0.1-research"
     },
     "context_id": {
       "type": "string",
@@ -222,6 +222,28 @@
     "state_hash": {
       "type": "string",
       "minLength": 12
+    },
+    "research_specific": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "research-team 特化字段：科研场景独有的上下文信息",
+      "properties": {
+        "literature_refs": {
+          "type": "array",
+          "description": "本工作包涉及的文献引用列表（DOI / arxiv ID / Semantic Scholar paper ID）",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hypothesis_lock": {
+          "type": "string",
+          "description": "假设锁：一句话复述当前研究的核心假设与预期结论，全文对齐"
+        },
+        "experiment_log_ref": {
+          "type": "string",
+          "description": "实验日志引用：指向 experiment_log 的 artifact ref_id"
+        }
+      }
     }
   },
   "$defs": {
