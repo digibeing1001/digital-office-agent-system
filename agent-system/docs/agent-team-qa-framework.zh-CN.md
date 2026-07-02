@@ -462,3 +462,30 @@ QA 框架本身需要回归保护：
 | 强制中层审查节奏 | `coordination.policy.json` midlayer_review_cadence | 软约束 |
 
 **核心认知更新**：v1.0 的三层 QA 是"按阶段分工"，v1.2 补强的是"按失效模式防御"——Maker-Checker 防同频偏差、反 slop 防模板化、上下文优势防品味流失、北极星防方向漂移、最小样本量防噪声驱动、Comprehension Debt 防人类失能、中层审查防空转。两层防御叠加，QA 框架从"流程正确"升级为"失效模式覆盖"。
+
+
+
+---
+
+## 附录 C：13 方法论工程化落地参考
+
+> 本附录吸收自 writer-team 分支 `qa-framework.md` v1.1 的 13 个方法论吸收，按 main 分支（数字办公系统）的场景适配，标注每条方法论在 main 的具体落地位置（policy 文件 / 角色 / Gate）。
+> 原表见 writer-team 分支 `workflow/qa-framework.md` v1.1。
+
+| 方法论 | 原方法核心思想 | main 分支场景适配 | 落地位置 |
+|---|---|---|---|
+| LLM-as-judge 三类偏见消除 | LLM 作为评判者存在位置偏见、冗长偏见、自我偏好偏见；需交换顺序、引入长度惩罚、引入异质审查者 | maker 与 checker 强制不同 agent_id；evaluate 阶段 checker 来自不同模型族；act 阶段 self-check 仅作早返，不作通过依据 | `quality-scoring.policy.json` → `debiasing.maker_checker_isolation`；`coordination.policy.json` → `debate_council.topology` |
+| FActScore 原子化事实核查 | 把长文本拆为原子事实序列，逐条验证是否被可靠知识源支持，计算支持率 | writing role_gate 的 `claims_supported` 维度按原子命题逐条标注支持状态；第一层 QA 在事实类声明上做工具核查 | `quality-scoring.policy.json` → `role_gates.writing.claims_supported`；第一层 QA · Gate A1 素材确认 |
+| CRITIC 工具增强审查 | LLM 输出后调用外部工具（搜索、代码解释器）评估特定方面，不靠模型脑补 | 事实类声明走外验审查（搜索/知识库核查），逻辑/数据类走计算验证；与 `guardrails.registry.json` 的输出护栏协同 | 第一层 QA · 外验审查；`guardrails.registry.json` → `output_guardrails.hallucination_spot_check` |
+| Evals 可演进 | 反复踩坑的场景固化为 evals；改 prompt 时跑评估矩阵防回归 | 每次 eval 失效即更新用例；release-critical 行为有 deterministic eval case；系统变更后跑 smoke.sh | `agent-system/evals/`（含 `runtime-replay-and-multilingual.json`）；`harness/production-gates.json`；`tests/smoke.sh` |
+| MT-Bench 多轮体验衰减 | 单轮评分不可靠，多轮中第二/三轮能力衰减才是真问题 | PM-as-QA 的 `value_validation` 做多段式体验扫描，不只看首尾；中层审查节奏防止中段空转 | `quality-scoring.policy.json` → `role_gates.product.value_validation`；`coordination.policy.json` → `midlayer_review_cadence` |
+| HHH 三维价值框架 | Helpful + Honest + Harmless，任一维度 0 分整体归零 | product role_gate 的价值验证对应 Helpful；writing claims_supported 对应 Honest；guardrails 输出护栏对应 Harmless | `quality-scoring.policy.json` → `role_gates.product`；`guardrails.registry.json` → `output_guardrails` |
+| 多 Agent 辩论收敛 | 多个 LLM 实例就同一问题辩论，收敛到共识，降低单一评判者偏见 | debate_council 拓扑：≥2 reviewer + 可选 judge；高风险双通过，中风险多数+judge；异议必记录 | `coordination.policy.json` → `modes.debate_council` |
+| 个性化评判 | 通用 benchmark 有局限，个性化场景需定制评判标准 | stage_thresholds 差异化（context=4 宽松，evaluate=6 严格）；secretary 按项目 north_star 与用户意图动态加权 | `quality-scoring.policy.json` → `stage_thresholds`；`secretary.capabilities.json` → 上下文中枢 |
+| Reflexion 情景记忆 | Agent 失败后生成反思文本存入记忆，后续任务复用，避免重复踩坑 | 迭代提案与 run ledger 留痕；project_memory 累积跨任务认知；踩坑反思写入项目记忆供后续 run 启动读取 | `agent-system/iterations/`；`projects/<id>/project.json` → `project_memory`；`runs/` ledger |
+| Self-Rewarding 自我进化 | 模型在生成任务中同时训练评判能力，评判随生成共同提升 | secretary 作为 QA 协调者收集多角色评分并识别跨角色不一致；judge_agent 输出含 strengths/defects/fix_suggestion 的自评结构 | `quality-scoring.policy.json` → `judge_agent`；secretary · evaluate 节点 QA 协调 |
+| StyleLLM 风格指纹 | 把风格从主观感受量化为可计算指纹（句长/虚词/标点/语义模式） | writing role_gate 的 `voice_consistent` 维度做风格一致性量化；品牌一致性 QA 守护语言品牌 | `quality-scoring.policy.json` → `role_gates.writing.voice_consistent`；第三层 QA · 品牌一致性 |
+| ExpertPrompting 身份条件生成 | 生成前注入专家身份，显著提升输出质量 | 角色 SOUL.md 定义身份边界；host-injection 默认注入 secretary 角色；suite rules 安装后成为权威 | `rules/agents/` → SOUL.md；`host-injection.policy.json` → `default_agent_role: secretary` |
+| 认知投降检测 | 逐步把判断权让渡给 AI 会失去独立判断能力；需检测人类是否 rubber-stamp | human_gated 阶段强制人读 diff 写 ≥30 字 Comprehension Debt 总结；judgment 审计字段防 rubber-stamp approval | `judgment.policy.json` → human_gated；`quality-scoring.policy.json` → `role_gates.delivery.comprehension_debt_check` |
+
+以上 13 方法论落地表吸收自 writer-team 分支 qa-framework.md v1.1，main 分支按数字办公场景适配。原表见 writer-team 分支。

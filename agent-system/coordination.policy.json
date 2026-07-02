@@ -132,5 +132,7 @@
     "degradation": "if cadence not configured, default 30m; if run total duration < cadence, midlayer review not triggered (short tasks do not need mid-task review)",
     "on_failure": "midlayer review finding triggers replan, not wait_human (unless hard constraint violation)",
     "ref": "Andrew Ng second-layer Loop: practitioner shifts from QA to PM; PM value is in-task value scoring, not post-hoc acceptance"
-  }
+  },
+  "enhancement_version": "2026-07-02",
+  "enhancement_source": "cross-learning"
 }

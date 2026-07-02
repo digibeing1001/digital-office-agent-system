@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+AGENT_SYSTEM="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Pick a python interpreter for JSON parsing
+if command -v python3 >/dev/null 2>&1; then
+  PY="python3"
+elif command -v python >/dev/null 2>&1; then
+  PY="python"
+else
+  PY=""
+fi
+
+echo "=== Run Readiness ==="
+missing=0
+for f in agents.registry.json secretary.capabilities.json workflow-packs.registry.json ai-native-loop.manifest.json; do
+  if [ -f "$AGENT_SYSTEM/$f" ]; then
+    echo "  [OK] $f"
+  else
+    echo "  [MISSING] $f"
+    missing=$((missing + 1))
+  fi
+done
+
+echo ""
+echo "=== Cost Snapshot ==="
+COST_POLICY="$AGENT_SYSTEM/cost-control.policy.json"
+if [ -f "$COST_POLICY" ]; then
+  if [ -n "$PY" ]; then
+    "$PY" -c '
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as h:
+    d = json.load(h)
+print("  cost-control version:", d.get("version", "unknown"))
+budget = d.get("budget", d.get("max_cost_microunits", d.get("rate_limiting", "unknown")))
+print("  budget cap:", json.dumps(budget, ensure_ascii=False))
+' "$COST_POLICY" || echo "  (failed to parse cost-control.policy.json)"
+  else
+    echo "  cost-control policy: present (python unavailable to parse)"
+  fi
+else
+  echo "  cost-control policy: not configured"
+fi
+
+echo ""
+echo "=== Quality Scoring ==="
+QS_POLICY="$AGENT_SYSTEM/quality-scoring.policy.json"
+if [ -f "$QS_POLICY" ]; then
+  if [ -n "$PY" ]; then
+    "$PY" -c '
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as h:
+    d = json.load(h)
+print("  quality-scoring version:", d.get("version", "unknown"))
+scale = d.get("score_scale", {})
+print("  pass_threshold:", scale.get("pass_threshold", "unknown"))
+gates = d.get("role_gates", {})
+if gates:
+    summary = []
+    for name, g in gates.items():
+        items = g.get("rubric_items", [])
+        summary.append(name + "(" + str(len(items)) + " rubrics)")
+    print("  role_gates:", ", ".join(summary))
+else:
+    print("  role_gates: none")
+' "$QS_POLICY" || echo "  (failed to parse quality-scoring.policy.json)"
+  else
+    echo "  quality-scoring policy: present (python unavailable to parse)"
+  fi
+else
+  echo "  quality-scoring policy: not configured"
+fi
+
+echo ""
+echo "=== Integrity Gates ==="
+IG_POLICY="$AGENT_SYSTEM/research-integrity-gates.policy.json"
+if [ -f "$IG_POLICY" ]; then
+  if [ -n "$PY" ]; then
+    "$PY" -c '
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as h:
+    d = json.load(h)
+gates = d.get("gates", [])
+print("  integrity-gates version:", d.get("version", "unknown"))
+if isinstance(gates, list):
+    print("  gates count:", len(gates))
+else:
+    print("  gates count: n/a")
+' "$IG_POLICY" || echo "  (failed to parse research-integrity-gates.policy.json)"
+  else
+    echo "  integrity-gates policy: present (python unavailable to parse)"
+  fi
+else
+  echo "  integrity gates: not configured (main branch)"
+fi
+
+echo ""
+echo "=== Status: OK ==="
+# Absorbed from research-team branch loop-status.py · 2026-07 cross-learning
