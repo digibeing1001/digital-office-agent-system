@@ -21,16 +21,20 @@ REFLEXION_STRATEGIES = {
     "LAST_ATTEMPT": "仅参考上一次尝试的输出，不做显式反思",
     "REFLEXION": "仅参考反思文本，不参考上一次输出",
     "LAST_ATTEMPT_AND_REFLEXION": "同时参考上一次输出和反思文本（推荐）",
+    "ESCALATE_TO_HUMAN": "升级人工决策（超过 3 次反思后仍未通过）",
 }
 
 def select_strategy(failure_class: str, attempt_count: int) -> str:
     """根据失败类型和尝试次数选择策略"""
     if attempt_count == 1:
         return "LAST_ATTEMPT"  # 第一次失败，简单参考
-    elif attempt_count >= 3:
-        return "NONE"  # 超过 3 次，反思无效，升级 human_gate
+    elif attempt_count == 2:
+        return "LAST_ATTEMPT_AND_REFLEXION"  # 第二次失败，反思 + 参考上次输出
+    elif attempt_count == 3:
+        return "REFLEXION"  # 第三次失败，纯反思策略（最后一次自主尝试）
     else:
-        return "LAST_ATTEMPT_AND_REFLEXION"  # 推荐策略
+        # 超过 3 次，升级 human_gate + experience-extraction
+        return "ESCALATE_TO_HUMAN"
 ```
 
 ### 步骤 2:生成反思
@@ -89,6 +93,17 @@ def retrieve_reflections(agent_id: str, task_context: str, top_k: int = 3) -> li
 ```python
 def retry_with_reflection(task_spec: dict, agent_id: str, strategy: str) -> dict:
     """带反思的重试"""
+    # 超过 3 次失败，升级 human_gate
+    if strategy == "ESCALATE_TO_HUMAN":
+        escalate_to_human_gate(
+            agent_id=agent_id,
+            task_id=task_spec["task_id"],
+            reason="连续 3 次反思后仍未通过，需人工决策",
+            reflections=retrieve_reflections(agent_id, task_spec["context"]),
+        )
+        # 同时写入经验库作为项目级教训
+        extract_experience(agent_id, task_spec["task_id"])
+        return {"status": "escalated", "control_decision": "wait_human"}
     reflections = retrieve_reflections(agent_id, task_spec["context"])
     
     # 根据策略构建 prompt

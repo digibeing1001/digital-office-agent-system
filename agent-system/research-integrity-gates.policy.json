@@ -78,10 +78,10 @@
       "max_rework": 2,
       "escalation": "连续 2 次触发 → human_gate 让用户决定方向",
       "required_outputs": [
-        "pre_registration_ref",
-        "多重比较校正记录"
+        "framework_similarity_report",
+        "与已有工作的差异化声明或引用说明"
       ],
-      "pass_conditions": "假设预注册或事后分析已声明"
+      "pass_conditions": "框架相似度 ≤ 0.8 或已明确声明差异并引用先前工作"
     },
     {
       "id": "data_fabrication",
