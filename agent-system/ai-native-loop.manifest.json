@@ -1,0 +1,329 @@
+{
+  "version": "2.1.0",
+  "kind": "digital-office-loop-runtime",
+  "name": "Context, Decide, Act, Evaluate with deterministic control",
+  "description": "Production loop runtime for Digital Office. Four composable work nodes are driven by a deterministic controller and durable state. Reasoning and planning are structured outputs inside Decide; iteration is a controller transition rather than a mandatory content stage.",
+  "architecture": {
+    "work_nodes": [
+      "context",
+      "decide",
+      "act",
+      "evaluate"
+    ],
+    "controller_is_not_a_work_node": true,
+    "legacy_stage_aliases": {
+      "perceive": "context",
+      "reason": "decide",
+      "plan": "decide",
+      "execute": "act",
+      "reflect": "evaluate",
+      "iterate": "evaluate"
+    },
+    "task_profiles": {
+      "simple": [
+        "context",
+        "act",
+        "evaluate"
+      ],
+      "standard": [
+        "context",
+        "decide",
+        "act",
+        "evaluate"
+      ],
+      "complex_or_high_risk": [
+        "context",
+        "decide",
+        "act",
+        "evaluate",
+        "human_gate_when_required"
+      ]
+    }
+  },
+  "research_foundations": [
+    {
+      "name": "ReAct",
+      "source": "https://arxiv.org/abs/2210.03629",
+      "principle": "Reasoning, action, and fresh observations interleave inside a task instead of forming one irreversible linear pass."
+    },
+    {
+      "name": "Reflexion and evaluator-optimizer",
+      "source": "https://arxiv.org/abs/2303.11366",
+      "principle": "Evaluation feedback improves the next trial when success criteria and evidence are explicit."
+    },
+    {
+      "name": "LangGraph persistence and interrupts",
+      "source": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+      "principle": "A human interrupt saves graph state, resumes by stable identity, carries JSON-serializable input, and requires idempotent side effects before the interrupt."
+    },
+    {
+      "name": "AutoGen asynchronous human feedback",
+      "source": "https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html",
+      "principle": "Persist team state and resume when feedback arrives for long interactions; blocking human input is limited to short immediate approvals because blocked state is harder to save and resume safely."
+    },
+    {
+      "name": "MemGPT virtual context management",
+      "source": "https://arxiv.org/abs/2310.08560",
+      "principle": "Use tiered working and archival memory with explicit movement and references instead of replaying all historical context into every model call."
+    },
+    {
+      "name": "Temporal durable execution",
+      "source": "https://docs.temporal.io/workflow-execution",
+      "principle": "Deterministic control state is replayable; failure-prone side effects belong in retryable, idempotent activities."
+    },
+    {
+      "name": "Google ADK LoopAgent",
+      "source": "https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/",
+      "principle": "Every loop needs deterministic orchestration, an explicit termination signal, and a maximum iteration bound."
+    },
+    {
+      "name": "A2A task lifecycle",
+      "source": "https://github.com/a2aproject/A2A/blob/main/docs/topics/life-of-a-task.md",
+      "principle": "Stable context identity, immutable terminal tasks, new task ids for refinements, and artifact references improve traceability."
+    },
+    {
+      "name": "Anthropic Multi-Agent Research System",
+      "source": "https://www.anthropic.com/engineering/multi-agent-research-system",
+      "principle": "An orchestrator agent spawns parallel subagents with isolated context windows; each subagent compresses its findings before returning to the orchestrator, preventing context pollution and yielding up to 90.2% quality improvement over single-agent on open research tasks."
+    }
+  ],
+  "stages": {
+    "context": {
+      "goal": "Load the smallest authoritative context needed for the next decision, while keeping original evidence and large artifacts addressable by reference.",
+      "required_inputs": [
+        "current_user_request",
+        "tenant_user_project_identity",
+        "permissions",
+        "active_rules",
+        "run_state",
+        "relevant_knowledge_refs",
+        "prior_decisions_and_open_questions",
+        "versioned_human_intent_confirmation_when_project_intake_requires_it"
+      ],
+      "required_artifacts": [
+        "context_snapshot",
+        "source_inventory",
+        "scope_and_permission_record",
+        "unknowns_and_conflicts"
+      ],
+      "gates": [
+        "identity_scope_and_permissions_resolved",
+        "authoritative_sources_separated_from_memory_relay",
+        "large_outputs_referenced_instead_of_repeated",
+        "unknowns_and_conflicts_are_explicit",
+        "context_budget_recorded",
+        "at_least_three_first_principles_questions_are_present_for_guided_project_intake",
+        "current_intent_and_project_context_hashes_are_human_confirmed_before_dispatch"
+      ]
+    },
+    "decide": {
+      "goal": "Choose the next action from facts, assumptions, options, constraints, risk, and acceptance criteria. Produce a compact decision record, not private chain-of-thought.",
+      "required_inputs": [
+        "context_snapshot",
+        "source_inventory",
+        "constraints",
+        "acceptance_criteria",
+        "current_progress"
+      ],
+      "required_artifacts": [
+        "decision_record",
+        "facts_assumptions_and_unknowns",
+        "selected_route_or_plan",
+        "risk_and_rollback_record",
+        "next_action_contract"
+      ],
+      "gates": [
+        "facts_assumptions_and_unknowns_are_separated",
+        "decision_basis_references_sources",
+        "confidence_and_risk_are_recorded",
+        "acceptance_criteria_are_testable",
+        "private_chain_of_thought_is_not_persisted",
+        "human_gate_created_for_unsafe_or_high_risk_action"
+      ]
+    },
+    "act": {
+      "goal": "Execute the selected action through registered Agents, Skills, and typed tools while isolating side effects and recording observations.",
+      "required_inputs": [
+        "next_action_contract",
+        "selected_route_or_plan",
+        "context_envelope",
+        "tool_and_model_budget"
+      ],
+      "required_artifacts": [
+        "execution_log",
+        "run_ledger",
+        "tool_observations",
+        "changed_or_generated_artifacts",
+        "checkpoint_records",
+        "typed_handoff_records",
+        "subagent_compression_envelopes_when_parallel"
+      ],
+      "gates": [
+        "authorization_passed",
+        "side_effects_are_idempotent_or_deduplicated",
+        "retryable_and_non_retryable_failures_are_distinguished",
+        "checkpoint_recorded_before_pause_or_resume",
+        "typed_handoffs_are_acknowledged",
+        "open_human_gate_blocks_high_risk_side_effects",
+        "parallel_subagents_return_distilled_envelopes_not_full_traces"
+      ],
+      "subagent_compression_contract": {
+        "principle": "When parallel_expert_dag is used, each subagent runs in an isolated context window and returns a distilled envelope. The orchestrator merges compressed envelopes only; full subagent traces are never replayed into the main context.",
+        "envelope_schema": {
+          "subagent_id": "string",
+          "scope_assignment": "what this subagent was asked to do",
+          "distilled_findings": "compressed findings, conclusions, and recommended next steps",
+          "evidence_refs": "artifact references (paths, hashes) instead of inlined content",
+          "confidence_and_caveats": "confidence score 0.0-1.0 plus explicit caveats",
+          "tokens_used": "token budget consumed by this subagent"
+        },
+        "forbidden": [
+          "replaying_full_subagent_trace_into_main_context",
+          "merging_without_orchestrator_synthesis",
+          "inlining_large_artifacts_instead_of_referencing"
+        ],
+        "rationale": "Based on Anthropic Multi-Agent Research System: subagent compression prevents context pollution and yields up to 90.2% quality improvement over single-agent on open research tasks."
+      }
+    },
+    "evaluate": {
+      "goal": "Judge outcome and progress against evidence, acceptance criteria, quality gates, budget, and user intent, then recommend one controller decision.",
+      "required_inputs": [
+        "decision_record",
+        "execution_log",
+        "tool_observations",
+        "generated_artifacts",
+        "acceptance_criteria",
+        "budget_usage"
+      ],
+      "required_artifacts": [
+        "evaluation_report",
+        "acceptance_results",
+        "progress_measurement",
+        "failure_classification",
+        "recommended_control_decision"
+      ],
+      "gates": [
+        "evaluation_references_evidence",
+        "acceptance_results_are_explicit",
+        "progress_is_measured_against_previous_cycle",
+        "failure_root_cause_and_retry_class_are_recorded",
+        "recommended_transition_has_a_target_or_terminal_reason",
+        "subagent_envelopes_validated_when_parallel"
+      ]
+    }
+  },
+  "controller": {
+    "decisions": {
+      "continue": {
+        "target": "context",
+        "use_when": "New observations are needed before another decision."
+      },
+      "replan": {
+        "target": "decide",
+        "use_when": "The decision, route, constraints, or plan must change."
+      },
+      "retry": {
+        "target": "act",
+        "use_when": "A retryable activity failed and retry policy permits another attempt."
+      },
+      "wait_human": {
+        "target": "waiting_human",
+        "use_when": "Clarification, approval, professional judgment, or external input is required."
+      },
+      "complete": {
+        "target": "completed",
+        "use_when": "Acceptance criteria pass and required artifacts are reachable."
+      },
+      "fail": {
+        "target": "failed",
+        "use_when": "A permanent failure or unmet hard requirement prevents completion."
+      },
+      "cancel": {
+        "target": "cancelled",
+        "use_when": "The user or authorized operator stops the run."
+      },
+      "budget_exhausted": {
+        "target": "budget_exhausted",
+        "use_when": "Any hard run budget is exhausted before acceptance passes."
+      },
+      "debate": {
+        "target": "debate_council",
+        "use_when": "Evaluate recommends adversarial review or single-specialist confidence is below threshold."
+      }
+    },
+    "default_budgets": {
+      "max_cycles": 4,
+      "max_stage_retries": 2,
+      "max_stagnant_cycles": 1,
+      "max_duration_seconds": 7200,
+      "max_tool_calls": 60,
+      "max_model_calls": 30,
+      "max_cost_microunits": 5000000,
+      "max_quality_rework_per_stage": 2
+    },
+    "progress_policy": {
+      "score_range": [
+        0.0,
+        1.0
+      ],
+      "minimum_progress_delta": 0.02,
+      "completion_requires_acceptance_passed": true,
+      "stagnation_requires_human_or_terminal_decision": true
+    },
+    "failure_classes": [
+      "transient_retryable",
+      "correctable_replan",
+      "missing_context",
+      "human_judgment_required",
+      "policy_blocked",
+      "permanent_failure"
+    ],
+    "system_change_boundary": "Task rework may loop within approved scope and budget. Changes to Agent SOUL, Skills, workflows, rules, knowledge promotion, GUI contracts, or release configuration require an explicit iteration proposal and user confirmation."
+  },
+  "state_model": {
+    "active_statuses": [
+      "created",
+      "context_loading",
+      "deciding",
+      "acting",
+      "evaluating",
+      "retrying"
+    ],
+    "waiting_statuses": [
+      "waiting_human_judgment",
+      "waiting_user_input",
+      "waiting_external_event",
+      "paused"
+    ],
+    "terminal_statuses": [
+      "completed",
+      "failed",
+      "cancelled",
+      "budget_exhausted"
+    ],
+    "storage": {
+      "runs": "agent-system/runs/<run_id>/run.json",
+      "run_ledger": "agent-system/runs/<run_id>/ledger.jsonl",
+      "checkpoints": "agent-system/runs/<run_id>/checkpoints/<checkpoint_id>.json",
+      "handoffs": "agent-system/runs/<run_id>/handoffs/<handoff_id>.json",
+      "artifacts": "agent-system/runs/<run_id>/artifacts/<artifact_id>",
+      "eval_suites": "agent-system/evals/<suite_id>.json"
+    }
+  },
+  "hard_rules": [
+    "The controller owns transitions; an LLM may recommend but cannot directly mutate run state.",
+    "Every loop has a maximum cycle bound and at least one business termination condition.",
+    "Every side effect is idempotent, deduplicated, or guarded by explicit confirmation.",
+    "Every pause and resume uses durable state, a stable run id, and a checkpoint or event cursor.",
+    "Whole-workflow blind retries are forbidden; retry the smallest retryable activity or replan from evidence.",
+    "A run cannot complete until acceptance criteria pass and required artifacts remain reachable.",
+    "Context handoffs use typed envelopes, artifact references, provenance, hashes, and receiver acknowledgment.",
+    "Private chain-of-thought is never required, persisted, or exposed; store concise decision records instead.",
+    "Human input is a versioned state transition: early intent and context confirmation precede dispatch, while later interrupts are reserved for missing high-impact context, drift, risk, or irreversible actions.",
+    "Do not replay full conversation history after human input; resume from the checkpoint with the confirmed context delta and authoritative artifact references.",
+    "System self-modification is never an automatic task-loop transition and always requires a confirmed proposal.",
+    "When parallel_expert_dag runs, every subagent returns a distilled compression envelope with evidence references; full traces are never replayed into the main context.",
+    "When debate_council runs, at least two independent reviewers must pass for high-risk decisions; dissent is recorded when no consensus is reached.",
+    "Content safety guardrails (input and output) run alongside drift controls; both layers must pass before a run can complete."
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "version": "1.0.0",
+  "task_id": "model-api-gateway-production",
+  "description": "Verify Digital Office can execute an Agent through direct model APIs without depending on an installed Agent host.",
+  "roles": [
+    "operations",
+    "implementation"
+  ],
+  "workflow": "model_api_gateway",
+  "gates": [
+    {
+      "id": "provider_registry_contract",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/model-providers.registry.json",
+      "patterns": [
+        "openai_responses",
+        "anthropic_messages",
+        "gemini_generate_content",
+        "openai_chat_completions"
+      ]
+    },
+    {
+      "id": "direct_api_smoke",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 30,
+      "command": [
+        "python3",
+        "agent-system/tests/model-gateway-smoke.py"
+      ]
+    },
+    {
+      "id": "router_and_gateway_health",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; python3 -m py_compile agent-system/bin/model-gateway scripts/agent-router; scripts/agent-router --health; agent-system/bin/model-gateway status >/dev/null"
+      ]
+    }
+  ]
+}

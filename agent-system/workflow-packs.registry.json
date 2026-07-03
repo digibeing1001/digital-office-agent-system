@@ -1,0 +1,201 @@
+{
+  "kind": "digital-office-workflow-packs",
+  "version": "1.0.0",
+  "context_envelope_schema": "context-envelope.schema.json",
+  "policy": {
+    "workflow_first": true,
+    "agent_as_owner": true,
+    "skills_as_staff": true,
+    "department_as_agent_responsibility": true,
+    "context_loss_control": [
+      "Every workflow step reads and writes a context envelope.",
+      "Large artifacts move by artifact_ref, not copied prompt text.",
+      "Decisions, assumptions, risk flags, and open questions are explicit fields.",
+      "Skill lanes return structured observations to the owning Agent before user delivery."
+    ]
+  },
+  "packs": {
+    "office_intake": {
+      "owner_agent": "secretary",
+      "workflows": [
+        "single"
+      ],
+      "skill_lanes": [
+        "intake",
+        "clarification",
+        "routing",
+        "approval_gate"
+      ],
+      "context_envelope_required": true
+    },
+    "product": {
+      "owner_agent": "pm",
+      "workflows": [
+        "research_then_pm",
+        "pm_to_design",
+        "pm_to_design_to_code"
+      ],
+      "skill_lanes": [
+        "requirements",
+        "prioritization",
+        "acceptance_criteria",
+        "roadmap"
+      ],
+      "context_envelope_required": true
+    },
+    "research": {
+      "owner_agent": "researcher",
+      "workflows": [
+        "research_then_plan",
+        "research_then_pm"
+      ],
+      "skill_lanes": [
+        "source_search",
+        "evidence_table",
+        "assumption_check",
+        "citation_status"
+      ],
+      "context_envelope_required": true
+    },
+    "planning": {
+      "owner_agent": "planner",
+      "workflows": [
+        "research_then_plan"
+      ],
+      "skill_lanes": [
+        "architecture",
+        "milestones",
+        "dependency_map",
+        "risk_plan"
+      ],
+      "context_envelope_required": true
+    },
+    "design": {
+      "owner_agent": "vibe-designer",
+      "workflows": [
+        "pm_to_design",
+        "pm_to_design_to_code",
+        "ppt_production"
+      ],
+      "skill_lanes": [
+        "interaction_design",
+        "visual_direction",
+        "prototype",
+        "accessibility",
+        "design_harness"
+      ],
+      "context_envelope_required": true
+    },
+    "implementation": {
+      "owner_agent": "coder",
+      "workflows": [
+        "pm_to_design_to_code"
+      ],
+      "skill_lanes": [
+        "implementation",
+        "debugging",
+        "tests",
+        "review",
+        "deployment"
+      ],
+      "context_envelope_required": true
+    },
+    "writing": {
+      "owner_agent": "writer",
+      "workflows": [
+        "ppt_production"
+      ],
+      "skill_lanes": [
+        "outline",
+        "draft",
+        "edit",
+        "speaker_notes"
+      ],
+      "context_envelope_required": true
+    },
+    "legal": {
+      "owner_agent": "legal",
+      "workflows": [
+        "legal_triage",
+        "legal_contract_review",
+        "legal_product_compliance_review",
+        "legal_privacy_data_review",
+        "legal_employment_ip_review",
+        "legal_dispute_triage"
+      ],
+      "skill_lanes": [
+        "contract_review",
+        "corporate_review",
+        "privacy_review",
+        "product_compliance",
+        "employment_ip",
+        "ai_governance",
+        "dispute_triage",
+        "human_review_gate"
+      ],
+      "source_packs": [
+        "digital-lawyer-workflows",
+        "claude-for-legal-zh"
+      ],
+      "blocked_source_packs": [
+        "Legal-Skills-Chinese"
+      ],
+      "context_envelope_required": true,
+      "delivery_gate": "human professional review before external reliance"
+    }
+  },
+  "ops_patterns": {
+    "daily-triage": {
+      "owner_agent": "secretary",
+      "trigger": "cron:0 9 * * 1-5",
+      "cadence": "daily_weekday",
+      "task_profile": "simple",
+      "autonomy_level": "L2",
+      "max_cycles_per_run": 1,
+      "max_cost_microunits_per_run": 500000,
+      "max_duration_seconds": 300,
+      "max_tool_calls": 20,
+      "required_gates": [
+        "quality_score_ge_70",
+        "no_unresolved_blockers"
+      ],
+      "failure_handling": "wait_human",
+      "description": "Weekday morning triage of stale issues and open questions"
+    },
+    "ci-sweeper": {
+      "owner_agent": "coder",
+      "trigger": "cron:0 */4 * * *",
+      "cadence": "every_4h",
+      "task_profile": "simple",
+      "autonomy_level": "L1",
+      "max_cycles_per_run": 3,
+      "max_cost_microunits_per_run": 200000,
+      "max_duration_seconds": 180,
+      "max_tool_calls": 15,
+      "required_gates": [
+        "lint_clean",
+        "tests_pass",
+        "quality_score_ge_70"
+      ],
+      "failure_handling": "fail",
+      "description": "Periodic lint/test/quality sweep on changed files"
+    },
+    "context-rot-scan": {
+      "owner_agent": "secretary",
+      "trigger": "cron:0 2 * * 1",
+      "cadence": "weekly_monday",
+      "task_profile": "standard",
+      "autonomy_level": "L2",
+      "max_cycles_per_run": 1,
+      "max_cost_microunits_per_run": 300000,
+      "max_duration_seconds": 240,
+      "max_tool_calls": 25,
+      "required_gates": [
+        "quality_score_ge_70",
+        "drift_hash_unchanged"
+      ],
+      "failure_handling": "wait_human",
+      "description": "Weekly scan for context rot: stale project.json, outdated hard_rules snapshot, drifted envelopes"
+    }
+  }
+}

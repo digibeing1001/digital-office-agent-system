@@ -1,0 +1,53 @@
+{
+  "version": "2.0.0",
+  "task_id": "ai-native-loop-production",
+  "description": "Verify the durable Context, Decide, Act, Evaluate runtime, deterministic controller, hard budgets, and confirmed system iteration boundary.",
+  "roles": [
+    "intake",
+    "product",
+    "implementation",
+    "evaluation"
+  ],
+  "workflow": "ai_native_loop",
+  "gates": [
+    {
+      "id": "loop_manifest_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/ai-native-loop.manifest.json"
+    },
+    {
+      "id": "loop_contract_has_nodes_controller_and_budgets",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "python3",
+        "-c",
+        "import json,pathlib; m=json.loads(pathlib.Path('agent-system/ai-native-loop.manifest.json').read_text()); assert list(m['stages'])==['context','decide','act','evaluate']; assert set(m['controller']['decisions'])=={'continue','replan','retry','wait_human','complete','fail','cancel','budget_exhausted','debate'}; assert all(m['controller']['default_budgets'][k]>=0 for k in ('max_cycles','max_stage_retries','max_stagnant_cycles','max_duration_seconds','max_tool_calls','max_model_calls','max_cost_microunits')); assert any('Private chain-of-thought' in r for r in m['hard_rules']); assert any('System self-modification' in r for r in m['hard_rules'])"
+      ]
+    },
+    {
+      "id": "secretary_loop_policy_present",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "SOUL.md",
+      "patterns": [
+        "Context, Decide, Act, Evaluate",
+        "deterministic controller",
+        "System iteration is never automatic",
+        "Confirm, Tune Through Conversation, Pause, Reject"
+      ]
+    },
+    {
+      "id": "loop_cli_controller_and_iteration_boundary_work",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 120,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; office=\"$tmp/agent-system/bin/office-system\"; manifest=\"$tmp/agent-system/ai-native-loop.manifest.json\"; complete_stage(){ stage=\"$1\"; \"$office\" loop-stage --run-id loop-test --stage \"$stage\" --status started --summary \"$stage started\" >/dev/null; cmd=(\"$office\" loop-stage --run-id loop-test --stage \"$stage\" --status completed --summary \"$stage complete\"); while IFS= read -r item; do cmd+=(--artifact \"$item:ok\"); done < <(python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))[\"stages\"][sys.argv[2]][\"required_artifacts\"],sep=\"\\n\")' \"$manifest\" \"$stage\"); while IFS= read -r item; do cmd+=(--gate \"$item:passed\"); done < <(python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))[\"stages\"][sys.argv[2]][\"gates\"],sep=\"\\n\")' \"$manifest\" \"$stage\"); \"${cmd[@]}\" >/dev/null; }; \"$office\" loop-start --run-id loop-test --task 'Build a governed AI native product loop' >/dev/null; complete_stage context; complete_stage decide; complete_stage act; complete_stage evaluate; \"$office\" loop-control --run-id loop-test --decision complete --progress-score 1 --acceptance-passed > \"$tmp/complete.json\"; python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))[\"status\"]==\"completed\"' \"$tmp/complete.json\"; \"$office\" loop-start --run-id budget-test --task 'Bounded task' --max-tool-calls 1 >/dev/null; set +e; \"$office\" loop-usage-add --run-id budget-test --tool-calls 1 > \"$tmp/budget.json\"; code=$?; set -e; test \"$code\" -ne 0; python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d[\"status\"]==\"budget_reached\"' \"$tmp/budget.json\"; \"$office\" iteration-proposal-create --title 'Tighten workflow gate' --target harness --summary 'Add a regression gate after evaluation' --body 'Add a harness check after evaluation.' --expected-impact 'Fewer workflow drifts' --risk 'Could slow delivery' --rollback 'Remove the proposed gate' --run-id loop-test --regression-check 'harness-runner --task all --no-write' > \"$tmp/proposal.json\"; pid=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[\"proposal_id\"])' \"$tmp/proposal.json\"); set +e; \"$office\" iteration-proposal-apply --proposal-id \"$pid\" >/dev/null 2>&1; code=$?; set -e; test \"$code\" -ne 0; \"$office\" iteration-proposal-decision --proposal-id \"$pid\" --decision confirm --message 'User confirmed' >/dev/null; \"$office\" iteration-proposal-apply --proposal-id \"$pid\" --confirmed --regression-result 'harness passed' --artifact 'agent-system/harness/tasks/ai-native-loop-production.json' > \"$tmp/apply.json\"; python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))[\"status\"]==\"applied_verified\"' \"$tmp/apply.json\""
+      ]
+    }
+  ]
+}

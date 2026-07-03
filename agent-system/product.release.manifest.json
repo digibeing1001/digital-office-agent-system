@@ -1,0 +1,124 @@
+{
+  "version": "0.3.0",
+  "kind": "digital-office-product-release-manifest",
+  "product_name": "Digital Office",
+  "release_channel": "internal",
+  "includes_runtime": false,
+  "components": {
+    "hermes_runtime": {
+      "included": false,
+      "source": "https://github.com/NousResearch/hermes-agent.git",
+      "version_policy": "pinned_commit_or_signed_release",
+      "install_path": "host_managed",
+      "note": "Digital Office installs into an existing Hermes, OpenClaw, or generic Agent host and does not redistribute that host runtime.",
+      "customer_visible": false
+    },
+    "agent_system": {
+      "included": true,
+      "source": "this repository",
+      "install_path": "agent-system",
+      "customer_visible": false
+    },
+    "host_injection_policy": {
+      "included": true,
+      "manifest": "agent-system/host-injection.policy.json",
+      "supported_hosts": [
+        "hermes",
+        "openclaw",
+        "generic"
+      ],
+      "customer_visible": "admin_only"
+    },
+    "profiles": {
+      "included": true,
+      "install_path": "profiles",
+      "customer_visible": false
+    },
+    "skills": {
+      "included": true,
+      "source_manifest": "agent-system/skills.sources.json",
+      "installation_manifest": "agent-system/skill-installations.registry.json",
+      "install_path": "skills",
+      "customer_visible": false
+    },
+    "gui_applications": {
+      "included": true,
+      "install_path": "agent-system/web/app",
+      "source_path": "web-ui",
+      "surfaces": [
+        "user_application",
+        "admin_center"
+      ],
+      "note": "The production Web/PWA build includes separate user and administration surfaces backed by authenticated, governed API routes.",
+      "customer_visible": true
+    },
+    "update_installer": {
+      "included": true,
+      "install_path": "update",
+      "preserves_runtime_data": true,
+      "requires_explicit_choice_for_unmanaged_host_rules": true,
+      "customer_visible": true
+    },
+    "local_model_installers": {
+      "included": true,
+      "manifest": "agent-system/models.local.manifest.json",
+      "weights_included": false,
+      "customer_visible": "admin_only"
+    }
+  },
+  "release_flow": [
+    "build_release_candidate",
+    "pin_component_versions",
+    "run_internal_regression_suite",
+    "run_agent_router_health",
+    "run_knowledge_ingestion_tests",
+    "run_rag_tests",
+    "run_gui_smoke_tests",
+    "sign_or_checksum_release",
+    "publish_to_update_channel",
+    "customer_admin_approves_install_window",
+    "backup_current_installation",
+    "install_or_switch_candidate",
+    "post_install_health_check",
+    "rollback_if_failed"
+  ],
+  "update_channels": {
+    "internal": {
+      "audience": "developer experiments",
+      "auto_offer_to_customer": false
+    },
+    "pilot": {
+      "audience": "selected friendly enterprise deployments",
+      "auto_offer_to_customer": false
+    },
+    "stable": {
+      "audience": "production enterprise deployments",
+      "auto_offer_to_customer": true
+    }
+  },
+  "enterprise_update_policy": {
+    "direct_upstream_pull_in_production": false,
+    "customer_sees_product_update_only": true,
+    "hermes_name_hidden_by_default": true,
+    "customer_entrypoint": "secretary_agent_then_gui",
+    "raw_hermes_cli_hidden_by_default": true,
+    "default_host_agent_injected_as_secretary": true,
+    "clean_host_rules_overwritten_by_suite": true,
+    "non_clean_host_requires_preserve_or_overwrite_choice": true,
+    "rollback_required": true,
+    "admin_approval_required": true,
+    "support_mode_can_show_runtime_details": true
+  },
+  "excluded_from_release": [
+    ".venv",
+    "models/cache",
+    "logs",
+    "tmp",
+    "project knowledge entries",
+    "company knowledge entries from tenant",
+    "telemetry exports",
+    "credentials",
+    "sessions",
+    "state databases"
+  ]
+}

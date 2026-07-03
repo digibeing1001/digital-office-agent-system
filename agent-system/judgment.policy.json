@@ -1,0 +1,168 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-judgment-policy",
+  "description": "Runtime policy for Agent-initiated human judgment gates. Agents may request a pause, but only the runtime can freeze and resume blocked actions.",
+  "thresholds": {
+    "pause_risk_score": 0.65,
+    "route_low_confidence_values": [
+      "low",
+      "ambiguous"
+    ],
+    "agent_pause_decisions": [
+      "pause",
+      "escalate",
+      "abort"
+    ]
+  },
+  "default_options": [
+    {
+      "id": "approve_with_scope",
+      "label": "Approve with explicit scope"
+    },
+    {
+      "id": "request_more_evidence",
+      "label": "Request more evidence"
+    },
+    {
+      "id": "reject_or_stop",
+      "label": "Reject or stop this action"
+    }
+  ],
+  "hard_block_actions": [
+    "external_send",
+    "public_publish",
+    "deploy",
+    "delete",
+    "overwrite",
+    "payment",
+    "data_export",
+    "long_term_memory",
+    "company_knowledge",
+    "regulated_advice",
+    "final_delivery"
+  ],
+  "categories": [
+    {
+      "id": "regulated_professional_domain",
+      "risk_score": 0.9,
+      "required_human_role": "professional_reviewer",
+      "blocked_actions": [
+        "regulated_advice",
+        "final_delivery"
+      ],
+      "keywords": [
+        "legal",
+        "lawyer",
+        "contract",
+        "lawsuit",
+        "medical",
+        "diagnosis",
+        "tax",
+        "investment",
+        "律师",
+        "法律",
+        "合同",
+        "诉讼",
+        "医疗",
+        "诊断",
+        "税务",
+        "投资建议"
+      ]
+    },
+    {
+      "id": "irreversible_or_external_side_effect",
+      "risk_score": 0.88,
+      "required_human_role": "project_manager",
+      "blocked_actions": [
+        "external_send",
+        "public_publish",
+        "deploy",
+        "delete",
+        "overwrite",
+        "payment",
+        "data_export"
+      ],
+      "keywords": [
+        "send email",
+        "publish",
+        "deploy",
+        "delete",
+        "overwrite",
+        "drop table",
+        "payment",
+        "charge",
+        "export customer data",
+        "发邮件",
+        "发送给客户",
+        "发布",
+        "部署",
+        "删除",
+        "覆盖",
+        "付款",
+        "导出客户数据"
+      ]
+    },
+    {
+      "id": "authority_or_scope_ambiguity",
+      "risk_score": 0.74,
+      "required_human_role": "project_manager",
+      "blocked_actions": [
+        "workflow_continue",
+        "final_delivery"
+      ],
+      "keywords": [
+        "not sure",
+        "unclear",
+        "ambiguous",
+        "maybe",
+        "who owns",
+        "scope",
+        "不确定",
+        "不清楚",
+        "含糊",
+        "可能",
+        "边界",
+        "谁负责"
+      ]
+    },
+    {
+      "id": "missing_or_conflicting_evidence",
+      "risk_score": 0.72,
+      "required_human_role": "project_manager",
+      "blocked_actions": [
+        "final_delivery",
+        "company_knowledge"
+      ],
+      "keywords": [
+        "no source",
+        "missing evidence",
+        "conflicting",
+        "citation required",
+        "unknown source",
+        "没有来源",
+        "缺少证据",
+        "证据冲突",
+        "需要引用",
+        "来源不明"
+      ]
+    },
+    {
+      "id": "knowledge_or_memory_promotion",
+      "risk_score": 0.82,
+      "required_human_role": "project_manager",
+      "blocked_actions": [
+        "long_term_memory",
+        "company_knowledge"
+      ],
+      "keywords": [
+        "save to memory",
+        "promote to company knowledge",
+        "update global rule",
+        "长期记忆",
+        "保存到记忆",
+        "公司知识",
+        "全局规则"
+      ]
+    }
+  ]
+}

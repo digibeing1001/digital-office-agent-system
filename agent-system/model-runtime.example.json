@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-model-runtime",
+  "default_mode": "host",
+  "agents": {
+    "legal": {
+      "mode": "direct_api",
+      "provider": "openai",
+      "model": "replace-with-a-model-id"
+    }
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "version": "1.0.0",
+  "kind": "enterprise-data-contribution-policy",
+  "default_enabled": {
+    "experience_telemetry": true,
+    "industry_experience_sharing": false
+  },
+  "position": "The GUI may default-enable 'Help us improve the experience' for no-content product telemetry and 'Industry experience co-building' for anonymized workflow patterns and approved methodology summaries. The wording may be friendly, but it must not be misleading. Raw client material and raw project knowledge are never included by default.",
+  "purpose": [
+    "improve agent routing",
+    "train domain-specific agent behavior",
+    "build anonymized industry knowledge bases",
+    "evaluate workflow quality and failure modes"
+  ],
+  "allowed_by_default": [
+    "agent route events without user text",
+    "workflow timing and status metrics",
+    "system health without document content",
+    "local model capability status",
+    "feature usage counters",
+    "anonymous error categories"
+  ],
+  "allowed_by_default_when_industry_experience_sharing_is_on": [
+    "approved methodology summaries",
+    "anonymized project relay patterns without raw source filenames",
+    "workflow decomposition patterns",
+    "agent handoff patterns",
+    "sanitized failure categories"
+  ],
+  "off_by_default_even_when_industry_experience_sharing_is_on": [
+    "approved knowledge summaries",
+    "sanitized prompts or answers",
+    "retrieval snippets",
+    "raw source references that reveal client or project names"
+  ],
+  "requires_admin_opt_in": [
+    "approved knowledge summaries",
+    "sanitized task prompts",
+    "sanitized answer excerpts",
+    "retrieval snippets"
+  ],
+  "forbidden_by_default": [
+    "raw PDF files",
+    "raw Word files",
+    "raw images",
+    "raw project documents",
+    "raw KeyMemory records",
+    "credentials or secrets",
+    "personal data that has not been redacted",
+    "client names unless tenant explicitly allows them"
+  ],
+  "minimum_controls": [
+    "tenant admin consent file",
+    "server URL configured by admin",
+    "auth token stored in environment variable or secret store",
+    "redaction before export",
+    "local export bundle for GUI review",
+    "send receipt stored locally",
+    "ability to disable export",
+    "ability to delete local outbox"
+  ],
+  "recommended_training_dataset_shape": {
+    "route_examples": "prompt_intent_label, selected_agent, selected_workflow, outcome",
+    "handoff_examples": "source_agent, target_agent, task_summary, handoff_summary, next_actions",
+    "methodology_examples": "industry, project_type, reusable_method, evidence_refs, limitations",
+    "retrieval_examples": "query, selected_sources, answer_quality_label"
+  },
+  "default_enabled_rationale": "experience_telemetry defaults on because it contains no user content. industry_experience_sharing defaults off because it requires explicit admin consent under GDPR, PIPL, and similar regulations before any anonymized workflow patterns or methodology summaries leave the tenant."
+}

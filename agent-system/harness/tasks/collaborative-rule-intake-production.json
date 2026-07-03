@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "task_id": "collaborative-rule-intake-production",
+  "description": "Verify conversational rule elicitation, rule proposal scope inference, human confirmation, and scoped rule application.",
+  "roles": [
+    "secretary",
+    "project_manager",
+    "enterprise_admin"
+  ],
+  "workflow": "collaborative_rule_intake",
+  "gates": [
+    {
+      "id": "gui_contract_documents_rule_intake",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/gui-contract.md",
+      "patterns": [
+        "Collaborative rule intake",
+        "rule-elicit",
+        "rule-suggest",
+        "rule-proposal-decision"
+      ]
+    },
+    {
+      "id": "rule_registry_exposes_intake",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/rules/rules.registry.json",
+      "json_path": [
+        "gui_contract",
+        "suggest_rule_from_conversation"
+      ],
+      "contains": "rule-suggest"
+    },
+    {
+      "id": "rule_intake_proposes_and_applies_scoped_rules",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 120,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; cp -a agent-system \"$tmp/agent-system\"; export DIGITAL_OFFICE_SYSTEM_HOME=\"$tmp/agent-system\"; office=\"$tmp/agent-system/bin/office-system\"; \"$office\" rule-elicit --context 'We are preparing production legal and writing workflows with evidence requirements.' --limit 3 > \"$tmp/elicit.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"conversation_prompts\"]; assert data[\"next_action\"].startswith(\"rule-suggest\")' \"$tmp/elicit.json\"; \"$office\" rule-suggest --title 'Global approval before customer send' --body 'All agents must stop for human judgment before sending anything to a customer or publishing externally.' --source conversation --created-by u1 --role project_manager --proposal-id global-send-rule > \"$tmp/global-proposal.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"status\"] == \"pending_user_confirmation\"; assert data[\"proposed_scope\"] == \"global\"; assert data[\"requires_user_confirmation\"] is True' \"$tmp/global-proposal.json\"; \"$office\" rule-proposal-decision --proposal-id global-send-rule --decision approve --tenant t1 --deployment d1 --decided-by admin1 --role enterprise_admin --confirmed > \"$tmp/global-apply.json\"; python3 -c 'import json,sys,pathlib; data=json.load(open(sys.argv[1])); assert data[\"rule_proposal\"][\"status\"] == \"applied\"; path=pathlib.Path(sys.argv[2]) / data[\"rule_proposal\"][\"applied_rule_path\"]; assert path.exists(); assert \"rules/global\" in data[\"rule_proposal\"][\"applied_rule_path\"]' \"$tmp/global-apply.json\" \"$tmp/agent-system\"; \"$office\" rule-suggest --title 'Writer evidence tone' --body 'The writer Agent should cite source material before turning research into final prose.' --agent writer --source conversation --created-by u1 --role project_manager --proposal-id writer-evidence-rule > \"$tmp/agent-proposal.json\"; python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data[\"proposed_scope\"] == \"agent\"; assert data[\"agent_id\"] == \"writer\"' \"$tmp/agent-proposal.json\"; \"$office\" rule-proposal-decision --proposal-id writer-evidence-rule --decision approve --tenant t1 --deployment d1 --decided-by admin1 --role enterprise_admin --agent writer --confirmed > \"$tmp/agent-apply.json\"; python3 -c 'import json,sys,pathlib; data=json.load(open(sys.argv[1])); assert data[\"rule_proposal\"][\"status\"] == \"applied\"; path=pathlib.Path(sys.argv[2]) / data[\"rule_proposal\"][\"applied_rule_path\"]; assert path.exists(); assert data[\"rule_proposal\"][\"applied_rule_path\"] == \"rules/agents/writer.md\"' \"$tmp/agent-apply.json\" \"$tmp/agent-system\""
+      ]
+    }
+  ]
+}

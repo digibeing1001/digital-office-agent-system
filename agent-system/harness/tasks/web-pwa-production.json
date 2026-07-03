@@ -1,0 +1,61 @@
+{
+  "version": "1.0.0",
+  "task_id": "web-pwa-production",
+  "description": "Verify the user and administration Web/PWA applications, static assets, governed API routes, service worker, manifest, and deployment contract.",
+  "roles": [
+    "operations",
+    "product",
+    "implementation"
+  ],
+  "workflow": "web_pwa_readiness",
+  "gates": [
+    {
+      "id": "gui_contract_mentions_web_pwa",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/gui-contract.md",
+      "patterns": [
+        "Web UI and PWA applications",
+        "web-config",
+        "web-serve",
+        "/api/gui-state",
+        "POST /api/agents",
+        "manifest.webmanifest",
+        "service-worker.js"
+      ]
+    },
+    {
+      "id": "readme_mentions_web_pwa",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "README.md",
+      "patterns": [
+        "图形界面",
+        "web-config",
+        "web-serve",
+        "/admin",
+        "PWA"
+      ]
+    },
+    {
+      "id": "web_pwa_files_exist",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/web/app/index.html",
+      "patterns": [
+        "Digital Office",
+        "<div id=\"root\"></div>",
+        "manifest.webmanifest"
+      ]
+    },
+    {
+      "id": "web_pwa_cli_and_http_close_loop",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "bash",
+        "agent-system/tests/web-pwa-smoke.sh"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "version": "1.0.0",
+  "task_id": "ppt-production",
+  "description": "Verify PPT/deck production workflow ownership: secretary intake, Writer narrative, Designer renderable deck artifact, secretary delivery gates.",
+  "roles": [
+    "intake",
+    "writing",
+    "design"
+  ],
+  "workflow": "ppt_production",
+  "gates": [
+    {
+      "id": "ppt_workflow_uses_role_steps",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/agents.registry.json",
+      "json_path": [
+        "workflows",
+        "ppt_production",
+        "steps"
+      ],
+      "equals": [
+        "@role:intake",
+        "@role:writing",
+        "@role:design",
+        "@role:intake"
+      ]
+    },
+    {
+      "id": "secretary_policy_matches_ppt_roles",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "python3",
+        "-c",
+        "import json; data=json.load(open('agent-system/secretary.capabilities.json')); rules=data['routing_orchestration_policy']['workflow_rules']; rule=next(item for item in rules if item.get('workflow') == 'ppt_production'); assert rule['role_steps'] == ['intake', 'writing', 'design', 'intake']"
+      ]
+    },
+    {
+      "id": "ppt_gate_map_includes_delivery",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/secretary.capabilities.json",
+      "json_path": [
+        "production_harness_policy",
+        "workflow_gate_map",
+        "ppt_production"
+      ],
+      "contains": "delivery"
+    },
+    {
+      "id": "ppt_docs_define_writer_and_designer_boundary",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/ppt-production-workflow.md",
+      "patterns": [
+        "intake -> writing -> design -> intake",
+        "Writer does not own final HTML/PPT rendering",
+        "Designer owns the visual direction",
+        "Secretary owns the final gate"
+      ]
+    },
+    {
+      "id": "designer_skill_mentions_ppt_ownership",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "skills/vibe-design-production-harness/SKILL.md",
+      "patterns": [
+        "Presentation Deck Ownership",
+        "Designer owns visual direction",
+        "renderable deck artifact",
+        "Do not move final deck rendering to Writer"
+      ]
+    },
+    {
+      "id": "ppt_route_zh_stable",
+      "type": "route",
+      "prompt": "帮我做一份PPT汇报",
+      "expect_agent": "secretary",
+      "expect_workflow": "ppt_production",
+      "expect_steps": [
+        "secretary",
+        "writer",
+        "vibe-designer",
+        "secretary"
+      ]
+    },
+    {
+      "id": "ppt_route_en_stable",
+      "type": "route",
+      "prompt": "Make a slide deck for tomorrow's product review",
+      "expect_agent": "secretary",
+      "expect_workflow": "ppt_production",
+      "expect_steps": [
+        "secretary",
+        "writer",
+        "vibe-designer",
+        "secretary"
+      ]
+    }
+  ]
+}

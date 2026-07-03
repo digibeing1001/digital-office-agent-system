@@ -1,0 +1,61 @@
+{
+  "version": "1.0.0",
+  "task_id": "digital-employee-model-production",
+  "description": "Verify the final secretary -> digital employee Agent -> Skill staff model and the removal of department/sub-Agent drift.",
+  "roles": [
+    "intake",
+    "planning"
+  ],
+  "workflow": "digital_employee_model",
+  "gates": [
+    {
+      "id": "digital_employee_registry_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/digital-employees.registry.json"
+    },
+    {
+      "id": "workflow_packs_registry_exists",
+      "type": "file_exists",
+      "cwd": "hermes_home",
+      "path": "agent-system/workflow-packs.registry.json"
+    },
+    {
+      "id": "secretary_agent_skill_levels_are_declared",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/digital-employees.registry.json",
+      "json_path": [
+        "model",
+        "levels"
+      ],
+      "equals": [
+        "secretary_control_plane",
+        "digital_employee_agents",
+        "skill_staff_lanes"
+      ]
+    },
+    {
+      "id": "digital_lawyer_is_visible_employee",
+      "type": "json_path",
+      "cwd": "hermes_home",
+      "path": "agent-system/digital-employees.registry.json",
+      "json_path": [
+        "employees",
+        "legal",
+        "display_name"
+      ],
+      "equals": "Digital Office Digital Lawyer"
+    },
+    {
+      "id": "all_visible_digital_employees_have_agents",
+      "type": "command",
+      "cwd": "hermes_home",
+      "command": [
+        "python3",
+        "-c",
+        "import json, pathlib; root=pathlib.Path('.'); employees=json.loads((root/'agent-system/digital-employees.registry.json').read_text(encoding='utf-8'))['employees']; agents=json.loads((root/'agent-system/agents.registry.json').read_text(encoding='utf-8'))['agents']; assert all(item['agent_id'] in agents for item in employees.values()); assert 'legal-contracts' not in agents and 'legal-compliance' not in agents; assert not (root/'agent-system/departments.registry.json').exists()"
+      ]
+    }
+  ]
+}

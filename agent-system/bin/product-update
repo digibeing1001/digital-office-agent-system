@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Inspect and stage Digital Office release packages.
+
+The top-level ``update`` command performs user-facing install or upgrade. This
+tool reports package composition and stages an already downloaded candidate;
+it never updates the host runtime directly.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def run(cmd: list[str]) -> tuple[int, str, str]:
+    proc = subprocess.run(cmd, text=True, capture_output=True)
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+
+
+def status(args: argparse.Namespace) -> int:
+    manifest = read_json(ROOT / "product.release.manifest.json")
+    checks = {
+        "product": manifest.get("product_name"),
+        "version": manifest.get("version"),
+        "channel": manifest.get("release_channel"),
+        "includes_runtime": manifest.get("includes_runtime"),
+        "host_runtime_managed_externally": not manifest.get("includes_runtime", False),
+        "agent_system_present": ROOT.exists(),
+        "update_installer_present": (ROOT.parent / "update").exists(),
+        "context_handoff_policy_present": (ROOT / "context-handoff.policy.json").exists(),
+        "loop_runtime_version": read_json(ROOT / "ai-native-loop.manifest.json").get("version"),
+        "router_health": run([str(ROOT.parent / "scripts" / "agent-router"), "--health"])[0] == 0,
+        "office_system_health": run([str(ROOT / "bin" / "office-system"), "health"])[0] == 0,
+        "production_direct_upstream_pull": manifest.get("enterprise_update_policy", {}).get("direct_upstream_pull_in_production"),
+    }
+    print(json.dumps(checks, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def stage(args: argparse.Namespace) -> int:
+    source = Path(args.package).expanduser().resolve()
+    if not source.exists():
+        print(f"product-update: package not found: {source}", file=sys.stderr)
+        return 2
+    target = ROOT / "tmp" / "product-update-candidate"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    print(str(target))
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("status")
+    p.set_defaults(func=status)
+    p = sub.add_parser("stage")
+    p.add_argument("--package", required=True)
+    p.set_defaults(func=stage)
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

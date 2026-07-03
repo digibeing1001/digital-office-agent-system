@@ -1,0 +1,347 @@
+{
+  "version": "1.2.0",
+  "kind": "digital-office-quality-scoring-policy",
+  "description": "7-point rubric scoring layer for LOOP engineering. Orthogonal to judgment.policy.json (risk gating). Decides rework/iterate vs wait_human based on failure_class.",
+  "research_foundations": [
+    "PRM per-step scoring (arXiv:2305.20050)",
+    "LLM-as-a-Judge with rubric anchors (arXiv:2306.05685)",
+    "Constitutional AI critique-then-revise",
+    "ECC verification-loop multi-gate pattern"
+  ],
+  "score_scale": {
+    "min": 1,
+    "max": 7,
+    "pass_threshold": 6,
+    "labels": {
+      "7": "exemplary",
+      "6": "pass",
+      "5": "fail_with_minor_defects",
+      "4": "fail",
+      "3": "fail_with_clear_defect",
+      "2": "severe_fail",
+      "1": "broken"
+    }
+  },
+  "scoring_principles": [
+    "Judge is decoupled: different model/temperature, never loads executor chain-of-thought",
+    "Every score MUST include strengths, defects, and fix_suggestion; bare scores are rejected",
+    "Hard disqualifier hit caps score at 4 (fail) regardless of other rubric items",
+    "missing_context MUST be distinguished from correctable_replan; misrouting causes infinite rework loops",
+    "Final delivery uses multi-sample voting; stage gates use single deterministic sample",
+    "Score 5 label is 'fail_with_minor_defects' (not 'pass_with_minor_defects'): threshold=6 means 5 is a FAIL. Label must be honest about pass/fail status.",
+    "Stage-differentiated thresholds: context=4 (lenient, false-reject wastes pipeline), decide/act=5 (medium, iteration cheap), evaluate=6 (strict, delivery cost highest). Ref: SWE-bench Verified difficulty stratification + verification-loop phase-specific strictness.",
+    "First-layer QA (execution) should be effective but not over-invested: score=5 with minor defects is acceptable for stage progression.",
+    "Second-layer QA (product taste) uses PM-as-QA: value_validation weight ensures product value, not just functional correctness.",
+    "Third-layer QA (product survival) is human-gated and cross-task: it triggers on iteration proposals and release events, not per-run.",
+    "Secretary is the QA coordinator: collects multi-role scores at evaluate, identifies cross-role inconsistencies, provides QA basis to controller."
+  ],
+  "failure_class_routing": {
+    "missing_context": {
+      "verdict": "needs_human_context",
+      "control_decision": "wait_human",
+      "human_prompt_hint": "Score is low because required context is missing. Stop iteration. Ask human to supply the missing fields. Do NOT auto-rework."
+    },
+    "human_judgment_required": {
+      "verdict": "needs_human_review",
+      "control_decision": "wait_human",
+      "human_prompt_hint": "Score is low and requires human judgment the agent cannot self-resolve."
+    },
+    "correctable_replan": {
+      "verdict": "rework_replan",
+      "control_decision": "replan",
+      "human_prompt_hint": ""
+    },
+    "transient_retryable": {
+      "verdict": "rework_retry",
+      "control_decision": "retry",
+      "human_prompt_hint": ""
+    },
+    "policy_blocked": {
+      "verdict": "needs_human_review",
+      "control_decision": "wait_human",
+      "human_prompt_hint": "Action blocked by policy; human must authorize or adjust scope."
+    },
+    "permanent_failure": {
+      "verdict": "fail",
+      "control_decision": "fail",
+      "human_prompt_hint": ""
+    },
+    "default": {
+      "verdict": "rework_replan",
+      "control_decision": "replan",
+      "human_prompt_hint": ""
+    }
+  },
+  "debiasing": {
+    "rubric_anchored": true,
+    "force_defect_reasoning": true,
+    "stage_gate": {
+      "samples": 1,
+      "temperature": 0.0,
+      "mode": "single_sample"
+    },
+    "final_delivery": {
+      "samples": 3,
+      "temperature": 0.7,
+      "mode": "majority_vote",
+      "disagreement_threshold": 1.0
+    },
+    "reference_calibration": true,
+    "maker_checker_isolation": {
+      "required": true,
+      "rule": "maker and checker must have different agent_id; evaluate-stage checker must come from a different model family (open-weight / closed-weight / some-theory) when feasible; act-stage self-check is early-return only, not a pass basis",
+      "fallback": "if only one model family available in registry, degrade to temperature=0 same-model check (statistical safety, not core safety)",
+      "ref": "Huang et al. 2024 LLMs Cannot Self-Correct Yet + Constitutional AI (Anthropic 2022)"
+    },
+    "minimum_sample_size": {
+      "default": 3,
+      "rule": "third-layer QA directional adjustments (change north_star, change product positioning, cut features) require min sample = max(3 runs, 1 full iteration cycle); below threshold, slow-loop QA records but does not adjust",
+      "hard_constraint_exceptions": [
+        "safety",
+        "compliance",
+        "brand_consistency"
+      ],
+      "ref": "statistical significance for slow-loop judgment"
+    }
+  },
+  "role_gates": {
+    "product": {
+      "rubric_items": [
+        {
+          "id": "acceptance_criteria_met",
+          "weight": 0.308,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "scope_alignment",
+          "weight": 0.231,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "stakeholder_concerns_addressed",
+          "weight": 0.231,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "value_validation",
+          "weight": 0.231,
+          "hard_disqualifier": false,
+          "description": "PM-as-QA: does the outcome create genuine product value, not just meet functional acceptance criteria? Based on context advantage (taste)."
+        }
+      ],
+      "hard_disqualifiers": [
+        "missing_acceptance_criteria",
+        "scope_creep_unapproved"
+      ]
+    },
+    "design": {
+      "rubric_items": [
+        {
+          "id": "architecture_coherent",
+          "weight": 0.35,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "interface_contracts_clear",
+          "weight": 0.25,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "tradeoffs_documented",
+          "weight": 0.2,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "anti_slop_check",
+          "weight": 0.2,
+          "hard_disqualifier": false,
+          "description": "Anti AI-Slop check: UI output must not trigger any slop fingerprint listed in taste-skill (purple-blue gradient hero, dark grid background, elliptical buttons, centered stacked cards). vibe-designer invokes taste-skill at act->evaluate boundary."
+        }
+      ],
+      "hard_disqualifiers": [
+        "circular_dependency",
+        "missing_interface_contract"
+      ]
+    },
+    "implementation": {
+      "rubric_items": [
+        {
+          "id": "tests_pass",
+          "weight": 0.333,
+          "hard_disqualifier": true
+        },
+        {
+          "id": "code_quality",
+          "weight": 0.25,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "no_regressions",
+          "weight": 0.25,
+          "hard_disqualifier": true
+        },
+        {
+          "id": "iteration_effectiveness",
+          "weight": 0.167,
+          "hard_disqualifier": false,
+          "description": "Each retry carries new observation or modified assumption; no empty-loop iterations. Progress delta >= 0.02 per cycle."
+        }
+      ],
+      "hard_disqualifiers": [
+        "tests_failing",
+        "regression_introduced",
+        "syntax_error"
+      ]
+    },
+    "writing": {
+      "rubric_items": [
+        {
+          "id": "claims_supported",
+          "weight": 0.4,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "structure_clear",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "voice_consistent",
+          "weight": 0.3,
+          "hard_disqualifier": false
+        }
+      ],
+      "hard_disqualifiers": [
+        "fabricated_citation",
+        "plagiarism_detected"
+      ]
+    },
+    "delivery": {
+      "rubric_items": [
+        {
+          "id": "artifacts_complete",
+          "weight": 0.28,
+          "hard_disqualifier": true
+        },
+        {
+          "id": "handoff_documented",
+          "weight": 0.2,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "secretary_acceptable",
+          "weight": 0.2,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "handoff_semantic_integrity",
+          "weight": 0.12,
+          "hard_disqualifier": false,
+          "description": "Handoff envelopes are semantically complete: receiver has all required fields, artifacts reachable, acknowledgment closed."
+        },
+        {
+          "id": "comprehension_debt_check",
+          "weight": 0.2,
+          "hard_disqualifier": false,
+          "description": "Comprehension Debt defense: in human_gated stage, human must read diff and write a >=30 char comprehension summary before approve; reject does not require summary. Prevents rubber-stamp approval."
+        }
+      ],
+      "hard_disqualifiers": [
+        "missing_artifact",
+        "handoff_blocked"
+      ]
+    },
+    "legal": {
+      "rubric_items": [
+        {
+          "id": "source_verification",
+          "weight": 0.30,
+          "hard_disqualifier": true
+        },
+        {
+          "id": "jurisdiction_accuracy",
+          "weight": 0.25,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "risk_classification",
+          "weight": 0.20,
+          "hard_disqualifier": false
+        },
+        {
+          "id": "human_review_gate_compliance",
+          "weight": 0.25,
+          "hard_disqualifier": true
+        }
+      ],
+      "hard_disqualifiers": [
+        "fabricated_legal_citation",
+        "unauthorized_legal_advice",
+        "jurisdiction_mismatch"
+      ]
+    }
+  },
+  "composite_score": {
+    "mode": "weighted_average",
+    "default_weights": {
+      "product": 0.17,
+      "design": 0.17,
+      "implementation": 0.26,
+      "writing": 0.13,
+      "delivery": 0.13,
+      "legal": 0.14
+    }
+  },
+  "judge_agent": {
+    "profile": "secretary",
+    "output_schema": {
+      "score": "integer 1-7",
+      "verdict": "string from failure_class_routing",
+      "failure_class": "string",
+      "rubric_hits": "object",
+      "strengths": "array of {item, evidence}",
+      "defects": "array of {item, severity, fix_suggestion}",
+      "recommended_control_decision": "string",
+      "human_prompt_hint": "string (non-empty when verdict starts with needs_human_)",
+      "reason": "string"
+    },
+    "scorer_role": "secretary evaluates against user-confirmed intent and goals"
+  },
+  "gui_contract": {
+    "display_fields": [
+      "score",
+      "verdict",
+      "failure_class",
+      "strengths",
+      "defects",
+      "human_prompt_hint"
+    ],
+    "block_color": {
+      "pass": "green",
+      "fail": "red",
+      "needs_human": "amber"
+    }
+  },
+  "stage_thresholds": {
+    "context": 4,
+    "decide": 5,
+    "act": 5,
+    "evaluate": 6
+  },
+  "qa_framework": {
+    "document": "agent-system/docs/agent-team-qa-framework.zh-CN.md",
+    "theory": "Andrew Ng three-layer Loop Engineering",
+    "principle": "QA covers three layers: execution self-test (fast), product taste (medium), product survival (slow). Secretary is the taste guardian ensuring context advantage flows to every decision node.",
+    "context_advantage_layers": [
+      "skill_required_context: each SKILL.md declares required_context; secretary verifies before dispatch",
+      "project_memory_injection: project_memory.md accumulates cross-task product knowledge; injected into context stage at run start",
+      "soul_boundary_enforcement: each SOUL.md defines role context boundary; handoff only passes in-boundary fields"
+    ],
+    "anti_slop": {
+      "skill": "skills/_imported/taste-skill/",
+      "invoke_at": "act_to_evaluate_boundary",
+      "owner": "vibe-designer"
+    },
+    "version": "1.2.0"
+  }
+}

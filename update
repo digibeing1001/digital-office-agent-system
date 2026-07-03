@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPOSITORY="https://github.com/digibeing1001/digital-office-agent-system.git"
+BRANCH="main"
+HOST="hermes"
+TARGET=""
+MODE="auto"
+SOURCE=""
+RUN_CHECKS=1
+TEMP_DIRS=()
+
+cleanup() {
+  local path
+  for path in "${TEMP_DIRS[@]}"; do
+    if [ -n "$path" ] && [ -d "$path" ]; then
+      rm -rf -- "$path"
+    fi
+  done
+}
+
+trap cleanup EXIT
+
+usage() {
+  cat <<'EOF'
+Usage: update [--host hermes|openclaw|generic] [--target PATH]
+              [--preserve-existing|--overwrite-existing]
+              [--source PATH] [--branch NAME] [--no-check]
+
+Installs or upgrades Digital Office from GitHub, validates the package, and
+preserves runtime data. Existing unmanaged host rules always require an
+explicit preserve-or-overwrite choice.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --host)
+      HOST="${2:-}"
+      shift 2
+      ;;
+    --target)
+      TARGET="${2:-}"
+      shift 2
+      ;;
+    --preserve-existing)
+      MODE="preserve"
+      shift
+      ;;
+    --overwrite-existing)
+      MODE="overwrite"
+      shift
+      ;;
+    --source)
+      SOURCE="${2:-}"
+      shift 2
+      ;;
+    --branch)
+      BRANCH="${2:-}"
+      shift 2
+      ;;
+    --no-check)
+      RUN_CHECKS=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "update: unknown option $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$HOST" in
+  hermes)
+    TARGET="${TARGET:-$HOME/.hermes}"
+    ENTRYPOINT="SOUL.md"
+    ;;
+  openclaw)
+    TARGET="${TARGET:-${OPENCLAW_HOME:-$HOME/.openclaw}}"
+    ENTRYPOINT="AGENTS.md"
+    ;;
+  generic)
+    TARGET="${TARGET:-$HOME/.digital-office-agent}"
+    ENTRYPOINT="AGENTS.md"
+    ;;
+  *)
+    echo "update: unsupported host '$HOST'" >&2
+    exit 2
+    ;;
+esac
+
+if [ -n "$SOURCE" ]; then
+  SOURCE="$(cd "$SOURCE" && pwd)"
+  if [ ! -x "$SOURCE/install.sh" ]; then
+    echo "update: source does not contain executable install.sh: $SOURCE" >&2
+    exit 2
+  fi
+else
+  WORK_DIR="$(mktemp -d)"
+  TEMP_DIRS+=("$WORK_DIR")
+  if command -v git >/dev/null 2>&1; then
+    git clone --quiet --depth 1 --branch "$BRANCH" "$REPOSITORY" "$WORK_DIR/source"
+    SOURCE="$WORK_DIR/source"
+  elif command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
+    curl -fsSL "https://github.com/digibeing1001/digital-office-agent-system/archive/refs/heads/$BRANCH.tar.gz" -o "$WORK_DIR/source.tar.gz"
+    mkdir -p "$WORK_DIR/unpacked"
+    tar -xzf "$WORK_DIR/source.tar.gz" -C "$WORK_DIR/unpacked"
+    SOURCE="$(find "$WORK_DIR/unpacked" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+  else
+    echo "update: install git, or install both curl and tar" >&2
+    exit 2
+  fi
+fi
+
+if [ "$RUN_CHECKS" -eq 1 ]; then
+  PREFLIGHT_DIR="$(mktemp -d)"
+  TEMP_DIRS+=("$PREFLIGHT_DIR")
+  echo "Digital Office: validating the release candidate before updating $TARGET"
+  "$SOURCE/install.sh" --host "$HOST" --target "$PREFLIGHT_DIR/target" --overwrite-existing >/dev/null
+fi
+
+if [ "$MODE" = "auto" ] && [ -f "$TARGET/$ENTRYPOINT" ] && grep -q "digital-office-managed-entrypoint" "$TARGET/$ENTRYPOINT"; then
+  MODE="overwrite"
+fi
+
+args=(--host "$HOST" --target "$TARGET")
+case "$MODE" in
+  overwrite) args+=(--overwrite-existing) ;;
+  preserve) args+=(--preserve-existing) ;;
+esac
+if [ "$RUN_CHECKS" -eq 0 ]; then
+  args+=(--no-check)
+fi
+
+"$SOURCE/install.sh" "${args[@]}"
+echo "Digital Office update completed: $TARGET"

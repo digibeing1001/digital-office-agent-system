@@ -1,0 +1,362 @@
+{
+  "candidate_source_policy": {
+    "default": "never_install_directly_in_enterprise_production",
+    "notes": "High-star external repositories are references and candidate sources. They are not trusted production dependencies until staged and verified.",
+    "required_flow": [
+      "research",
+      "clone_to_candidate",
+      "review_license_and_security",
+      "adapt_to_internal_skill",
+      "run_harness_check",
+      "admin_approve"
+    ]
+  },
+  "candidate_sources": [
+    {
+      "candidate_for": [
+        "coder",
+        "vibe-designer",
+        "secretary"
+      ],
+      "name": "ECC",
+      "observed_stars": null,
+      "remote": "https://github.com/everything-claude-code/everything-claude-code.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "agent harness construction, regression testing, production-quality workflow patterns",
+      "notes": "Star count removed to avoid staleness; verify current count before citing."
+    },
+    {
+      "candidate_for": [
+        "coder",
+        "vibe-designer",
+        "writer",
+        "secretary"
+      ],
+      "name": "awesome-claude-skills",
+      "observed_stars": 63576,
+      "remote": "https://github.com/ComposioHQ/awesome-claude-skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "curated-list-candidate",
+      "use_case": "discover vetted Claude skills and skill design patterns"
+    },
+    {
+      "candidate_for": [
+        "coder",
+        "vibe-designer"
+      ],
+      "name": "antigravity-awesome-skills",
+      "observed_stars": 39966,
+      "remote": "https://github.com/sickn33/antigravity-awesome-skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "curated-list-candidate",
+      "use_case": "large installable skill library for coding/design workflow candidates"
+    },
+    {
+      "candidate_for": [
+        "coder",
+        "vibe-designer"
+      ],
+      "name": "awesome-cursorrules",
+      "observed_stars": 39902,
+      "remote": "https://github.com/PatrickJS/awesome-cursorrules.git",
+      "status": "research_only_stage_before_install",
+      "type": "curated-list-candidate",
+      "use_case": "coding style, framework-specific AI editor rules, and frontend implementation conventions"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "pm",
+        "coder"
+      ],
+      "name": "claude-task-master",
+      "observed_stars": 27346,
+      "remote": "https://github.com/eyaltoledano/claude-task-master.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "task breakdown, status tracking, and implementation planning for AI-assisted development"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "coder"
+      ],
+      "name": "12-factor-agents",
+      "observed_stars": 23061,
+      "remote": "https://github.com/humanlayer/12-factor-agents.git",
+      "status": "research_only_stage_before_install",
+      "type": "reference-candidate",
+      "use_case": "principles for durable LLM-powered software and agent control boundaries"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "coder"
+      ],
+      "name": "ai-dev-tasks",
+      "observed_stars": 7745,
+      "remote": "https://github.com/snarktank/ai-dev-tasks.git",
+      "status": "research_only_stage_before_install",
+      "type": "git-candidate",
+      "use_case": "AI dev task lifecycle and status discipline"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "coder",
+        "vibe-designer",
+        "writer"
+      ],
+      "name": "anthropics-skills",
+      "observed_stars": 147505,
+      "remote": "https://github.com/anthropics/skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "official-skill-candidate",
+      "use_case": "official agent skill packaging patterns and reusable workflow contracts"
+    },
+    {
+      "candidate_for": [
+        "coder",
+        "vibe-designer"
+      ],
+      "name": "vercel-agent-skills",
+      "observed_stars": 27678,
+      "remote": "https://github.com/vercel-labs/agent-skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "official-skill-candidate",
+      "use_case": "frontend, deployment, and product engineering skill patterns"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "coder",
+        "vibe-designer"
+      ],
+      "name": "awesome-agent-skills",
+      "observed_stars": 24517,
+      "remote": "https://github.com/VoltAgent/awesome-agent-skills.git",
+      "status": "research_only_stage_before_install",
+      "type": "curated-list-candidate",
+      "use_case": "cross-tool skill discovery for Codex, Claude Code, Gemini CLI, Cursor, and related agents"
+    },
+    {
+      "candidate_for": [
+        "secretary"
+      ],
+      "name": "LangGraph",
+      "observed_stars": 34088,
+      "remote": "https://github.com/langchain-ai/langgraph.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "durable execution, state checkpoints, human-in-the-loop workflow design"
+    },
+    {
+      "candidate_for": [
+        "secretary"
+      ],
+      "name": "AutoGen",
+      "observed_stars": 58749,
+      "remote": "https://github.com/microsoft/autogen.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "multi-agent role boundaries, conversation orchestration, and handoff patterns"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "researcher"
+      ],
+      "name": "Haystack",
+      "observed_stars": 25476,
+      "remote": "https://github.com/deepset-ai/haystack.git",
+      "status": "research_only_reference",
+      "type": "architecture-reference",
+      "use_case": "production RAG pipelines, retrieval routing, and modular context engineering"
+    },
+    {
+      "candidate_for": [
+        "researcher",
+        "secretary"
+      ],
+      "name": "RAGAS",
+      "notes": "GitHub API was rate-limited during the final sampling pass; keep as evaluation reference, not as a star-ranked install source.",
+      "observed_stars": null,
+      "remote": "https://github.com/explodinggradients/ragas.git",
+      "status": "research_only_reference",
+      "type": "evaluation-reference",
+      "use_case": "RAG retrieval and faithfulness evaluation patterns"
+    },
+    {
+      "candidate_for": [
+        "secretary",
+        "vibe-designer"
+      ],
+      "name": "pitch-clarity-coach",
+      "remote": "https://github.com/federico-jarach/pitch-clarity-coach.git",
+      "status": "research_only_until_standard_skill_packaging",
+      "type": "git-candidate",
+      "use_case": "pre-delivery clarity review for pitch and presentation narratives; not active until it provides a standard SKILL.md package"
+    },
+    {
+      "candidate_for": [
+        "legal"
+      ],
+      "name": "Legal-Skills-Chinese",
+      "remote": "https://github.com/THUYRan/Legal-Skills-Chinese.git",
+      "status": "reference_only_license_review_required",
+      "type": "git-candidate",
+      "use_case": "PRC statutory-law legal reasoning atomic skills for retrieval, norm validity, element extraction, risk assessment, and document summarization.",
+      "notes": "README and CONTRIBUTING identify CC BY-NC-ND 4.0 terms; do not vendor, modify, redistribute, or use commercially until licensing is cleared."
+    }
+  ],
+  "description": "Portable manifest for updating installed skills from their source repositories or registries.",
+  "hermes": {
+    "branch": "main",
+    "path": "../hermes-agent",
+    "remote": "https://github.com/NousResearch/hermes-agent.git",
+    "type": "git",
+    "update": "pull_ff_only"
+  },
+  "kind": "skill-source-manifest",
+  "manual_skill_policy": {
+    "include_in_status": true,
+    "message": "No source is registered for this skill. Add a source entry before enabling automatic update."
+  },
+  "skills_root": "../skills",
+  "sources": [
+    {
+      "branch": "main",
+      "name": "Product-Manager-Skills",
+      "path": "../skills/_imported/Product-Manager-Skills",
+      "remote": "https://github.com/deanpeters/Product-Manager-Skills.git",
+      "type": "git",
+      "used_by": [
+        "pm"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "lenny-skills",
+      "path": "../skills/_imported/lenny-skills",
+      "remote": "https://github.com/RefoundAI/lenny-skills.git",
+      "type": "git",
+      "used_by": [
+        "pm"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "ai-pm",
+      "path": "../skills/_imported/ai-pm",
+      "remote": "https://github.com/SmileLiuuuu/ai-pm.git",
+      "type": "git",
+      "used_by": [
+        "pm"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "huashu-md-html",
+      "path": "../skills/huashu-md-html",
+      "remote": "https://github.com/alchaincyf/huashu-md-html.git",
+      "type": "git",
+      "used_by": [
+        "writer",
+        "vibe-designer"
+      ]
+    },
+    {
+      "identifier": "skills-sh/anthropics/skills/frontend-design",
+      "name": "frontend-design",
+      "path": "../skills/frontend-design",
+      "type": "skills.sh",
+      "used_by": [
+        "vibe-designer"
+      ]
+    },
+    {
+      "identifier": "skills-sh/vercel-labs/skills/find-skills",
+      "name": "find-skills",
+      "path": "../skills/find-skills",
+      "type": "skills.sh",
+      "used_by": [
+        "secretary"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "humanize-ppt",
+      "path": "../skills/humanize-ppt",
+      "remote": "https://github.com/LearnPrompt/humanize-ppt.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "huashu-design",
+      "path": "../skills/huashu-design",
+      "remote": "https://github.com/alchaincyf/huashu-design.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "guizang-ppt-skill",
+      "path": "../skills/guizang-ppt-skill",
+      "remote": "https://github.com/op7418/guizang-ppt-skill.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "frontend-slides",
+      "path": "../skills/frontend-slides",
+      "remote": "https://github.com/zarazhangrui/frontend-slides.git",
+      "type": "git",
+      "used_by": [
+        "secretary",
+        "vibe-designer"
+      ]
+    },
+    {
+      "branch": "main",
+      "name": "claude-for-legal-zh",
+      "path": "../skills/_imported/claude-for-legal-ZH",
+      "remote": "https://github.com/cslawyer1985/claude-for-legal-zh.git",
+      "type": "git",
+      "used_by": [
+        "legal"
+      ],
+      "notes": "Apache 2.0 source for China-law-oriented enterprise legal plugins; installed locally under skills/_imported and exposed to the Digital Lawyer through digital-lawyer-workflows."
+    }
+  ],
+  "update_policy": {
+    "allow_dirty_git_update": false,
+    "backup_before_update": true,
+    "default_mode": "check_stage_verify_approve",
+    "gui_button_label": "Check updates",
+    "notes": "In enterprise production, the GUI update button must not overwrite the active Hermes or skill set directly. Use bin/update-system for status and candidate staging. GitHub-backed skills update via git in a candidate copy. Registry-backed skills are checked through skills hub metadata. Manual skills are reported as manual.",
+    "production_direct_update": false,
+    "production_flow": [
+      "check",
+      "download_to_candidate",
+      "run_health_checks",
+      "run_route_tests",
+      "show_release_diff",
+      "admin_approve",
+      "switch_active_version",
+      "keep_rollback_snapshot"
+    ]
+  },
+  "version": "1.0.0"
+}

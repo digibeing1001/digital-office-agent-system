@@ -1,0 +1,140 @@
+{
+  "version": "0.1.0",
+  "kind": "digital-office-external-knowledge-source-registry",
+  "description": "Connector contract for customer-owned third-party knowledge bases and provider-sold online industry knowledge packs.",
+  "source_classes": {
+    "customer_owned_external_kb": {
+      "examples": [
+        "ima",
+        "notion",
+        "get_notes",
+        "tencent_docs",
+        "ai_recorder_cards",
+        "feishu_docs",
+        "local_nas_documents"
+      ],
+      "ownership": "customer",
+      "storage_policy": "May sync metadata, excerpts, embeddings, or selected files according to customer admin settings and third-party permissions.",
+      "mount_targets": [
+        "company_knowledge",
+        "project_knowledge",
+        "agent_specialist_context"
+      ],
+      "default_mount_target": "project_knowledge",
+      "download_policy": "Follow the customer's third-party permissions and connector terms."
+    },
+    "provider_sold_industry_kb": {
+      "examples": [
+        "national_law_reference_pack",
+        "tax_policy_reference_pack",
+        "accounting_standards_reference_pack",
+        "industry_research_paper_pack"
+      ],
+      "ownership": "provider_or_licensed_provider",
+      "storage_policy": "Do not copy readable source documents into tenant company or project knowledge bases.",
+      "mount_targets": [
+        "licensed_company_reference",
+        "licensed_project_reference",
+        "licensed_agent_reference"
+      ],
+      "default_mount_target": "licensed_project_reference",
+      "download_policy": "No download, no export, no bulk copy, and no use outside Digital Office."
+    }
+  },
+  "injection_decision_tree": [
+    {
+      "condition": "The source is customer-owned and should be reused across the whole organization.",
+      "target": "company_knowledge",
+      "examples": [
+        "company policies",
+        "internal templates",
+        "approved brand voice",
+        "department SOPs"
+      ]
+    },
+    {
+      "condition": "The source is customer-owned and only relevant to one active matter, case, client, campaign, or product build.",
+      "target": "project_knowledge",
+      "examples": [
+        "client documents",
+        "project meeting notes",
+        "case materials",
+        "campaign source files"
+      ]
+    },
+    {
+      "condition": "The source is customer-owned but should only be used by a specialist Agent.",
+      "target": "agent_specialist_context",
+      "examples": [
+        "finance formulas for tax agent",
+        "design system for design agent",
+        "publishing rules for media editor agent"
+      ]
+    },
+    {
+      "condition": "The source is a provider-sold online industry knowledge pack.",
+      "target": "licensed_reference_layer",
+      "examples": [
+        "paid law reference library",
+        "paid tax policy pack",
+        "paid accounting standards pack",
+        "paid industry paper pack"
+      ]
+    }
+  ],
+  "licensed_reference_layer": {
+    "description": "A fourth retrieval layer mounted beside company/project/KeyMemory, used only for provider-sold online industry knowledge.",
+    "fact_priority": [
+      "project_knowledge",
+      "company_knowledge",
+      "licensed_industry_reference",
+      "keymemory"
+    ],
+    "agent_context_policy": "Agents receive only authorized snippets, source ids, citations, and retrieval metadata. They never receive a downloadable pack path.",
+    "mount_scopes": {
+      "licensed_company_reference": "All allowed users, projects, and agents in a tenant can query this pack inside Digital Office.",
+      "licensed_project_reference": "Only selected projects can query this pack.",
+      "licensed_agent_reference": "Only selected specialist agents can query this pack, optionally within selected projects."
+    }
+  },
+  "connector_contract": {
+    "required_fields": [
+      "connector_id",
+      "source_class",
+      "provider",
+      "auth_type",
+      "skill_id",
+      "sync_modes",
+      "mount_targets",
+      "permission_mapping",
+      "citation_policy",
+      "rate_limit_policy"
+    ],
+    "sync_modes": [
+      "metadata_only",
+      "selected_items",
+      "excerpt_index",
+      "embedding_index",
+      "full_customer_owned_sync",
+      "controlled_remote_retrieval"
+    ],
+    "permission_mapping": "Connector permissions must map external users/groups to Digital Office tenant users, roles, projects, and agents before retrieval."
+  },
+  "gui_flow": [
+    "Admin opens Knowledge Sources.",
+    "Admin chooses customer-owned connector or provider-sold industry knowledge product.",
+    "System explains ownership, allowed use, and download/export policy.",
+    "Admin selects mount scope: company, project, or specialist Agent.",
+    "System validates entitlement, external auth, role permission, project membership, and agent permission.",
+    "System creates a mount record without copying forbidden provider-owned source documents.",
+    "Every Agent query uses the mount record and writes an access log with tenant, deployment, user, project, Agent, workflow run, knowledge pack, and entitlement."
+  ],
+  "backend_api_reserved": [
+    "GET /knowledge-sources/catalog",
+    "POST /knowledge-sources/connectors/oauth/start",
+    "POST /knowledge-sources/connectors/sync",
+    "POST /knowledge-sources/industry-packs/mount",
+    "POST /knowledge-sources/industry-packs/query",
+    "GET /knowledge-sources/access-logs"
+  ]
+}

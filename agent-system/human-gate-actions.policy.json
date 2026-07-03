@@ -1,0 +1,98 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-human-gate-actions-policy",
+  "source": "Absorbed from writer-team branch orchestration.md (11 类关键动作人工把关) · 2026-07 cross-learning",
+  "description": "11 类关键动作必须经人工把关后方可执行。risk_threshold 超阈值时自动挂起并请求人工确认；auto_block=true 的动作默认阻断，等待人工放行。",
+  "risk_threshold": 0.65,
+  "policy": "超阈值自动挂起，请人确认",
+  "actions": [
+    {
+      "id": "external_send",
+      "name": "对外发送（邮件、消息、通知）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "public_publish",
+      "name": "公开发布（博客、社交媒体、公告）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "deploy",
+      "name": "上线部署（生产环境发布）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "delete",
+      "name": "删除（文件、记录、知识条目）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "overwrite",
+      "name": "覆盖（已存在产物的覆写）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "payment",
+      "name": "付款（资金划转、订阅、采购）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "data_export",
+      "name": "数据导出（用户数据、知识库、配置）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "long_term_memory",
+      "name": "记入长期记忆（项目记忆、SOUL 更新）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "company_knowledge",
+      "name": "晋升为公司知识（知识库正式收录）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "regulated_advice",
+      "name": "受监管专业建议（法律、医疗、财务）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    },
+    {
+      "id": "final_delivery",
+      "name": "最终交付（向用户交付最终产物）",
+      "risk_levels": [
+        "high"
+      ],
+      "auto_block": true
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+# 数字办公室 LOOP 工程
+
+## 最终结论
+
+数字办公室不采用固定的“感知、推理、规划、执行、反思、迭代”六段流水线。六个词有助于解释思考过程，但直接做成六个运行阶段会造成重复、上下文搬运和状态模糊。
+
+正式运行时采用四个可组合工作节点：
+
+1. `Context`：装载完成下一步所需的最小可信上下文。
+2. `Decide`：形成结构化决策、路线或计划、风险和下一步动作契约。
+3. `Act`：调用 Agent、Skill 和工具执行动作并记录观察与产物。
+4. `Evaluate`：按照证据、验收标准、进度和预算判断结果。
+
+节点之外还有一个确定性控制器。模型可以提出建议，但不能直接修改运行状态。控制器只接受以下决定：
+
+- `continue`：回到 Context 获取新信息
+- `replan`：回到 Decide 改变路线或计划
+- `retry`：在策略允许时重试最小执行单元
+- `wait_human`：等待澄清、审批或专业判断
+- `complete`：验收通过并且产物可访问
+- `fail`：永久失败或硬性要求无法满足
+- `cancel`：用户或授权操作人取消
+- `budget_exhausted`：循环、时间、工具、模型或费用预算耗尽
+
+## 为什么这样划分
+
+- 推理和规划都属于 Decide 的结构化输出，不需要拆成两个重复阶段。
+- 反思属于 Evaluate；迭代是控制器的跳转，不是必须执行一次的内容阶段。
+- 简单任务可以明确跳过 Decide，但不能跳过 Context、Act 和 Evaluate。
+- 高风险任务仍然走四个节点，并在需要时插入人工判断门。
+- 私有思维链不保存、不展示。系统只保存事实、假设、依据、结论、风险和下一步动作。
+
+## 商用运行约束
+
+每个运行实例必须持久化：
+
+- 稳定的 `run_id`、`context_id` 和 `task_id`
+- 当前节点、节点产物、门禁和阻塞原因
+- 哈希链事件账本
+- 检查点和恢复游标
+- 工具、模型、Token 和费用使用量
+- 最大循环、重试、时长、工具调用和模型调用预算
+- 人工判断和审批状态
+- 类型化交接及接收确认
+
+副作用必须可幂等、可去重或需要明确确认。不能因为一次网络错误就盲目重跑整个工作流。终态任务保持不可变；后续改进应创建新任务并沿用同一个 `context_id`。
+
+## 人类如何参与 Loop
+
+Human-in-the-loop 不是在最后增加一个审批框，而是两类不同的状态门：
+
+1. **执行前的上下文门**：秘书先根据用户表达生成意图摘要并复述；用户确认当前摘要版本后，秘书至少提出三道第一性原理问题，补齐目标、交付物、验收标准、失败边界、事实依据和关键不确定性。项目底稿达到准备度门槛并由用户确认哈希后，才允许派工。
+2. **执行中的精准中断**：只有出现高影响上下文缺口、目标漂移、证据冲突、高风险或不可逆动作时才暂停。中断保存状态和恢复游标，用户补充的内容以增量写入当前上下文版本，然后从检查点恢复。
+
+意图或目标发生变化时，原确认自动失效。系统不会拿旧确认继续执行，也不会在恢复时把全部聊天历史重新发送给模型；它只加载确认后的上下文差量、当前决定和原始资料引用。
+
+这一设计参考：
+
+- [LangGraph interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)：持久化中断状态、用稳定身份恢复、在中断前保持副作用幂等。
+- [AutoGen Human-in-the-Loop](https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html)：长时间人工反馈采用保存状态后异步恢复，阻塞式等待只适合短时即时确认。
+- [MemGPT](https://arxiv.org/abs/2310.08560)：将工作记忆和长期资料分层，通过引用和按需装载减少整段历史重放。
+- [ReAct](https://arxiv.org/abs/2210.03629) 与 [Reflexion](https://arxiv.org/abs/2303.11366)：动作与新观察交错，反思由反馈和验收证据触发，而不是每轮无条件增加一次模型调用。
+
+对应实现：`project-context-status`、`project-intent-confirm`、`project-context-update`、`project-context-confirm`，以及 `project-context-intake-production` harness。
+
+## 任务循环与系统迭代
+
+任务返工可以在用户已经批准的范围和预算内自动循环。以下系统变化不属于普通任务循环：
+
+- Agent SOUL
+- Skill 组合
+- 工作流定义
+- 全局规则
+- 知识晋升
+- 模型路由
+- GUI 契约
+- 发布配置
+
+这些变化必须创建用户可见的迭代提案，说明变化、原因、影响、风险、回滚和回归检查，并由用户确认后才能应用。
+
+## 后端真相来源
+
+- 运行契约：`agent-system/ai-native-loop.manifest.json`
+- 控制命令：`loop-start`、`loop-stage`、`loop-usage-add`、`loop-control`、`loop-status`
+- 运行状态：`agent-system/runs/<run_id>/run.json`
+- 事件账本：`agent-system/runs/<run_id>/ledger.jsonl`
+- 检查点：`agent-system/runs/<run_id>/checkpoints/`
+
+GUI 只能渲染这些后端状态，不能在前端自行推断或修改阶段。

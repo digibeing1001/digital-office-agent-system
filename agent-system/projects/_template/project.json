@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "project_id": "_template",
+  "name": "Project Template",
+  "status": "template",
+  "created_at": null,
+  "description": "Copy this template when a GUI user creates a new project.",
+  "agent_roster": [
+    "pm",
+    "researcher",
+    "planner",
+    "vibe-designer",
+    "coder",
+    "writer"
+  ],
+  "human_members": [],
+  "access_policy": {
+    "human_user_required_for_workflow_start": true,
+    "human_approval_required_for_methodology_promotion": true,
+    "human_approval_required_for_regulated_outputs": true,
+    "agent_delegation_requires_project_membership": true
+  },
+  "knowledge_base": {
+    "path": "knowledge",
+    "default_entry_status": "pending_review",
+    "agent_read_requires_approval": true
+  },
+  "rules": {
+    "path": "rules",
+    "conflict_policy": "company_global_rules_win_unless_user_approves_exception"
+  },
+  "methodology_promotion": {
+    "schedule": "manual",
+    "draft_path": "reports/methodology-review/drafts",
+    "approved_path": "reports/methodology-review/approved",
+    "requires_user_edit_or_confirmation": true,
+    "promote_to": "../../knowledge/company/methodologies/approved"
+  }
+}

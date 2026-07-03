@@ -1,0 +1,164 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-onboarding-presets",
+  "default_choices": {
+    "address_style": "neutral",
+    "approval_strictness": "balanced",
+    "assistant_style": "neutral_operator",
+    "initiative_level": "confirm_before_action",
+    "language": "auto",
+    "memory_mode": "project_only",
+    "pushback_style": "risk_based",
+    "work_mode": "balanced"
+  },
+  "fields": {
+    "address_style": {
+      "label": "How should agents address the user?",
+      "required": true,
+      "choices": {
+        "neutral": {
+          "label": "Neutral",
+          "description": "Use plain second-person language and avoid titles."
+        },
+        "formal": {
+          "label": "Formal",
+          "description": "Use more formal workplace phrasing."
+        },
+        "friendly": {
+          "label": "Friendly",
+          "description": "Use warmer everyday language without becoming casual."
+        }
+      }
+    },
+    "approval_strictness": {
+      "label": "When should the system ask for confirmation?",
+      "required": true,
+      "choices": {
+        "light": {
+          "label": "Light",
+          "description": "Ask before irreversible, expensive, or external actions."
+        },
+        "balanced": {
+          "label": "Balanced",
+          "description": "Ask before workflow changes, releases, knowledge promotion, approvals, or risky output."
+        },
+        "strict": {
+          "label": "Strict",
+          "description": "Ask before most cross-agent handoffs, settings changes, and user-visible deliveries."
+        }
+      }
+    },
+    "assistant_style": {
+      "label": "What kind of secretary persona should be used?",
+      "required": true,
+      "choices": {
+        "neutral_operator": {
+          "label": "Neutral Operator",
+          "description": "Efficient, calm, low-personality, and task focused."
+        },
+        "warm_coordinator": {
+          "label": "Warm Coordinator",
+          "description": "Friendly, supportive, and proactive about coordination."
+        },
+        "strategic_chief_of_staff": {
+          "label": "Strategic Chief of Staff",
+          "description": "More opinionated, reflective, and willing to challenge weak plans."
+        },
+        "formal_assistant": {
+          "label": "Formal Assistant",
+          "description": "Polished, reserved, and enterprise-office oriented."
+        }
+      }
+    },
+    "initiative_level": {
+      "label": "How proactive should agents be?",
+      "required": true,
+      "choices": {
+        "wait_for_instruction": {
+          "label": "Wait For Instruction",
+          "description": "Agents mostly execute explicit requests."
+        },
+        "confirm_before_action": {
+          "label": "Confirm Before Action",
+          "description": "Agents suggest next steps but ask before acting."
+        },
+        "proactive_suggestions": {
+          "label": "Proactive Suggestions",
+          "description": "Agents actively propose follow-ups, risks, and workflow improvements."
+        }
+      }
+    },
+    "language": {
+      "label": "Preferred language",
+      "required": true,
+      "choices": {
+        "auto": {
+          "label": "Auto",
+          "description": "Match the user's current language."
+        },
+        "zh-CN": {
+          "label": "Simplified Chinese",
+          "description": "Prefer Simplified Chinese in GUI-facing responses."
+        },
+        "en": {
+          "label": "English",
+          "description": "Prefer English in GUI-facing responses."
+        }
+      }
+    },
+    "memory_mode": {
+      "label": "How should memory be used?",
+      "required": true,
+      "choices": {
+        "off_by_default": {
+          "label": "Off By Default",
+          "description": "Do not persist preferences unless the user explicitly asks."
+        },
+        "project_only": {
+          "label": "Project Only",
+          "description": "Remember project decisions and handoffs, not personal style unless confirmed."
+        },
+        "personalized": {
+          "label": "Personalized",
+          "description": "Remember confirmed user preferences, recurring patterns, and project context."
+        }
+      }
+    },
+    "pushback_style": {
+      "label": "How should agents challenge risky requests?",
+      "required": true,
+      "choices": {
+        "minimal": {
+          "label": "Minimal",
+          "description": "Only push back on safety, permission, or correctness risks."
+        },
+        "risk_based": {
+          "label": "Risk Based",
+          "description": "Explain material workflow, quality, privacy, and product risks."
+        },
+        "debate_friendly": {
+          "label": "Debate Friendly",
+          "description": "More actively challenge assumptions and recommend better routes."
+        }
+      }
+    },
+    "work_mode": {
+      "label": "What should the office optimize for?",
+      "required": true,
+      "choices": {
+        "speed": {
+          "label": "Speed",
+          "description": "Prefer faster progress with concise checks."
+        },
+        "balanced": {
+          "label": "Balanced",
+          "description": "Balance progress, quality gates, and user confirmation."
+        },
+        "quality": {
+          "label": "Quality",
+          "description": "Prefer more review, stronger evidence, and fuller validation."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# User preferences and settings - runtime data
+# .api-token is auto-generated, never commit
+*
+!.gitignore
+!.gitkeep
