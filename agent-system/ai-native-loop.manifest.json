@@ -258,7 +258,7 @@
       "max_duration_seconds": 7200,
       "max_tool_calls": 60,
       "max_model_calls": 30,
-      "max_cost_microunits": 0,
+      "max_cost_microunits": 5000000,
       "max_quality_rework_per_stage": 2
     },
     "progress_policy": {

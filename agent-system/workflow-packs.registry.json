@@ -143,5 +143,59 @@
       "context_envelope_required": true,
       "delivery_gate": "human professional review before external reliance"
     }
+  },
+  "ops_patterns": {
+    "daily-triage": {
+      "owner_agent": "secretary",
+      "trigger": "cron:0 9 * * 1-5",
+      "cadence": "daily_weekday",
+      "task_profile": "simple",
+      "autonomy_level": "L2",
+      "max_cycles_per_run": 1,
+      "max_cost_microunits_per_run": 500000,
+      "max_duration_seconds": 300,
+      "max_tool_calls": 20,
+      "required_gates": [
+        "quality_score_ge_70",
+        "no_unresolved_blockers"
+      ],
+      "failure_handling": "wait_human",
+      "description": "Weekday morning triage of stale issues and open questions"
+    },
+    "ci-sweeper": {
+      "owner_agent": "coder",
+      "trigger": "cron:0 */4 * * *",
+      "cadence": "every_4h",
+      "task_profile": "simple",
+      "autonomy_level": "L1",
+      "max_cycles_per_run": 3,
+      "max_cost_microunits_per_run": 200000,
+      "max_duration_seconds": 180,
+      "max_tool_calls": 15,
+      "required_gates": [
+        "lint_clean",
+        "tests_pass",
+        "quality_score_ge_70"
+      ],
+      "failure_handling": "fail",
+      "description": "Periodic lint/test/quality sweep on changed files"
+    },
+    "context-rot-scan": {
+      "owner_agent": "secretary",
+      "trigger": "cron:0 2 * * 1",
+      "cadence": "weekly_monday",
+      "task_profile": "standard",
+      "autonomy_level": "L2",
+      "max_cycles_per_run": 1,
+      "max_cost_microunits_per_run": 300000,
+      "max_duration_seconds": 240,
+      "max_tool_calls": 25,
+      "required_gates": [
+        "quality_score_ge_70",
+        "drift_hash_unchanged"
+      ],
+      "failure_handling": "wait_human",
+      "description": "Weekly scan for context rot: stale project.json, outdated hard_rules snapshot, drifted envelopes"
+    }
   }
 }
