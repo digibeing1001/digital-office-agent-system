@@ -23,7 +23,7 @@
       "command": [
         "python3",
         "-c",
-        "import json,pathlib; m=json.loads(pathlib.Path('agent-system/ai-native-loop.manifest.json').read_text()); assert list(m['stages'])==['context','decide','act','evaluate']; assert set(m['controller']['decisions'])=={'continue','replan','retry','wait_human','complete','fail','cancel','budget_exhausted'}; assert all(m['controller']['default_budgets'][k]>=0 for k in ('max_cycles','max_stage_retries','max_stagnant_cycles','max_duration_seconds','max_tool_calls','max_model_calls','max_cost_microunits')); assert any('Private chain-of-thought' in r for r in m['hard_rules']); assert any('System self-modification' in r for r in m['hard_rules'])"
+        "import json,pathlib; m=json.loads(pathlib.Path('agent-system/ai-native-loop.manifest.json').read_text()); assert list(m['stages'])==['context','decide','act','evaluate']; assert set(m['controller']['decisions'])=={'continue','replan','retry','wait_human','complete','fail','cancel','budget_exhausted','debate'}; assert all(m['controller']['default_budgets'][k]>=0 for k in ('max_cycles','max_stage_retries','max_stagnant_cycles','max_duration_seconds','max_tool_calls','max_model_calls','max_cost_microunits')); assert any('Private chain-of-thought' in r for r in m['hard_rules']); assert any('System self-modification' in r for r in m['hard_rules'])"
       ]
     },
     {

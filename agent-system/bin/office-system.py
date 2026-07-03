@@ -125,7 +125,7 @@ LOOP_STATUS_BY_STAGE = {
     "act": "acting",
     "evaluate": "evaluating",
 }
-LOOP_CONTROL_DECISIONS = {"continue", "replan", "retry", "wait_human", "complete", "fail", "cancel", "budget_exhausted"}
+LOOP_CONTROL_DECISIONS = {"continue", "replan", "retry", "wait_human", "complete", "fail", "cancel", "budget_exhausted", "debate"}
 ITERATION_DECISION_TO_STATUS = {
     "confirm": "confirmed_for_application",
     "tune": "needs_tuning",
@@ -3444,6 +3444,15 @@ def quality_scoring_policy(root: Path) -> dict[str, Any]:
     }
 
 
+FAILURE_CLASS_TO_CONTROL_DECISION = {
+    "transient_retryable": "retry",
+    "correctable_replan": "replan",
+    "missing_context": "continue",
+    "human_judgment_required": "wait_human",
+    "policy_blocked": "wait_human",
+    "permanent_failure": "fail",
+}
+
 QUALITY_FAILURE_CLASSES = {
     "missing_context", "human_judgment_required", "correctable_replan",
     "transient_retryable", "policy_blocked", "permanent_failure",
@@ -3492,7 +3501,7 @@ def evaluate_quality_score(
     workflow_run_id: str = "",
     task_id: str = "",
     artifact_ref: str = "",
-    judge_profile: str = "office-judge",
+    judge_profile: str = "secretary",
     reason: str = "",
 ) -> dict[str, Any]:
     policy = quality_scoring_policy(root)
@@ -3597,7 +3606,7 @@ def quality_score_evaluate(args: argparse.Namespace) -> int:
         workflow_run_id=args.workflow_run or "",
         task_id=args.task_id or "",
         artifact_ref=args.artifact_ref or "",
-        judge_profile=args.judge_profile or "office-judge",
+        judge_profile=args.judge_profile or "secretary",
         reason=args.reason or "",
     )
     out_dir = root / "quality_scores"
@@ -7383,6 +7392,177 @@ def workbench_state(args: argparse.Namespace) -> int:
     return 0
 
 
+LOOP_READY_SIGNALS = [
+    ("base", 10, True),
+    ("manifest_valid", 18, False),
+    ("context_confirmed", 14, False),
+    ("skills_registered", 14, False),
+    ("verifier_isolation", 14, False),
+    ("task_profile_selected", 9, False),
+    ("guardrails_present", 9, False),
+    ("budget_nonzero", 7, False),
+    ("judgment_passed", 6, False),
+    ("run_history", 6, False),
+    ("quality_policy", 4, False),
+    ("observability_configured", 4, False),
+    ("handoff_schema", 4, False),
+    ("knowledge_spaces", 3, False),
+    ("model_gateway", 3, False),
+    ("coordination_policy", 3, False),
+    ("release_policy", 2, False),
+    ("data_sharing_policy", 2, False),
+]
+
+LOOP_READY_LEVEL_THRESHOLDS = {"L0": 0, "L1": 38, "L2": 58, "L3": 78}
+
+TASK_PROFILE_TO_AUTONOMY = {
+    "simple": "L1",
+    "standard": "L2",
+    "complex_or_high_risk": "L3",
+}
+
+AUTONOMY_MAX_SUBAGENT_SPAWNS = {"L1": 0, "L2": 3, "L3": 10}
+AUTONOMY_MAX_ATTEMPTS_PER_ITEM = {"L1": 0, "L2": 3, "L3": 3}
+
+DENYLIST_PATH_PATTERNS = [
+    ".env", "**/secrets/**", "**/credentials/**", "**/*_key*",
+    "**/*_secret*", ".terraform/**", "k8s/production/**",
+    "**/migrations/**", "auth/**", "payments/**", "billing/**",
+]
+
+
+def _json_file_exists(root: Path, name: str) -> bool:
+    p = root / name
+    return p.exists() and p.is_file()
+
+
+def _json_file_has_key(root: Path, name: str, key: str) -> bool:
+    p = root / name
+    if not (p.exists() and p.is_file()):
+        return False
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return isinstance(data, dict) and key in data
+    except Exception:
+        return False
+
+
+def _json_file_has_list_item(root: Path, name: str, key: str, min_count: int = 1) -> bool:
+    p = root / name
+    if not (p.exists() and p.is_file()):
+        return False
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return isinstance(data, dict) and isinstance(data.get(key), list) and len(data[key]) >= min_count
+    except Exception:
+        return False
+
+
+def _json_file_has_active_agent(root: Path) -> bool:
+    p = root / "agents.registry.json"
+    if not (p.exists() and p.is_file()):
+        return False
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        agents = data.get("agents", []) if isinstance(data, dict) else data
+        if not isinstance(agents, list):
+            return False
+        return any(str(a.get("status", "active")) == "active" for a in agents if isinstance(a, dict))
+    except Exception:
+        return False
+
+
+def _runs_dir_has_records(root: Path) -> bool:
+    runs_dir = root / "runs"
+    if not runs_dir.is_dir():
+        return False
+    for child in runs_dir.iterdir():
+        if child.is_dir() and (child / "run.json").exists():
+            return True
+    return False
+
+
+def compute_loop_ready_score(root: Path, project_dir: Path | None = None, task_profile: str = "") -> dict[str, Any]:
+    manifest = loop_manifest(root)
+    signals: dict[str, bool] = {}
+
+    signals["base"] = True
+    signals["manifest_valid"] = (
+        "work_nodes" in manifest.get("architecture", {})
+        and "controller" in manifest
+        and "default_budgets" in manifest.get("controller", {})
+        and "stages" in manifest
+        and "hard_rules" in manifest
+    )
+
+    context_confirmed = True
+    if project_dir is not None:
+        try:
+            project_file = project_dir / "project.json"
+            if project_file.exists():
+                project_record = read_json(project_file)
+                assessment = assess_project_context(root, project_dir.name, project_record)
+                context_confirmed = assessment.get("readiness_score", 0) >= 70 and assessment.get("confirmed", False)
+        except Exception:
+            context_confirmed = False
+    signals["context_confirmed"] = context_confirmed
+
+    signals["skills_registered"] = _json_file_has_active_agent(root)
+    signals["verifier_isolation"] = _json_file_has_key(root, "quality-scoring.policy.json", "maker_checker_isolation")
+    signals["task_profile_selected"] = task_profile in ("simple", "standard", "complex_or_high_risk")
+    signals["guardrails_present"] = _json_file_exists(root, "guardrails.registry.json")
+
+    budgets = manifest.get("controller", {}).get("default_budgets", {})
+    signals["budget_nonzero"] = (
+        int(budgets.get("max_cycles", 0) or 0) > 0
+        and int(budgets.get("max_tool_calls", 0) or 0) > 0
+        and int(budgets.get("max_duration_seconds", 0) or 0) > 0
+        and int(budgets.get("max_cost_microunits", 0) or 0) > 0
+    )
+
+    signals["judgment_passed"] = _json_file_exists(root, "judgment.policy.json")
+    signals["run_history"] = _runs_dir_has_records(root)
+    signals["quality_policy"] = _json_file_has_key(root, "quality-scoring.policy.json", "stage_thresholds")
+    signals["observability_configured"] = _json_file_exists(root, "observability.registry.json")
+    signals["handoff_schema"] = _json_file_exists(root, "context-envelope.schema.json")
+    signals["knowledge_spaces"] = _json_file_has_list_item(root, "knowledge.registry.json", "spaces")
+    signals["model_gateway"] = _json_file_has_list_item(root, "model-providers.registry.json", "providers")
+    signals["coordination_policy"] = _json_file_exists(root, "coordination.policy.json")
+    signals["release_policy"] = _json_file_exists(root, "release.policy.json")
+    signals["data_sharing_policy"] = _json_file_exists(root, "data-sharing.policy.json")
+
+    score = 0
+    for key, weight, always in LOOP_READY_SIGNALS:
+        if signals.get(key, False) or always:
+            score += weight
+    score = max(0, min(100, score))
+
+    if score >= 78 and signals.get("verifier_isolation") and signals.get("budget_nonzero") and signals.get("run_history"):
+        level = "L3"
+    elif score >= 58 and signals.get("context_confirmed"):
+        level = "L2"
+    elif score >= 38 and signals.get("manifest_valid"):
+        level = "L1"
+    else:
+        level = "L0"
+
+    blockers = []
+    if not signals.get("manifest_valid"):
+        blockers.append("manifest_missing_or_invalid")
+    if not signals.get("context_confirmed"):
+        blockers.append("project_context_not_confirmed")
+    if not signals.get("budget_nonzero"):
+        blockers.append("budget_has_zero_defaults")
+
+    return {
+        "score": score,
+        "level": level,
+        "signals": signals,
+        "blockers": blockers,
+        "thresholds": LOOP_READY_LEVEL_THRESHOLDS,
+    }
+
+
 def loop_manifest(root: Path) -> dict[str, Any]:
     return read_json(root / "ai-native-loop.manifest.json")
 
@@ -7431,6 +7611,19 @@ def loop_start(args: argparse.Namespace) -> int:
     if any(int(value) < 0 for value in control.get("budgets", {}).values()):
         print("office-system: loop budgets must be non-negative", file=sys.stderr)
         return 2
+
+    task_profile = args.task_profile or ("simple" if judgment_required else "standard")
+    autonomy_level = TASK_PROFILE_TO_AUTONOMY.get(task_profile, "L2")
+    project_dir = ensure_project(root, project) if project else None
+    readiness = compute_loop_ready_score(root, project_dir, task_profile)
+    if readiness["score"] < 38:
+        print(__import__("json").dumps({
+            "status": "not_loop_ready",
+            "reason": "loop_ready_score_below_threshold",
+            "readiness": readiness,
+            "next_actions": ["ensure manifest valid", "confirm project context", "set non-zero budgets", "register agents"],
+        }, ensure_ascii=False, indent=2, sort_keys=True))
+        return 4
     run = {
         "version": "2.0.0",
         "kind": "digital-office-loop-run",
@@ -7448,9 +7641,14 @@ def loop_start(args: argparse.Namespace) -> int:
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "loop_contract_version": "2.0.0",
+        "task_profile": task_profile,
+        "autonomy_level": autonomy_level,
+        "loop_ready_score": readiness,
         "control": control,
         "stages": loop_stage_records(root),
         "hard_rules": manifest.get("hard_rules", []),
+        "hard_rules_hash": hashlib.sha256(json.dumps(manifest.get("hard_rules", []), sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16],
+        "hard_rules_version": manifest.get("version", "unknown"),
         "context_pack": {
             "context_pack_id": context_pack.get("context_pack_id", "") if context_pack else "",
             "state_hash": context_pack.get("state_hash", "") if context_pack else "",
@@ -7526,9 +7724,8 @@ def quality_gate_block(root: Path, run_id: str, stage: str, score_id: str) -> di
     run = read_json(run_path) if run_path.exists() else {"stages": {}}
     cap = int(_load_loop_manifest(root).get("controller", {}).get("default_budgets", {}).get("max_quality_rework_per_stage", 2))
     new_count = _bump_stage_quality_rework_count(run, stage)
-    import json as _json
     if run_path.exists():
-        run_path.write_text(_json.dumps(run, ensure_ascii=False, indent=2))
+        run_path.write_text(json.dumps(run, ensure_ascii=False, indent=2))
     original_ctrl = score.get("recommended_control_decision", "")
     original_hint = score.get("human_prompt_hint", "")
     escalated = new_count > cap
@@ -7690,13 +7887,51 @@ def loop_stage(args: argparse.Namespace) -> int:
     return 0
 
 
+def _budget_usage_summary(run: dict[str, Any]) -> dict[str, Any]:
+    control = run.get("control", {}) or {}
+    budgets = control.get("budgets", {}) or {}
+    usage = control.get("usage", {}) or {}
+    summary = {}
+    for bkey, ukey in (
+        ("max_cycles", "cycle_index"),
+        ("max_tool_calls", "tool_calls"),
+        ("max_model_calls", "model_calls"),
+        ("max_cost_microunits", "cost_microunits"),
+    ):
+        limit = int(budgets.get(bkey, 0) or 0)
+        used = int(usage.get(ukey, 0) or 0)
+        if limit > 0:
+            pct = round(used / limit * 100, 1)
+            warning = "80_percent_reached" if pct >= 80 else ""
+            summary[bkey] = {"limit": limit, "used": used, "percent": pct, "warning": warning}
+        else:
+            summary[bkey] = {"limit": limit, "used": used, "percent": 0, "warning": ""}
+    return summary
+
+
 def loop_status(args: argparse.Namespace) -> int:
     root = system_root()
     target = loop_run_path(root, args.run_id)
     if not target.exists():
         print(f"office-system: loop run not found: {args.run_id}", file=sys.stderr)
         return 2
-    print(json.dumps(load_run_record(root, args.run_id), ensure_ascii=False, indent=2, sort_keys=True))
+    run = load_run_record(root, args.run_id)
+    budget_summary = _budget_usage_summary(run)
+    stage_statuses = {stage: (run.get("stages", {}).get(stage, {}) or {}).get("status", "pending") for stage in LOOP_STAGES}
+    payload = {
+        "run_id": run.get("run_id", args.run_id),
+        "status": run.get("status", ""),
+        "current_stage": run.get("current_stage", ""),
+        "current_cycle": run.get("control", {}).get("cycle_index", 1),
+        "autonomy_level": run.get("autonomy_level", ""),
+        "task_profile": run.get("task_profile", ""),
+        "loop_ready_score": run.get("loop_ready_score", {}).get("score", 0),
+        "loop_ready_level": run.get("loop_ready_score", {}).get("level", ""),
+        "stage_statuses": stage_statuses,
+        "budget_usage": budget_summary,
+        "blockers": run.get("blockers", []),
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -7730,6 +7965,8 @@ def loop_usage_add(args: argparse.Namespace) -> int:
         input_payload=additions,
         output_payload={"usage": usage, "budget_blockers": blockers},
     )
+    budget_summary = _budget_usage_summary(run)
+    cost_warnings = [v["warning"] for v in budget_summary.values() if v.get("warning")]
     payload = {
         "status": "budget_reached" if blockers else "success",
         "summary": "Loop usage recorded; no further resource-consuming transition is allowed before evaluation." if blockers else "Loop usage recorded.",
@@ -7738,6 +7975,8 @@ def loop_usage_add(args: argparse.Namespace) -> int:
         "run_id": args.run_id,
         "usage": usage,
         "budget_blockers": blockers,
+        "budget_usage": budget_summary,
+        "cost_warnings": cost_warnings,
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
     return 2 if blockers else 0
@@ -7747,6 +7986,15 @@ def loop_control(args: argparse.Namespace) -> int:
     root = system_root()
     run = load_run_record(root, args.run_id)
     decision = args.decision
+    failure_class = args.failure_class or ""
+    if not decision and failure_class:
+        if failure_class not in FAILURE_CLASS_TO_CONTROL_DECISION:
+            print(f"office-system: unsupported failure class: {failure_class}", file=sys.stderr)
+            return 2
+        decision = FAILURE_CLASS_TO_CONTROL_DECISION[failure_class]
+    if not decision:
+        print("office-system: loop control requires --decision or --failure-class", file=sys.stderr)
+        return 2
     if decision not in LOOP_CONTROL_DECISIONS:
         print(f"office-system: unsupported loop control decision: {decision}", file=sys.stderr)
         return 2
@@ -7802,16 +8050,25 @@ def loop_control(args: argparse.Namespace) -> int:
             else:
                 control["stagnant_cycles"] = 0
             max_stagnant = int(budgets.get("max_stagnant_cycles", 0) or 0)
-            if max_stagnant >= 0 and int(control.get("stagnant_cycles", 0)) > max_stagnant:
+            if max_stagnant >= 0 and int(control.get("stagnant_cycles", 0)) >= max_stagnant:
                 effective_decision = "wait_human"
                 run["status"] = "waiting_user_input"
                 run.setdefault("blockers", []).append("loop_progress_stagnant")
             else:
                 if decision == "retry":
+                    autonomy = str(run.get("autonomy_level", "L2"))
+                    if autonomy == "L1":
+                        print("office-system: L1 autonomy level forbids retry (no sub-agent spawns allowed)", file=sys.stderr)
+                        return 2
                     retries = control.setdefault("stage_retries", {})
                     retries[target_stage] = int(retries.get(target_stage, 0)) + 1
                     max_retries = int(budgets.get("max_stage_retries", 0) or 0)
-                    if max_retries >= 0 and retries[target_stage] > max_retries:
+                    max_attempts = AUTONOMY_MAX_ATTEMPTS_PER_ITEM.get(autonomy, 3)
+                    if retries[target_stage] > max_attempts:
+                        run["status"] = "waiting_user_input"
+                        run.setdefault("blockers", []).append(f"max_attempts_{max_attempts}_exceeded_for_{autonomy}")
+                        effective_decision = "wait_human"
+                    elif max_retries >= 0 and retries[target_stage] > max_retries:
                         print("office-system: act retry budget exhausted; replan, wait for human input, or fail", file=sys.stderr)
                         return 2
                 control.setdefault("cycle_history", []).append(
@@ -7837,6 +8094,9 @@ def loop_control(args: argparse.Namespace) -> int:
         run.setdefault("blockers", []).append("permanent_failure")
     elif decision == "cancel":
         run["status"] = "cancelled"
+    elif decision == "debate":
+        run["status"] = "debate_council"
+        run.setdefault("blockers", []).append("debate_council_required")
     elif decision == "budget_exhausted":
         run["status"] = "budget_exhausted"
         run.setdefault("blockers", []).extend(item for item in budget_blockers if item not in run.get("blockers", []))
@@ -9792,7 +10052,7 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
         "pwa": {
             "installable_shell": checks.get("pwa_manifest") and checks.get("service_worker") and checks.get("web_index"),
             "offline_shell": True,
-            "cache_name": "digital-office-shell-v2",
+            "cache_name": "digital-office-shell",
         },
         "deployment": {
             "recommended": "Serve behind HTTPS reverse proxy such as Caddy or Nginx. Bind web-serve to 127.0.0.1 for reverse proxy deployments, or to 0.0.0.0 only on trusted LAN/VPN networks.",
@@ -11138,7 +11398,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--workflow-run")
     p.add_argument("--task-id")
     p.add_argument("--artifact-ref")
-    p.add_argument("--judge-profile", default="office-judge")
+    p.add_argument("--judge-profile", default="secretary")
     p.add_argument("--reason")
     p.set_defaults(func=quality_score_evaluate)
 
@@ -11235,6 +11495,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("loop-start")
     p.add_argument("--run-id")
     p.add_argument("--task")
+    p.add_argument("--task-profile", choices=["simple", "standard", "complex_or_high_risk"], default="")
     p.add_argument("--project")
     p.add_argument("--agent")
     p.add_argument("--workflow", default="")
@@ -11276,7 +11537,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("loop-control")
     p.add_argument("--run-id", required=True)
-    p.add_argument("--decision", choices=sorted(LOOP_CONTROL_DECISIONS), required=True)
+    p.add_argument("--decision", choices=sorted(LOOP_CONTROL_DECISIONS), default="")
+    p.add_argument("--failure-class", choices=sorted(FAILURE_CLASS_TO_CONTROL_DECISION), default="")
     p.add_argument("--progress-score", type=float, required=True)
     p.add_argument("--acceptance-passed", action="store_true")
     p.add_argument("--reason")
