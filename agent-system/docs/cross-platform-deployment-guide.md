@@ -3,7 +3,6 @@
 > 适用范围：Digital Office Agent System（含 writer-team / research-team / main secretary）、FDE Agent Team。
 > 关联协议：C 类平台防代写协议 v2.2（prompt 层）、v2.1.1 state_transition 标签协议、v2.1 function calling 调度。
 > 版本：v1.0（2026-07-06）
-> 依据：ReWOO (arXiv:2305.18323)、MetaGPT (arXiv:2308.00352)、LLMCompiler (arXiv:2312.04511)、Reflexion (arXiv:2303.11366)、Lost in the Middle (arXiv:2307.03172)、CoVe (arXiv:2309.11495)
 
 ---
 
@@ -358,7 +357,7 @@
 
 ### 4.1 注入位置
 
-v2.2 协议应注入到 system prompt 的**末尾**（依据 Lost in the Middle 论文，末尾位置的指令记忆最强）。
+v2.2 协议应注入到 system prompt 的**末尾**（末尾位置的指令记忆最强）。
 
 ### 4.2 注入内容
 
@@ -462,18 +461,3 @@ v2.2 协议应注入到 system prompt 的**末尾**（依据 Lost in the Middle 
 3. 配置 Checkpointer 持久化
 4. 配置 per-Agent tools 白名单
 5. 导入 v2.2 协议到 secretary 的 state_modifier
-
----
-
-## 8. 参考文献
-
-1. ReWOO: Reasoning with Patterns and Knowledge (arXiv:2305.18323) — 计划-执行解耦
-2. MetaGPT: Meta Programming for Multi-Agent (arXiv:2308.00352) — SOP 驱动 + 结构化中间产物
-3. LLMCompiler: Fast LLM Decoding (arXiv:2312.04511) — DAG 任务依赖图
-4. Reflexion: Language Agents with Verbal Reinforcement Learning (arXiv:2303.11366) — 反思记忆 + 重试上限
-5. Lost in the Middle: Language Models Long-Context (arXiv:2307.03172) — 规则前置 + 指令后置
-6. CoVe: Chain-of-Verification Reduces Hallucination (arXiv:2309.11495) — 独立验证防自我合理化
-7. LangGraph Documentation — interrupt_before + Checkpointer
-8. Coze Workflow Documentation — 条件节点 + HITL 节点
-9. Claude Code Subagent Documentation — tools 字段白名单
-10. OpenClaw Bindings Documentation — allow/deny 工具调用
