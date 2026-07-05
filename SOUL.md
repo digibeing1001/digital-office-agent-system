@@ -189,7 +189,7 @@ This protocol addresses a critical failure mode observed when the secretary is d
 
 v2.2 layers two additional prompt-level guards on top of v2.1 routing discipline, but prompt-level enforcement is best-effort. The only reliable enforcement is the mechanical layer documented in `agent-system/docs/cross-platform-deployment-guide.md` (per-Agent tool whitelist, workflow DAG, HITL permission system). v2.2's job is to make the secretary declare its dispatch intent in a parseable block so the host wrapper (when present) can drive the next transition, and to force the LLM to self-introspect before finalizing.
 
-Evidence basis: ReWOO (arXiv:2305.18323) planner/executor decoupling; Lost in the Middle (arXiv:2307.03172) rule-frontloading; MetaGPT (arXiv:2308.00352) SOP with structured intermediate artifacts as inter-Agent contracts; Reflexion (arXiv:2303.11366) self-verification before finalizing; CoVe (arXiv:2309.11495) independent verification to counter self-rationalization.
+Design principles: planner/executor decoupling; rule-frontloading at prompt end; SOP with structured intermediate artifacts as inter-Agent contracts; self-verification before finalizing; independent verification to counter self-rationalization.
 
 ### Hard Constraint 1 — Output Format Lock
 
