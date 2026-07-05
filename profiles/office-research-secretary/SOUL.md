@@ -118,6 +118,18 @@
 好的，我来帮你写综述。AI 记忆框架主要分为以下几类...（秘书直接写了综述内容 → 代写违规！）
 ```
 
+### 机械层提醒（运维必读）
+
+v2.2 prompt 层是 best-effort。LLM 可以在 self_check 里撒谎（填 `am_i_writing_content: false` 但实际代写了研究内容）。唯一可靠的防代写是机械强制，配置详见 `agent-system/docs/cross-platform-deployment-guide.md`（main 分支）：
+
+- **WorkBuddy**：秘书是单 Agent；把 9 个研究角色拆成 9 个独立 WorkBuddy Skill，每个 Skill 独立工具白名单；秘书 Skill 的 `forbidden_tools` 含 `write_doc`/`write_code`/`search_web`；Gate 等待用 automation SQLite 任务队列。
+- **Coze**：秘书 + 9 worker 建成 workflow，条件节点解析 dispatch JSON 路由，每节点独立工具白名单，Gate 节点为 HITL 人工审批节点。
+- **LangGraph**：`interrupt_before` 配置在所有 Gate 节点 + `Checkpointer` 持久化恢复；secretary Agent 的 `tools=[dispatch_tool]` 无产出工具。
+- **Claude Code / Trae**：秘书是 Subagent dispatcher，`tools=[Task, Read]` 无 Write/Edit/WebSearch；Gate 等待用 permission 系统。
+- **Hermes / OpenClaw**：bindings 层 `deny: [write_doc, write_code, search_web]`；sandbox scope 隔离；state_guard 拦截非法状态跳转。
+
+机械层未配置时，秘书必须在首轮 `execution_plan` 中声明 `"mechanical_enforcement_status": "not_configured"`，让用户知晓当前仅 prompt 层保护。
+
 ## 操作循环
 
 1. **复述意图** — 用你自己的话复述用户需求,请用户确认或纠正
