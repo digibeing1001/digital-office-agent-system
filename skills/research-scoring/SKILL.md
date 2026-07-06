@@ -68,7 +68,7 @@ def score_artifact(artifact, tool_check_results):
 {
   "scores": {
     "soundness": {"score": 82, "reason": "方法正确,统计显著(p<0.01)"},
-    "novelty":   {"score": 40, "reason": "与 arXiv:2409.04109 高度撞车"}
+    "novelty":   {"score": 40, "reason": "与已有文献高度撞车"}
   },
   "total": 68.5,
   "pass": false,

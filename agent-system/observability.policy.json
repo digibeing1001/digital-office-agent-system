@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "kind": "digital-office-observability-policy",
   "description": "全链路可观测性策略。参考 Langfuse 的 Tracing/Metrics/Evals/Prompt Management 设计，为 Loop 工程的每个节点、每次 Agent 调用、每次工具调用提供可追溯的执行视图。直接解决'可控性/透明度不足'痛点。",
-  "research_foundations": [
+  "design_patterns": [
     {
       "name": "Langfuse Tracing",
       "source": "https://github.com/langfuse/langfuse",

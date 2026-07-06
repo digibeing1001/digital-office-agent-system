@@ -2,9 +2,9 @@
   "version": "1.0.0",
   "kind": "digital-office-quality-scoring-policy",
   "description": "7-point rubric scoring layer for LOOP engineering. Orthogonal to judgment.policy.json (risk gating). Decides rework/iterate vs wait_human based on failure_class.",
-  "research_foundations": [
-    "PRM per-step scoring (arXiv:2305.20050)",
-    "LLM-as-a-Judge with rubric anchors (arXiv:2306.05685)",
+  "design_patterns": [
+    "PRM per-step scoring",
+    "LLM-as-a-Judge with rubric anchors",
     "Constitutional AI critique-then-revise",
     "ECC verification-loop multi-gate pattern"
   ],

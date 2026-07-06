@@ -19,7 +19,7 @@
 | main | research-team | context-envelope v2.0.0 工作包交接规范：版本化、哈希校验、大文件按引用传递、省略字段显式化。research-team 据此建立科研场景特化版 context-envelope（v2.0.1-research）。 |
 | main | research-team | smoke 测试体系：json_assert + must_fail 模式，覆盖 JSON 合法性、字段存在性、断言表达式、预期失败命令。research-team 据此建立科研场景 smoke 骨架。 |
 | writer-team | research-team | Gate 模式：每个 Gate 必须声明「必须输出」与「通过条件」，而非仅描述检查逻辑。research-team 据此为 7 个科研完整性 gate 补充 required_outputs 与 pass_conditions。 |
-| writer-team | research-team | 13 方法论工程化落地：把学术论文方法论（LLM-as-judge 偏见消除、FActScore 原子化核查、CRITIC 工具增强、Reflexion 情景记忆等）映射到具体角色与 Gate。research-team 据此建立 methodology-integration 文档。 |
+| writer-team | research-team | 13 方法论工程化落地：把 AI 自评偏见消除、原子化核查、工具增强审查、错误反思情景记忆等方法论映射到具体角色与 Gate。research-team 据此将方法论整合进各 policy.json 与 SOUL.md。 |
 | research-team | main | 科研完整性门控的 7-mode 阻断清单（幻觉引用、数据伪造、方法伪造、框架锁定、过度泛化、撤稿依赖、可复现性）可为 main 的 quality-scoring hard_disqualifiers 提供场景特化参考。 |
 | research-team | writer-team | 科研场景的引用验证（Semantic Scholar API + 撤稿检查）可为 writer-team 的事实核查与引用台账提供自动化查证参考。 |
 

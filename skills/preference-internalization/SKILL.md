@@ -1,7 +1,7 @@
 # preference-internalization — 用户纠正内化
 
 ## 用途
-用户纠正某个 Agent 的做法时,判断是通用偏好(以后都这样)还是一次性指正(仅本次),分别内化到 SOUL.md 或 checkpointer。依据 Reflexion 反思 + mem0 偏好持久化。
+用户纠正某个 Agent 的做法时,判断是通用偏好(以后都这样)还是一次性指正(仅本次),分别内化到 SOUL.md 或 checkpointer。依据错误反思机制 + mem0 偏好持久化。
 
 ## 触发条件
 - 用户明确纠正某个 Agent 的做法(如"以后查文献不要只用 Google Scholar")。

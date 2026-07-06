@@ -40,15 +40,15 @@
       ]
     }
   },
-  "research_foundations": [
+  "design_patterns": [
     {
-      "name": "ReAct",
-      "source": "https://arxiv.org/abs/2210.03629",
+      "name": "reasoning-action interleaving",
+      "source": "reasoning-action interleaving pattern",
       "principle": "Reasoning, action, and fresh observations interleave inside a task instead of forming one irreversible linear pass."
     },
     {
-      "name": "Reflexion and evaluator-optimizer",
-      "source": "https://arxiv.org/abs/2303.11366",
+      "name": "self-correction and evaluator-optimizer",
+      "source": "self-correction via feedback pattern",
       "principle": "Evaluation feedback improves the next trial when success criteria and evidence are explicit."
     },
     {
@@ -62,8 +62,8 @@
       "principle": "Persist team state and resume when feedback arrives for long interactions; blocking human input is limited to short immediate approvals because blocked state is harder to save and resume safely."
     },
     {
-      "name": "MemGPT virtual context management",
-      "source": "https://arxiv.org/abs/2310.08560",
+      "name": "tiered memory management",
+      "source": "tiered memory management pattern",
       "principle": "Use tiered working and archival memory with explicit movement and references instead of replaying all historical context into every model call."
     },
     {

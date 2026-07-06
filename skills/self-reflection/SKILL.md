@@ -1,7 +1,7 @@
-# self-reflection — Reflexion 式反思环
+# self-reflection — 错误反思式反思环
 
 ## 用途
-返工时生成反思文本,带着反思重写产出。返工不是简单重跑,而是先总结"哪里不够、为什么、下次怎么改",再把反思拼进 prompt 重写。依据 Reflexion(Shinn et al. NeurIPS 2023, arXiv:2303.11366)。
+返工时生成反思文本,带着反思重写产出。返工不是简单重跑,而是先总结"哪里不够、为什么、下次怎么改",再把反思拼进 prompt 重写。
 
 ## 触发条件
 - 评分卡(research-scoring)判定不通过时(总分 < 75 或一票否决触发)。
@@ -81,7 +81,7 @@ def reflect_and_rewrite(artifact, score_report, agent_id, thread_id):
 ## 输出格式
 ```json
 {
-  "reflection": "本次产出在 novelty 维度不够,原因是与 arXiv:2409.04109 撞车,下次应该先查近 2 年 survey 再定方向",
+  "reflection": "本次产出在 novelty 维度不够,原因是与已有文献高度撞车,下次应该先查近 2 年 survey 再定方向",
   "rewritten": "<重写后的产出全文>",
   "new_score": {"total": 78.0, "pass": true, "veto_triggered": false}
 }

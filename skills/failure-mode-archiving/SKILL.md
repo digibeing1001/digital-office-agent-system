@@ -179,11 +179,4 @@ def retrieve_failure_modes(agent_id, method_keyword, condition_keyword=None, top
 - **附来源项目 id**:每条记录可追溯,便于后续复核。
 - **失败模式会过时**:方法迭代后旧失效条件可能不再成立,需定期复核(衰减机制同经验库,长期未复现的失败模式降权但不删除)。
 - **不阻断流程(除非 PI 调整方向)**:归档本身不停项目;只有 PI 据此决定换方向时才触发 H5 暂停。
-- **偶发 vs 系统性必须区分**:偶发失败标注 sporadic,系统性失败标注 systemic;只有 systemic 的才强烈建议后续追踪。
-
-## 关键方法论引用
-
-- 负结果价值:"Negative Results Are Positive"(Resch & Schamp 2024)— 负面结果是科学知识的一部分
-- 失败学:科研失败经验建模(Failure Sense)— 把失败结构化沉淀
-- ExpeL(Zhao et al. AAAI 2024, arXiv:2308.10144):去重和衰减机制参考
-- 可复现性:ML Reproducibility Checklist(Pineau et al., 2021)— 失效条件记录的可复现标准
+- **偶发 vs 系统性必须区分**:偶发失败标注 sporadic，系统性失败标注 systemic;只有 systemic 的才强烈建议后续追踪。

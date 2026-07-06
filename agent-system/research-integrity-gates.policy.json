@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "kind": "digital-office-research-integrity-gates",
   "description": "科研完整性门控策略。参考 academic-research-skills (Imbad0202) 的 7-mode 完整性阻断清单，针对 AI 科研的已知失效模式设计硬性门控。与 quality-scoring.policy.json 的 hard_disqualifiers 协同，但在科研场景下更具体。门控失败直接阻断产出交付。",
-  "research_foundations": [
+  "design_patterns": [
     {
       "name": "academic-research-skills 7-mode integrity gates",
       "source": "https://github.com/Imbad0202/academic-research-skills",

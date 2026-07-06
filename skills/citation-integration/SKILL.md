@@ -76,7 +76,7 @@ BibTeX:
   @article{hu2021lora,
     title={LoRA: Low-Rank Adaptation of Large Language Models},
     author={Hu, Edward J. and others},
-    journal={arXiv preprint arXiv:2106.09685},
+    journal={arXiv preprint},
     year={2021}
   }
 核查:调用 citation-verification 确认存在性 + 元数据

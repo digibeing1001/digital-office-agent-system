@@ -15,27 +15,18 @@ The task runtime uses four composable work nodes:
 
 A deterministic controller chooses Continue, Replan, Retry, Wait Human, Complete, Fail, Cancel, or Budget Exhausted. Task rework stays inside bounded cycles and budgets. System changes still use separately confirmed `iteration-proposal-*` commands.
 
-## Research Snapshot
+## Design Patterns
 
-Observed on 2026-06-07 through GitHub repository metadata.
+High-signal multi-Agent and durable workflow patterns:
 
-High-signal coding-agent references:
-
-- [OpenHands](https://github.com/All-Hands-AI/OpenHands), about 76k stars: use an explicit development runtime with actions, observations, and feedback loops.
-- [SWE-agent](https://github.com/SWE-agent/SWE-agent), about 19k stars: keep the Agent-computer interface narrow and observable for issue-to-patch work.
-- [aider](https://github.com/aider-ai/aider), about 46k stars: repo maps, git-visible diffs, and command/test feedback are central to coding-agent quality.
-- [SWE-bench](https://github.com/princeton-nlp/SWE-bench), about 5k stars: coding-agent quality should be judged with reproducible tasks and deterministic tests.
-
-High-signal multi-Agent and durable workflow references:
-
-- [ReAct](https://arxiv.org/abs/2210.03629): interleave reasoning, action, and observation. This informs Decide and Act inside a bounded controller.
-- [Reflexion](https://arxiv.org/abs/2303.11366): use explicit evaluation feedback to improve a later attempt. This informs Evaluate and controller Replan or Retry decisions.
-- [Generative Agents](https://arxiv.org/abs/2304.03442): separate memory, reflection, and planning. This maps to the separation of project knowledge, company knowledge, KeyMemory relay, and workflow plans.
-- [Voyager](https://arxiv.org/abs/2305.16291): build reusable skills through an explicit library. This supports provider-reviewed Agent plugin packages rather than customer-side skill recomposition.
-- [MetaGPT](https://arxiv.org/abs/2308.00352): role-based SOP and structured handoff. This supports portable orchestration roles and multi-Agent workflows.
-- [AutoGen](https://arxiv.org/abs/2308.08155): multi-Agent conversation needs explicit roles, boundaries, and controllable handoff.
+- Reasoning-action interleaving: interleave reasoning, action, and observation. This informs Decide and Act inside a bounded controller.
+- Evaluation-driven retry: use explicit evaluation feedback to improve a later attempt. This informs Evaluate and controller Replan or Retry decisions.
+- Memory-reflection-planning separation: separate memory, reflection, and planning. This maps to the separation of project knowledge, company knowledge, KeyMemory relay, and workflow plans.
+- Reusable skill library: build reusable skills through an explicit library. This supports provider-reviewed Agent plugin packages rather than customer-side skill recomposition.
+- Role-based SOP: role-based SOP and structured handoff. This supports portable orchestration roles and multi-Agent workflows.
+- Multi-agent conversation roles: multi-Agent conversation needs explicit roles, boundaries, and controllable handoff.
 - [LangGraph durable execution](https://docs.langchain.com/oss/python/langgraph/durable-execution): long-running workflows need persisted state, resumability, checkpoints, and human-in-the-loop decisions.
-- [RAGAS](https://arxiv.org/abs/2309.15217), [Self-RAG](https://arxiv.org/abs/2310.11511), and [CRAG](https://arxiv.org/abs/2401.15884): retrieval must be measured and critiqued, not blindly trusted.
+- Retrieval quality measurement: retrieval must be measured and critiqued, not blindly trusted.
 
 High-signal skill and workflow sources:
 

@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "kind": "digital-office-cost-control-policy",
   "description": "成本控制与预算管理策略。参考 OpenHive 的三态熔断器、滑动窗口限速、Token 桶模式，以及 ECC 的 cost-tracking skill 设计。直接解决'Token 成本居高不下'痛点。与 ai-native-loop.manifest.json 的 controller.default_budgets 协同工作。",
-  "research_foundations": [
+  "design_patterns": [
     {
       "name": "OpenHive three-state circuit breaker",
       "source": "https://github.com/aden-hive/hive",

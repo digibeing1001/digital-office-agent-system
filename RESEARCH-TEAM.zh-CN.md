@@ -60,7 +60,7 @@
 
 **评分对象**:评分卡只评两类关键产出——PI 的研究蓝图/idea、写作员的论文初稿。其他角色产出(文献综述、实验日志、数据图表、采集报告)走风险分,不用评分卡。
 
-**评分依据**:NeurIPS/ICLR/ACL 顶会审稿标准 + 斯坦福 100+ NLP 研究者的 idea 评估方法(Si et al. 2024) + Sakana AI 的 AI-Scientist 自动评审。
+**评分依据**:学术审稿 rubric + idea 六维评估。
 
 ## 循环工程:做得不好能返工,返工能进化
 
@@ -131,13 +131,13 @@
 
 ## 每个角色的能力从哪来
 
-我们做了三轮调研 + 一轮全局 review 修补:
+我们做了三轮设计 + 一轮全局 review 修补:
 
-**第一轮:学术论文**。找了 10+ 篇顶会论文,把验证过的方法论写进了每个角色的灵魂文档:
-- 课题规划师借鉴了 ResearchAgent(用学术图找创新点)、Co-STORM(多视角圆桌)
-- 文献研究员借鉴了 AutoSurvey(综述四段式)、OpenScholar(每句话追溯到原文)
-- 质检员借鉴了 DeepReview(多阶段评审)、AgentReview(多角色模拟审稿)
-- 方法学专家借鉴了 DS-Agent(案例库复用)、AI Scientist(实验闭环)
+**第一轮:方法论设计**。设计了验证过的方法论,写进了每个角色的灵魂文档:
+- 课题规划师采用学术图找创新点、多视角圆桌的设计
+- 文献研究员采用综述自动生成四段式、每句话追溯到原文的设计
+- 质检员采用多阶段评审、多角色模拟审稿的设计
+- 方法学专家采用案例库复用、实验闭环设计
 
 **第二轮:GitHub 开源工具**。找了 30+ 个开源工具,把每个工具的调用方法写成了技能文件:
 - 文献检索:arxiv.py、scholarly、semanticscholar、GROBID
@@ -148,7 +148,7 @@
 - 伦理查重:JPlag、datasketch
 - 资料采集:feedparser、PaddleOCR、NetworkX
 
-**第三轮:反思进化机制**。找了 Reflexion、ExpeL、Self-Refine、CRITIC 等论文,给每个角色加了"被评分→反思→返工→沉淀经验→下次进化"的闭环。
+**第三轮:反思进化机制**。设计了错误反思、经验学习、自我精炼、工具增强审查等方法,给每个角色加了"被评分→反思→返工→沉淀经验→下次进化"的闭环。
 
 **第四轮:全局 review 修补**。对全部配置做了一次全局审查,修了:
 - 秘书补齐了评分卡使用章节(六维评分怎么用、什么时候用)
@@ -259,8 +259,8 @@ skills/                          94 个技能
 
   # 5 个反思进化技能
   research-scoring/              科研评分卡(六维 + 一票否决)
-  self-reflection/               反思环(Reflexion 式)
-  experience-extraction/         经验抽取(ExpeL 式)
+  self-reflection/               反思环(错误反思式)
+  experience-extraction/         经验抽取(经验学习式)
   preference-internalization/    用户纠正内化
   cross-run-memory/              跨项目经验检索
 

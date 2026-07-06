@@ -152,7 +152,7 @@ python agent-system/bin/loop-status.py --run-id <run_id> --exit-code
 | `deep-research` | 树状递归深度研究 | gpt-researcher | 问题树 + 并行执行 + 多源检索 + 综合去重 | 与 arxiv-search/paper-qa-rag 协同 |
 | `verification-loops` | 多样本投票验证 | ECC | 3 样本独立采样 + 解耦 judge + 多数表决 + 分歧检测 | 与 quality-scoring final_delivery 协同 |
 | `goap-planner` | GOAP A* 目标规划 | Ruflo | 状态空间搜索 + 动作库 + 最短路径 + 失败重规划 | 与 ai-native-loop Decide 节点协同 |
-| `reflexion-loop` | 4 策略反思循环 | Reflexion 论文 | NONE/LAST_ATTEMPT/REFLEXION/组合 + 情景记忆 | 与 experience-extraction 互补（任务级 vs 项目级） |
+| `reflexion-loop` | 4 策略反思循环 | 错误反思机制 | NONE/LAST_ATTEMPT/REFLEXION/组合 + 情景记忆 | 与 experience-extraction 互补（任务级 vs 项目级） |
 | `storm-survey` | 综述生成 | STORM | 视角引导提问 + 模拟对话 + 大纲 + 全文写作 | 与 academic-writing 协同 |
 | `retraction-check` | 撤稿专项检查 | PaperQA2 + Retraction Watch | 三源交叉检查 + 依赖性评估 | 与 citation-verification 互补 |
 | `cross-model-verification` | 跨模型交叉验证 | academic-research-skills | 不同家族模型评分 + 一致性计算 + 第三方仲裁 | 与 verification-loops 互补（跨模型 vs 同模型） |
@@ -185,7 +185,7 @@ python agent-system/bin/loop-status.py --run-id <run_id> --exit-code
 - ECC (affaan-m)
 - storm (stanford-oval)
 - OpenHive (aden-hive)
-- Reflexion (noahshinn — 通过论文引用)
+- 错误反思机制（自研实现）
 
 ## 后续可扩展方向（未落实，待评估）
 

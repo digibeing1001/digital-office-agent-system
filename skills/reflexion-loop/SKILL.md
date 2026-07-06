@@ -1,7 +1,7 @@
 # reflexion-loop — 4 策略反思循环
 
 ## 用途
-基于 Reflexion 论文（Shinn et al., NeurIPS 2023）的 4 种反思策略，在任务失败或评分不达标时，Agent 进行口头反思并将反思文本存入情景记忆缓冲区，供后续尝试使用。不更新模型权重，纯 prompt 层面进化。与 `experience-extraction`（项目级经验）互补，reflexion-loop 是任务级实时反思。
+4 种错误反思策略，在任务失败或评分不达标时，Agent 进行口头反思并将反思文本存入情景记忆缓冲区，供后续尝试使用。不更新模型权重，纯 prompt 层面进化。与 `experience-extraction`（项目级经验）互补，reflexion-loop 是任务级实时反思。
 
 适用于:单次任务失败后的即时反思改进、评分不达标时的自我修正、实验失败的根因分析、写作返工的策略调整。
 
@@ -166,8 +166,3 @@ def evaluate_reflection_quality(reflection: str, subsequent_result: dict) -> dic
 ## 依赖工具/API
 - LLM API（反思生成）
 - 情景记忆缓冲区（文件存储）
-
-## 关键方法论引用
-- Reflexion: Shinn et al., "Reflexion: Language Agents with Verbal Reinforcement Learning", NeurIPS 2023
-- 4 策略: NONE / LAST_ATTEMPT / REFLEXION / LAST_ATTEMPT_AND_REFLEXION
-- arXiv: https://arxiv.org/abs/2303.11366
