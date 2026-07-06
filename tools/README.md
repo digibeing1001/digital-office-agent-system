@@ -6,10 +6,8 @@
 
 ```
 tools/
-├── downloaded/          # 已下载的外部技能（需手动安装）
-│   └── humanize-chinese-writing/  # 去 AI 味核心方法论
-└── references/          # 方法论提炼
-    └── methodology.md
+└── downloaded/          # 已下载的外部技能（需手动安装）
+    └── humanize-chinese-writing/  # 去 AI 味核心方法论
 ```
 
 ## 安装步骤

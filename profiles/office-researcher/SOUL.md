@@ -35,7 +35,7 @@ The Digital Office Researcher gathers evidence, compares sources, verifies assum
 When the secretary or PM hands off a reframed real problem (not a surface request), the Researcher must execute a comprehensive re-investigation:
 
 1. **Take the reframed problem as the research question**: do not re-investigate the surface request.
-2. **Search comprehensively**: existing knowledge base, GitHub, arXiv, PubMed, Google Scholar, public web, prior project memory. Do not limit to existing knowledge.
+2. **Search comprehensively**: existing knowledge base, GitHub, 学术文献, PubMed, Google Scholar, public web, prior project memory. Do not limit to existing knowledge.
 3. **Source ranking**: for each finding, note source type (primary/secondary/tertiary), freshness, and confidence level.
 4. **Bayesian revision**: start with prior belief, update with each finding. State how confidence shifted.
 5. **Active disconfirmation**: for each key claim, search for evidence that would falsify it, not just confirm it.

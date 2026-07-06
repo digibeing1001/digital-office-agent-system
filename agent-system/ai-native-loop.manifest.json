@@ -40,50 +40,50 @@
       ]
     }
   },
-  "research_foundations": [
+  "design_patterns": [
     {
       "name": "ReAct",
-      "source": "https://arxiv.org/abs/2210.03629",
+      "source": "ReAct pattern",
       "principle": "Reasoning, action, and fresh observations interleave inside a task instead of forming one irreversible linear pass."
     },
     {
-      "name": "Reflexion and evaluator-optimizer",
-      "source": "https://arxiv.org/abs/2303.11366",
+      "name": "self-correction and evaluator-optimizer",
+      "source": "self-correction via feedback",
       "principle": "Evaluation feedback improves the next trial when success criteria and evidence are explicit."
     },
     {
       "name": "LangGraph persistence and interrupts",
-      "source": "https://docs.langchain.com/oss/python/langgraph/interrupts",
+      "source": "graph persistence and interrupts pattern",
       "principle": "A human interrupt saves graph state, resumes by stable identity, carries JSON-serializable input, and requires idempotent side effects before the interrupt."
     },
     {
       "name": "AutoGen asynchronous human feedback",
-      "source": "https://microsoft.github.io/autogen/stable/user-guide/agentchat-user-guide/tutorial/human-in-the-loop.html",
+      "source": "asynchronous human feedback pattern",
       "principle": "Persist team state and resume when feedback arrives for long interactions; blocking human input is limited to short immediate approvals because blocked state is harder to save and resume safely."
     },
     {
       "name": "MemGPT virtual context management",
-      "source": "https://arxiv.org/abs/2310.08560",
+      "source": "tiered memory management pattern",
       "principle": "Use tiered working and archival memory with explicit movement and references instead of replaying all historical context into every model call."
     },
     {
       "name": "Temporal durable execution",
-      "source": "https://docs.temporal.io/workflow-execution",
+      "source": "durable execution pattern",
       "principle": "Deterministic control state is replayable; failure-prone side effects belong in retryable, idempotent activities."
     },
     {
       "name": "Google ADK LoopAgent",
-      "source": "https://google.github.io/adk-docs/agents/workflow-agents/loop-agents/",
+      "source": "loop agent pattern",
       "principle": "Every loop needs deterministic orchestration, an explicit termination signal, and a maximum iteration bound."
     },
     {
       "name": "A2A task lifecycle",
-      "source": "https://github.com/a2aproject/A2A/blob/main/docs/topics/life-of-a-task.md",
+      "source": "A2A task lifecycle pattern",
       "principle": "Stable context identity, immutable terminal tasks, new task ids for refinements, and artifact references improve traceability."
     },
     {
       "name": "Anthropic Multi-Agent Research System",
-      "source": "https://www.anthropic.com/engineering/multi-agent-research-system",
+      "source": "multi-agent research system pattern",
       "principle": "An orchestrator agent spawns parallel subagents with isolated context windows; each subagent compresses its findings before returning to the orchestrator, preventing context pollution and yielding up to 90.2% quality improvement over single-agent on open research tasks."
     }
   ],

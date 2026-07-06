@@ -4,7 +4,7 @@
 
 ## 背景
 
-当前项目的 `ai-native-loop.manifest.json` 研究基础引用了 AutoGen 的异步人工反馈机制。微软已将 AutoGen 与 Semantic Kernel 两团队合并，发布 `microsoft/agent-framework` 作为继任者：
+当前项目的 `ai-native-loop.manifest.json` 设计模式引用了 AutoGen 的异步人工反馈机制。微软已将 AutoGen 与 Semantic Kernel 两团队合并，发布 `microsoft/agent-framework` 作为继任者：
 
 - `microsoft/autogen`（旧仓库）已于 2026-04 进入维护模式，停止主要更新。
 - `microsoft/agent-framework`（新仓库，约 12K star）是官方推荐迁移目标，提供原生 checkpoint/resume、workflow 编排、GroupChat 等。
@@ -22,9 +22,9 @@
 ## 迁移策略
 
 ### 阶段一：并行（低风险）
-- 保留现有 AutoGen 引用作为研究基础记录。
+- 保留现有 AutoGen 引用作为设计模式记录。
 - 新增 `microsoft/agent-framework` 作为 checkpoint/resume 的参考实现。
-- 在 `ai-native-loop.manifest.json` 的 `research_foundations` 中新增 agent-framework 条目。
+- 在 `ai-native-loop.manifest.json` 的 `design_patterns` 中新增 agent-framework 条目。
 
 ### 阶段二：试点（中风险）
 - 在单一工作流（建议 `parallel_expert_dag`）中试点 agent-framework 的 `CheckpointAndRehydrate` 模式。
@@ -33,7 +33,7 @@
 
 ### 阶段三：全量切换（需评审）
 - 评估试点结果，决定是否全量切换。
-- 全量切换需更新 `research_foundations` 中 AutoGen 条目的状态标记。
+- 全量切换需更新 `design_patterns` 中 AutoGen 条目的状态标记。
 - 通过 `harness/tasks/agent-lifecycle-production.json` 评估验证。
 
 ## 关键注意事项
@@ -44,14 +44,8 @@
    - `CheckpointAndRehydrate` → 跨实例恢复（对应 crash 后冷启动，当前缺失）
    - `CheckpointWithHumanInput` → 人工审批断点（对应现有 `waiting_human_judgment`）
 3. **Human feedback 兼容**：现有 `wait_human` controller 决策与 `CheckpointWithHumanInput` 语义一致，迁移后行为不变。
-4. **嵌套 loop**：agent-framework 的 checkpoint 是否支持嵌套 loop 需在试点阶段验证（参考 inspect_ai 的 reentrant checkpointer 设计）。
-
-## 参考仓库
-
-- 迁移目标：https://github.com/microsoft/agent-framework
-- 旧仓库（维护模式）：https://github.com/microsoft/autogen
-- 嵌套 loop checkpoint 参考：https://github.com/UKGovernmentBEIS/inspect_ai
+4. **嵌套 loop**：agent-framework 的 checkpoint 是否支持嵌套 loop 需在试点阶段验证。
 
 ## 当前状态
 
-本次更新已在 `ai-native-loop.manifest.json` 的 `research_foundations` 新增 Anthropic Multi-Agent Research System 条目。agent-framework 的正式条目将在阶段二试点启动时新增，以避免在未验证前就将其列为已采用基础。
+本次更新已在 `ai-native-loop.manifest.json` 的 `design_patterns` 新增 Anthropic Multi-Agent Research System 条目。agent-framework 的正式条目将在阶段二试点启动时新增，以避免在未验证前就将其列为已采用基础。

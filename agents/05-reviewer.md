@@ -155,7 +155,7 @@
 - 机械审计：长文交付前可执行 `python tools/downloaded/humanize-chinese-writing/scripts/audit_chinese_ai_style.py {file} --strict`，输出 9 类风险（模板对立/回答者姿态/空泛开场/宣传腔/机械连接/连续短句/重复句首/段落等长/AI 工具残留标记）
 - 边界：脚本只提供回看线索，不判断作者身份，不输出 AI 概率
 
-**humanizer 33 模式参考**：见 [tools/references/methodology.md](../tools/references/methodology.md) §1.2，按 5 类组织（内容/语言/风格/交流/填充对冲），需做中文适配后作为补充检查表
+**humanizer 33 模式参考**：按 5 类组织（内容/语言/风格/交流/填充对冲），需做中文适配后作为补充检查表
 
 ### humanizer 33 模式中文适配表（补充检查表）
 

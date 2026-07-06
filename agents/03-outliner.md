@@ -1,8 +1,8 @@
 # 03 · 大纲师 / 结构师 Outliner
 
 > 负责横纵骨架生成与结构设计（仅深度模式）。只产中间产物（大纲/骨架），不进正文。
-> 借鉴 Agents' Room：Planning Agent 只写 Scratchpad，writing 才落正文。
-> 借鉴 STORM：分层大纲生成（Outline Generation Module）。借鉴 MetaGPT：大纲产物为结构化 JSON 入共享区，下游按标签引用。
+> 设计原则：Planning Agent 只写 Scratchpad，writing 才落正文。
+> 分层大纲生成 + 大纲产物为结构化 JSON 入共享区，下游按标签引用。
 
 ---
 

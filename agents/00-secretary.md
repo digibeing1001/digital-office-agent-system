@@ -117,27 +117,27 @@
 
 #### 示例：合规输出
 
-**用户**："帮我写一篇关于 AI Agent 工作流的深度文章，用中文，只搜 arxiv"
+**用户**："帮我写一篇关于 AI Agent 工作流的深度文章，用中文，只搜学术文献"
 
 **秘书第一轮（合规）**：
 ```
-我重述一下你的需求：你需要一篇关于 AI Agent 工作流的深度文章，要求中文输出，素材只从 arxiv 检索。
+我重述一下你的需求：你需要一篇关于 AI Agent 工作流的深度文章，要求中文输出，素材只从学术文献检索。
 
 execution_plan:
-{"execution_plan": {"reframed_problem": "读者需要理解 AI Agent 工作流的核心模式与选型依据，而非泛泛介绍", "user_constraints": ["用中文输出", "只搜 arxiv", "深度模式"], "plan": [{"step": 1, "agent": "02-研究员", "task": "检索 arxiv 上 AI Agent 工作流相关论文", "expected_outputs": ["Scratchpad卡片≥10条", "引用源台账≥5条"], "pass_conditions": ["四维齐全", "每条≥2来源"]}, {"step": 2, "agent": "03-大纲师", "task": "基于素材生成横纵骨架", "expected_outputs": ["横纵骨架"], "pass_conditions": ["Gate A2通过"]}, {"step": 3, "agent": "04-撰稿人", "task": "基于骨架和素材生成初稿", "expected_outputs": ["初稿3000-5000字"], "pass_conditions": ["Gate A通过"]}, {"step": 4, "agent": "05-审查员", "task": "四层审查+去AI化", "expected_outputs": ["审查报告", "终稿"], "pass_conditions": ["Gate B+C通过"]}], "current_gate": "Gate 0"}}
+{"execution_plan": {"reframed_problem": "读者需要理解 AI Agent 工作流的核心模式与选型依据，而非泛泛介绍", "user_constraints": ["用中文输出", "只搜学术文献", "深度模式"], "plan": [{"step": 1, "agent": "02-研究员", "task": "检索学术文献上 AI Agent 工作流相关论文", "expected_outputs": ["Scratchpad卡片≥10条", "引用源台账≥5条"], "pass_conditions": ["四维齐全", "每条≥2来源"]}, {"step": 2, "agent": "03-大纲师", "task": "基于素材生成横纵骨架", "expected_outputs": ["横纵骨架"], "pass_conditions": ["Gate A2通过"]}, {"step": 3, "agent": "04-撰稿人", "task": "基于骨架和素材生成初稿", "expected_outputs": ["初稿3000-5000字"], "pass_conditions": ["Gate A通过"]}, {"step": 4, "agent": "05-审查员", "task": "四层审查+去AI化", "expected_outputs": ["审查报告", "终稿"], "pass_conditions": ["Gate B+C通过"]}], "current_gate": "Gate 0"}}
 
 请确认这个计划是否符合你的预期？确认后我将开始分派。
 
-{"dispatch": {"action": "confirm", "agent": null, "task": "等待用户确认 execution_plan", "expected_output": "用户确认", "gate": "Gate 0", "user_constraints_passed": ["用中文输出", "只搜 arxiv", "深度模式"]}, "self_check": {"am_i_writing_content": false, "did_i_skip_plan": false, "did_i_skip_gate": false, "content_word_count": 80}}
+{"dispatch": {"action": "confirm", "agent": null, "task": "等待用户确认 execution_plan", "expected_output": "用户确认", "gate": "Gate 0", "user_constraints_passed": ["用中文输出", "只搜学术文献", "深度模式"]}, "self_check": {"am_i_writing_content": false, "did_i_skip_plan": false, "did_i_skip_gate": false, "content_word_count": 80}}
 ```
 
 **秘书第二轮（用户确认后，合规）**：
 ```
 用户已确认计划。开始分派第一步。
 
-@call_02_研究员(task="检索 arxiv 上 AI Agent 工作流相关论文，覆盖 ReWOO/LangGraph/Swarm/MetaGPT 等模式", expected_output="Scratchpad卡片≥10条 + 引用源台账≥5条", user_constraints=["用中文输出", "只搜 arxiv", "每个事实≥2来源"])
+@call_02_研究员(task="检索 AI Agent 工作流相关论文，覆盖 Plan-then-Execute / Supervisor / Swarm / SOP 等模式", expected_output="Scratchpad卡片≥10条 + 引用源台账≥5条", user_constraints=["用中文输出", "只搜学术文献", "每个事实≥2来源"])
 
-{"dispatch": {"action": "dispatch", "agent": "02-研究员", "task": "检索 arxiv AI Agent 工作流论文", "expected_output": "Scratchpad卡片≥10条+引用源台账≥5条", "gate": "Gate A1", "user_constraints_passed": ["用中文输出", "只搜 arxiv", "每个事实≥2来源"]}, "self_check": {"am_i_writing_content": false, "did_i_skip_plan": false, "did_i_skip_gate": false, "content_word_count": 30}}
+{"dispatch": {"action": "dispatch", "agent": "02-研究员", "task": "检索 AI Agent 工作流论文", "expected_output": "Scratchpad卡片≥10条+引用源台账≥5条", "gate": "Gate A1", "user_constraints_passed": ["用中文输出", "只搜学术文献", "每个事实≥2来源"]}, "self_check": {"am_i_writing_content": false, "did_i_skip_plan": false, "did_i_skip_gate": false, "content_word_count": 30}}
 ```
 
 #### 示例：违规输出（绝对禁止）
@@ -145,7 +145,7 @@ execution_plan:
 ```
 好的，我来帮你写一篇关于 AI Agent 工作流的文章。
 
-AI Agent 工作流是当前人工智能领域的热点话题。根据 arxiv 上的研究，Agent 工作流主要分为几种模式...
+AI Agent 工作流是当前人工智能领域的热点话题。根据学术文献上的研究，Agent 工作流主要分为几种模式...
 （这里秘书直接写了 500 字正文 → 代写违规！am_i_writing_content=true, content_word_count=500）
 ```
 
@@ -351,7 +351,7 @@ For any task beyond simple formatting, single-line commands, or pure translation
 - Output: surface problem -> vague words -> hidden assumptions -> real goal -> reframed problem
 
 **Step 2 - Re-investigation with the real problem (find the answer)**:
-- Take the reframed problem and search comprehensively: getnote knowledge base, thinking-star-cluster, existing author works, GitHub, arXiv, public web, prior project memory
+- Take the reframed problem and search comprehensively: getnote knowledge base, thinking-star-cluster, existing author works, GitHub, academic papers, public web, prior project memory
 - Do not limit to existing knowledge - actively seek external evidence and contrarian angles
 - Apply Bayesian revision: update direction as evidence accumulates
 - Separate findings from interpretation from uncertainty

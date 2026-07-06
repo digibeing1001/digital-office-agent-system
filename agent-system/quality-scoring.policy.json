@@ -2,10 +2,10 @@
   "version": "1.2.0",
   "kind": "digital-office-quality-scoring-policy",
   "description": "7-point rubric scoring layer for LOOP engineering. Orthogonal to judgment.policy.json (risk gating). Decides rework/iterate vs wait_human based on failure_class.",
-  "research_foundations": [
-    "PRM per-step scoring (arXiv:2305.20050)",
-    "LLM-as-a-Judge with rubric anchors (arXiv:2306.05685)",
-    "Constitutional AI critique-then-revise",
+  "design_patterns": [
+    "PRM per-step scoring",
+    "rubric-anchored judge pattern",
+    "critique-then-revise pattern",
     "ECC verification-loop multi-gate pattern"
   ],
   "score_scale": {
@@ -330,7 +330,7 @@
   },
   "qa_framework": {
     "document": "agent-system/docs/agent-team-qa-framework.zh-CN.md",
-    "theory": "Andrew Ng three-layer Loop Engineering",
+    "theory": "three-layer Loop Engineering",
     "principle": "QA covers three layers: execution self-test (fast), product taste (medium), product survival (slow). Secretary is the taste guardian ensuring context advantage flows to every decision node.",
     "context_advantage_layers": [
       "skill_required_context: each SKILL.md declares required_context; secretary verifies before dispatch",

@@ -18,14 +18,14 @@
 
 ---
 
-## 二、架构理念（三源融合）
+## 二、架构理念
 
-| 来源 | 借鉴点 |
-|---|---|
-| `digital-office-agent-system`（GitHub: digibeing1001） | 秘书入口 + 数字员工 + 四步干活法 + 带版本工作包交接 + 预算护栏 + 不瞎循环 |
-| `digital-life-1001`（Notion 写作 Skill） | 渐进加载 + Gate 防跳协议 + HKRT 选题质检 + 素材契约 + 四层金字塔审查 + 风格学习机制 |
-| 调研最佳实践（Agents' Room / MetaGPT / STORM / 卡兹克等头部博主） | Planning/Writing 双层分离、SOP 结构化交接、多角度提问检索、卡兹克禁用清单与四层自检、humanize-chinese-writing 去 AI 味 |
-| **得到大脑「写作专家团」**（Get笔记官方，8 角色） | 单角色单标准拆分、金线品控「只提问题不给答案」、风格指纹画像、知识库搜索优先级、写一段确认一段、红线/金线双线品控、句号率等可量化文风指标、人定方向 AI 做执行 |
+本团队架构融合以下设计原则：
+
+- 秘书入口 + 数字员工 + 四步干活法 + 带版本工作包交接 + 预算护栏 + 不瞎循环
+- 渐进加载 + Gate 防跳协议 + HKRT 选题质检 + 素材契约 + 四层金字塔审查 + 风格学习机制
+- Planning/Writing 双层分离、SOP 结构化交接、多角度提问检索、卡兹克禁用清单与四层自检、humanize-chinese-writing 去 AI 味
+- 单角色单标准拆分、金线品控「只提问题不给答案」、风格指纹画像、知识库搜索优先级、写一段确认一段、红线/金线双线品控、句号率等可量化文风指标、人定方向 AI 做执行
 
 **四步干活法**（每位 Agent 内部统一）：搞清楚信息 → 定路线 → 去执行 → 看结果（对照证据、验收标准、预算）。AI 只能建议下一步，只有调度系统能切换状态（继续/改计划/重试/等人/完成/失败/取消/预算用尽）。
 
@@ -170,17 +170,17 @@
 
 ## 六·补、QA 体系（三层 Loop，贯穿全流程）
 
-去 AI 味是「挑错型 QA」（第一层 Loop），已完善。但按吴恩达 Loop Engineering 三层逻辑，第一层是基础但非核心竞争力——真正的壁垒在第二层（QA → PM 转型，定义读者价值）和第三层（长期上下文资产沉淀，构建别人无法短期复刻的上下文优势）。
+去 AI 味是「挑错型 QA」（第一层 Loop），已完善。但按三层 Loop 逻辑，第一层是基础但非核心竞争力——真正的壁垒在第二层（QA → PM 转型，定义读者价值）和第三层（长期上下文资产沉淀，构建别人无法短期复刻的上下文优势）。
 
 完整 QA 框架见 [workflow/qa-framework.md](workflow/qa-framework.md)（v1.1，含 13 个方法论吸收），核心要点：
 
 | 层级 | 目标 | 触发节点 | 承载角色 | 方法论吸收 |
 |---|---|---|---|---|
-| 第一层 · 执行层 | 文章「没有错」（事实准、引用全、无 AI 味） | Gate A1 / B / C | 审查员（已有） | 吸收 1-4：偏见消除 / FActScore / CRITIC / Evals 可演进 |
-| 第二层 · 读者价值层 | 文章「值得读」（读者花 10 分钟得到什么） | Gate 0 / A / E | 秘书 + 审查员 L3 升级 | 吸收 5-8：MT-Bench 多轮 / HHH 三维 / 多 Agent 辩论 / 个性化评判 |
-| 第三层 · 长期竞争力层 | 「强化作者辨识度 + 积累复利资产」 | Gate E 后 + 季度复盘 | 风格官 + 作者本人 | 吸收 9-13：Reflexion / Self-Rewarding / 风格指纹 / ExpertPrompting / 认知投降检测 |
+| 第一层 · 执行层 | 文章「没有错」（事实准、引用全、无 AI 味） | Gate A1 / B / C | 审查员（已有） | 吸收 1-4：偏见消除 / 原子化事实核查 / 工具增强审查 / Evals 可演进 |
+| 第二层 · 读者价值层 | 文章「值得读」（读者花 10 分钟得到什么） | Gate 0 / A / E | 秘书 + 审查员 L3 升级 | 吸收 5-8：多轮体验扫描 / HHH 三维 / 多 Agent 辩论 / 个性化评判 |
+| 第三层 · 长期竞争力层 | 「强化作者辨识度 + 积累复利资产」 | Gate E 后 + 季度复盘 | 风格官 + 作者本人 | 吸收 9-13：错误反思记忆 / 自我奖励 / 风格指纹 / 专家提示 / 认知投降检测 |
 
-**上下文优势 = 品味的工程化替换**（吴恩达核心洞察，v1.1 术语对齐）：吴恩达原话用「上下文优势」替换「品味」概念，因为品味暗示不可传授，上下文优势指向可操作路径。写作团队中已有的上下文资产（作者 Gate 把关决策 / 终稿修改理由 / 风格官 Voice Calibration / 选题官认知剪刀差 / HKRT 价值承诺 / 踩坑反思日志 / Agent 自评记录 / 风格指纹漂移度 / 认知投降指标）需显式归档（11 项），让上下文优势可积累、可回看、可迭代、可被 AI 复用。
+**上下文优势 = 品味的工程化替换**（v1.1 术语对齐）：用「上下文优势」替换「品味」概念，因为品味暗示不可传授，上下文优势指向可操作路径。写作团队中已有的上下文资产（作者 Gate 把关决策 / 终稿修改理由 / 风格官 Voice Calibration / 选题官认知剪刀差 / HKRT 价值承诺 / 踩坑反思日志 / Agent 自评记录 / 风格指纹漂移度 / 认知投降指标）需显式归档（11 项），让上下文优势可积累、可回看、可迭代、可被 AI 复用。
 
 **角色融合**（不新增角色）：审查员 QA → PM（L3 从挑错升级为读者价值验证）；秘书调度 → PM（Gate 0 做读者价值定义 + 认知投降指标监控）；风格官画像维护 → 上下文资产管理（Gate E 后做长期竞争力评估 + 指纹漂移检测）。
 
@@ -196,32 +196,32 @@
 | HKRT 选题质检 | 选题官 | 1001 体系 |
 | 四维素材包 + writing-research-protocol | 研究员 | 1001 体系 |
 | 横纵骨架方法论 | 大纲师 | 1001 体系 |
-| 卡兹克风格库（禁用清单+四层自检+开头/收尾/金句技法） | 撰稿人/审查员 | 调研提炼，见 `style-library/kenny-writer.md` |
-| 四层金字塔审查清单 + 去 AI 化处理（五层检查+禁用清单扫描+L4 活人感终审） | 审查员 | 1001-reviewer + 卡兹克 + humanize-chinese-writing |
-| 写作指纹画像 9 维 + 风格学习沉淀（P0/P1/P2 分级+快照回滚） | 风格官 | 得到刘风格模式 |
+| 卡兹克风格库（禁用清单+四层自检+开头/收尾/金句技法） | 撰稿人/审查员 | 见 `style-library/kenny-writer.md` |
+| 四层金字塔审查清单 + 去 AI 化处理（五层检查+禁用清单扫描+L4 活人感终审） | 审查员 | 1001-reviewer + humanize-chinese-writing |
+| 写作指纹画像 9 维 + 风格学习沉淀（P0/P1/P2 分级+快照回滚） | 风格官 | 风格指纹画像体系 |
 | wechat 排版规范（H2+H5 双层+引用块金句+灰色页脚） | 排版师 | 1001-wechat |
 
 ### 第三方 / 外部技能（接入，不复制代码）
-| 技能 | 用途 | 仓库 | 承载角色 |
-|---|---|---|---|
-| humanize-chinese-writing | 中文去 AI 味核心方法论（作者站位+五层检查） | https://github.com/Lanqingsong/humanize-chinese-writing | 审查员 |
-| blader/humanizer | 英文 AI 写作 33 模式参考 | https://github.com/blader/humanizer | 审查员（参考） |
-| humanify | AI 文本改写为人类表达（句式多样化+口语注入） | https://github.com/PiaoXiaoTian/humanify | 风格官（参考） |
-| doocs/md | Markdown→公众号图文渲染（事实标准） | https://github.com/doocs/md | 排版师 |
-| mdnice | 多平台（公众号/知乎/掘金）排版 | https://github.com/mdnice/markdown-nice | 排版师 |
-| wechat-format | 轻量级 Markdown→公众号（行内样式） | https://github.com/lyricat/wechat-format | 排版师（备选） |
-| blog-auto-publishing-tools | 浏览器自动化发布参考 | https://github.com/ddean2009/blog-auto-publishing-tools | 排版师（参考） |
-| DailyHot | 多平台热搜聚合（30+ 平台） | https://github.com/tianyaxiang/DailyHot | 选题官 |
-| newsnow | 多平台热点聚合（UI 现代） | https://github.com/ourongxing/newsnow | 选题官 |
-| CrewAI | 多 Agent 编排范式（Role/Task/Crew） | https://github.com/crewAIInc/crewAI | 秘书（参考） |
-| MetaGPT | 中文社区 SOP 思路 | https://github.com/geekan/MetaGPT | 秘书/大纲师（参考） |
-| STORM | 长文研究写作流程（多视角提问→大纲→分段撰写） | https://github.com/stanford-oval/storm | 研究员/大纲师（参考） |
-| LangGraph | 图结构状态机（审查员打回撰稿人回路） | https://github.com/langchain-ai/langgraph | 秘书（参考） |
-| AutoGen | Agent 对话式协作 | https://github.com/microsoft/autogen | 秘书（参考） |
-| Agents' Room | Google 新闻编辑室多 Agent 范式 | https://github.com/google/agents-room | 秘书（参考） |
-| HanLP | 中文分词/词性/依存分析（量化文风指标） | https://github.com/hankcs/HanLP | 风格官/审查员 |
-| jieba | 中文分词（轻量，关键词提取） | https://github.com/fxsjy/jieba | 选题官/研究员 |
-| getnote（得到大脑） | 调研复用、成果沉淀知识库 | 本地 skill，见 `C:\Users\zexin\.trae-cn\skills\getnote\SKILL.md` | 研究员 |
+| 技能 | 用途 | 承载角色 |
+|---|---|---|
+| humanize-chinese-writing | 中文去 AI 味核心方法论（作者站位+五层检查） | 审查员 |
+| blader/humanizer | 英文 AI 写作 33 模式参考 | 审查员（参考） |
+| humanify | AI 文本改写为人类表达（句式多样化+口语注入） | 风格官（参考） |
+| doocs/md | Markdown→公众号图文渲染（事实标准） | 排版师 |
+| mdnice | 多平台（公众号/知乎/掘金）排版 | 排版师 |
+| wechat-format | 轻量级 Markdown→公众号（行内样式） | 排版师（备选） |
+| blog-auto-publishing-tools | 浏览器自动化发布参考 | 排版师（参考） |
+| DailyHot | 多平台热搜聚合（30+ 平台） | 选题官 |
+| newsnow | 多平台热点聚合（UI 现代） | 选题官 |
+| 多 Agent 编排范式 | 多 Agent 编排（Role/Task/Crew） | 秘书（参考） |
+| SOP 驱动结构化交接 | SOP 思路 | 秘书/大纲师（参考） |
+| 多角度提问检索写作 | 长文研究写作流程（多视角提问→大纲→分段撰写） | 研究员/大纲师（参考） |
+| LangGraph | 图结构状态机（审查员打回撰稿人回路） | 秘书（参考） |
+| AutoGen | Agent 对话式协作 | 秘书（参考） |
+| Planning-Writing 双层分离 | 多 Agent 范式（Planning/Writing 分离） | 秘书（参考） |
+| HanLP | 中文分词/词性/依存分析（量化文风指标） | 风格官/审查员 |
+| jieba | 中文分词（轻量，关键词提取） | 选题官/研究员 |
+| getnote（得到大脑） | 调研复用、成果沉淀知识库 | 研究员 |
 
 **接入说明**：外部技能按各自许可证约束使用。getnote 需配置 `GETNOTE_API_KEY` 与 `GETNOTE_CLIENT_ID`（未配置时运行 `/note config`）。完整接入索引见 [workflow/external-skills.md](workflow/external-skills.md)。
 
@@ -288,8 +288,6 @@ Writer Team/
     │       ├── SKILL.md              # Skill 定义文件
     │       ├── references/patterns.md # 中文 AI 味 6 大类模式
     │       └── scripts/audit_chinese_ai_style.py  # 机械审计脚本
-    └── references/
-        └── methodology.md           # 10 个项目方法论提炼 + 整合表
 ```
 
 ---
@@ -321,6 +319,4 @@ Writer Team/
 4. **回滚机制**：任何写入前必须快照当前版本，用户可随时回滚
 5. **边界**：改数字员工、改技能、改规则、改工作流不算普通任务循环——必须创建用户可见的迭代提案，由用户确认
 
-> 参考来源：digital-life-1001 Notion Skill 体系的自我迭代模式，与 research-team 分支的 Reflexion Loop 策略互补。
-
-当前版本：v2.3（吸收得到大脑写作专家团 8 角色优点；去 AI 味合并进审查员；新增独立风格官；GitHub 调研 17+ 项外部技能并下载 humanize-chinese-writing 到本地；新增 tools/ 目录承载外部资源；新增 QA 体系框架 v1.1，按吴恩达三层 Loop 把 QA 从挑错型升级为价值定义型 + 长期上下文资产沉淀型，含 13 个方法论吸收覆盖三层 QA 执行准则，新增认知投降检测作为停止条件机制，上下文资产清单从 7 项扩展到 11 项；external-skills.md 升级 v2.2，新增 §十 QA 框架承载章节登记 DeepEval/StyleLLM/Promptfoo）
+当前版本：v2.3（去 AI 味合并进审查员；新增独立风格官；接入 17+ 项外部技能并下载 humanize-chinese-writing 到本地；新增 tools/ 目录承载外部资源；新增 QA 体系框架 v1.1，按三层 Loop 把 QA 从挑错型升级为价值定义型 + 长期上下文资产沉淀型，含 13 个方法论吸收覆盖三层 QA 执行准则，新增认知投降检测作为停止条件机制，上下文资产清单从 7 项扩展到 11 项；external-skills.md 升级 v2.2，新增 §十 QA 框架承载章节）

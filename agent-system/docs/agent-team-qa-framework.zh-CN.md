@@ -1,11 +1,11 @@
 # 数字办公室 Agent Team QA 框架
 
 > 版本：1.2.0 | 创建：2026-07-02 | 关联：loop-engineering.zh-CN.md、quality-scoring.policy.json、coordination.policy.json
-> 理论基础：吴恩达 Loop Engineering 三层框架 + Anthropic Multi-Agent Research System + 项目已有的 Context-Decide-Act-Evaluate 确定性控制器
+> 理论基础：Loop Engineering 三层框架 + 项目已有的 Context-Decide-Act-Evaluate 确定性控制器
 
 ## 一、为什么需要这份 QA 框架
 
-吴恩达指出 Loop Engineering 不是单层概念，而是三层体系：
+Loop Engineering 不是单层概念，而是三层体系：
 
 | 层级 | 定义 | 迭代速度 | 行业关注度 | 本项目对应 |
 |---|---|---|---|---|
@@ -49,7 +49,7 @@
 
 ### 3.1 定位
 
-这是最成熟的层，但吴恩达提醒"最不重要"。QA 目标不是追求代码完美，而是确保**迭代有效**且**不过度投入**。
+这是最成熟的层，但"最不重要"。QA 目标不是追求代码完美，而是确保**迭代有效**且**不过度投入**。
 
 ### 3.2 已有机制（保留）
 
@@ -99,7 +99,7 @@
 
 ### 4.1 定位
 
-这是吴恩达强调的"角色融合"层——QA 不再只是验收，而是转向**需求定义和体验优化**。Agent Team 中，pm 和 secretary 共同承担这一层的 QA 职责。
+这是"角色融合"层——QA 不再只是验收，而是转向**需求定义和体验优化**。Agent Team 中，pm 和 secretary 共同承担这一层的 QA 职责。
 
 ### 4.2 品味 = 上下文优势
 
@@ -141,7 +141,7 @@
 
 #### 4.3.4 PM-as-QA 模式
 
-吴恩达强调角色融合。在 Agent Team 中实现"PM-as-QA"：
+强调角色融合。在 Agent Team 中实现"PM-as-QA"：
 
 - pm 在需求定义阶段就预定义验收标准（不只是事后验收）
 - pm 参与 evaluate 节点，从产品价值角度评分（不只是功能正确性）
@@ -163,7 +163,7 @@
 
 ### 5.1 定位
 
-这是最慢但决定产品生死的层。吴恩达指出其"慢"属性反而构建高壁垒。QA 目标是确保产品长期方向正确，不因短期迭代偏离核心价值。
+这是最慢但决定产品生死的层。其"慢"属性反而构建高壁垒。QA 目标是确保产品长期方向正确，不因短期迭代偏离核心价值。
 
 ### 5.2 特征
 
@@ -257,7 +257,7 @@
 
 ## 七、QA 角色与职责矩阵
 
-吴恩达强调"角色融合"，但融合不等于无边界。以下是 QA 职责矩阵：
+强调"角色融合"，但融合不等于无边界。以下是 QA 职责矩阵：
 
 | QA 维度 | 主导角色 | 协作角色 | 人类参与 |
 |---|---|---|---|
@@ -358,15 +358,11 @@ QA 框架本身需要回归保护：
 
 ---
 
-## 十二、调研补强（v1.2）：基于全网 / 论文 / GitHub 调研的 7 项关键补强
-
-> 调研来源：arXiv（Self-Correct、Constitutional AI、SWE-bench）、GitHub（taste-skill、ragas、radon、midscene）、全网（吴恩达 Loop Engineering 深度解读、Addy Osmani 5+1 组件、Anthropic 多智能体实践）
-> 调研时间：2026-07-02
-> 集成状态：taste-skill 已克隆到 `skills/_imported/taste-skill/`；其余工具在 12.7 节列出推荐安装命令
+## 十二、补强项（v1.2）：7 项关键补强
 
 ### 12.1 Maker-Checker 物理隔离（强制不同模型族）
 
-- **调研依据**：论文 *Large Language Models Cannot Self-Correct Yet*（Huang et al., 2024）证实，在无外部反馈的推理任务上，self-correction 反而降低准确率；同模型同温度的"自我检查"会继承 maker 的偏差盲点。*Constitutional AI*（Anthropic, 2022）进一步指出，critique-then-revise 有效的前提是 critic 与 actor 的"视角"不同。
+- **设计依据**：在无外部反馈的推理任务上，self-correction 反而降低准确率；同模型同温度的"自我检查"会继承 maker 的偏差盲点。critique-then-revise 有效的前提是 critic 与 actor 的"视角"不同。
 - **当前差距**：`quality-scoring.policy.json` 的 `debiasing.judge_agent` 已声明 "decoupled: different model/temperature"，但 `coordination.policy.json` 的 `debate_council.topology` 只说 "reviewers_use_different_prompt_or_model_when_feasible"——"when feasible" 留了后门，且对 single-agent 模式下的 self-check 没有约束。
 - **补强动作**：
   - **强制约束**：maker 与 checker 的 `agent_id` 不能相同；act 阶段的 self-check 只能作为"快速失败早返"，不能作为通过依据；evaluate 阶段的 checker 必须来自不同模型族（open-weight vs closed-weight vs some-theory）。
@@ -376,7 +372,7 @@ QA 框架本身需要回归保护：
 
 ### 12.2 反 AI Slop 检查（taste-skill 已集成）
 
-- **调研依据**：GitHub `Leonxlnx/taste-skill`（20K+ stars）把"反 AI 模板垃圾"显性化为可加载的 SKILL.md 指令集；社区共识是 AI 生成的 UI 有高度可识别的"slop 指纹"（紫蓝渐变 Hero、深色网格背景、椭圆按钮、居中堆叠卡片）。
+- **设计依据**："反 AI 模板垃圾"可显性化为可加载的 SKILL.md 指令集；AI 生成的 UI 有高度可识别的"slop 指纹"（紫蓝渐变 Hero、深色网格背景、椭圆按钮、居中堆叠卡片）。
 - **当前差距**：`design` role_gate 只有 3 条 rubric（architecture_coherent / interface_contracts_clear / tradeoffs_documented），没有"反模板化"维度；vibe-designer 在 act 阶段没有强制的品味检查点。
 - **补强动作**：
   - **集成 taste-skill**：已克隆到 `skills/_imported/taste-skill/`，含 14 个子 skill（brandkit / brutalist / minimalist / soft / redesign / stitch / image-to-code / imagegen-frontend-web / imagegen-frontend-mobile / output / gpt-tasteskill / llms.txt / taste-skill / taste-skill-v1）。
@@ -386,7 +382,7 @@ QA 框架本身需要回归保护：
 
 ### 12.3 上下文优势三层显性化（替代"品味"叙事）
 
-- **调研依据**：吴恩达原话反对"taste"这个词，主张用"context advantage"——因为"品味"暗示天赋，而"上下文优势"是可工程化的。上下文优势 = 知道别人不知道的、看到别人看不到的，它来自三层累积。
+- **设计依据**：用"context advantage"替代"taste"——因为"品味"暗示天赋，而"上下文优势"是可工程化的。上下文优势 = 知道别人不知道的、看到别人看不到的，它来自三层累积。
 - **当前差距**：QA 框架 v1.0 用了"品味守护者"措辞，但没说清楚品味从哪里来、如何传递。
 - **补强动作**：把上下文优势拆成三层并显性化进工程文件：
   - **L1 任务级**：每个 `skills/*/SKILL.md` 的 `required_context` 字段显式声明该 skill 需要哪些上下文输入；secretary 在 dispatch 前核对 required_context 是否齐备，缺失则 wait_human。
@@ -397,7 +393,7 @@ QA 框架本身需要回归保护：
 
 ### 12.4 北极星指标（慢循环校准锚点）
 
-- **调研依据**：第三层 QA 是慢循环，慢循环最容易失效的方式是"没有锚点"——每次评估都重新定义"什么重要"，导致跨任务无法对比。Addy Osmani 的 agent 组件模型里把 Memory 列为独立组件，正是为了承载这种跨任务的北极星校准。
+- **设计依据**：第三层 QA 是慢循环，慢循环最容易失效的方式是"没有锚点"——每次评估都重新定义"什么重要"，导致跨任务无法对比。把 Memory 列为独立组件，正是为了承载这种跨任务的北极星校准。
 - **当前差距**：第三层 QA 只说"human_gated + cross-task"，但没说人类在 gate 上拿什么锚点做判断。
 - **补强动作**：
   - **定义**：每个项目在 `projects/<id>/project.json` 新增可选字段 `north_star_metric`（一个字符串，描述该项目"产品是否在正确方向"的单一指标）。
@@ -417,7 +413,7 @@ QA 框架本身需要回归保护：
 
 ### 12.6 Comprehension Debt 防御（强制人读 diff 写总结）
 
-- **调研依据**：Addy Osmani 在 *The Real Problem with AI Coding* 里提出"Comprehension Debt"——人类对 agent 产出失去理解，只看"测试通过"就 approve，长期累积后代码库变成人类无法维护的遗产。
+- **设计依据**："Comprehension Debt"（理解债）——人类对 agent 产出失去理解，只看"测试通过"就 approve，长期累积后代码库变成人类无法维护的遗产。
 - **当前差距**：`judgment.policy.json` 的 human_gated 只要求人类做 approve/reject 决策，没要求人类证明自己理解了 diff。
 - **补强动作**：
   - **强制总结**：human_gated 阶段，人类必须阅读 diff 并写一段 ≥ 30 字的"diff 理解总结"才能 approve；reject 不要求总结。
@@ -428,7 +424,7 @@ QA 框架本身需要回归保护：
 
 ### 12.7 强制中层审查节奏（防止 agent 团队空转）
 
-- **调研依据**：第二层 QA（产品品味）若只在 evaluate 阶段触发，agent 团队可能在错误方向上空转 30 分钟才被发现；吴恩达第二层 Loop 的核心是"从业者从 QA 转向 PM"，PM 的价值在于事中价值评分，不是事后验收。
+- **设计依据**：第二层 QA（产品品味）若只在 evaluate 阶段触发，agent 团队可能在错误方向上空转 30 分钟才被发现；第二层 Loop 的核心是"从业者从 QA 转向 PM"，PM 的价值在于事中价值评分，不是事后验收。
 - **当前差距**：第二层 QA 绑定在 evaluate stage，没有时间维度上的强制触发。
 - **补强动作**：
   - **默认节奏**：第二层 QA 的 value_validation + scope_alignment + anti_slop_check 三项，每 30 分钟（短任务）或每 2 小时（长任务）强制触发一次中层审查，无论 run 是否走到 evaluate。
@@ -439,13 +435,13 @@ QA 框架本身需要回归保护：
 
 ### 12.8 推荐但未集成的工具（按需安装）
 
-以下工具经调研确认有价值，但需要额外集成代码或运行时依赖，未在本版直接安装，列出供后续按需集成：
+以下工具确认有价值，但需要额外集成代码或运行时依赖，未在本版直接安装，列出供后续按需集成：
 
-| 工具 | 来源 | 用途 | 安装命令 | 集成门槛 |
-|---|---|---|---|---|
-| ragas | `explodinggradients/ragas` | RAG / Knowledge base 健康监测（faithfulness / answer relevancy / context precision） | `pip install ragas` | 需要写 ragas 适配层 + 评估数据集 |
-| radon | `rubik/radon` | 代码复杂度 / 技术债量化（McCabe / Halstead / MI） | `pip install radon` | 需要决定扫描范围 + 阈值策略 |
-| midscene | `web-infra-dev/midscene` | 多模态 AI 自动化测试（视觉断言 / 自然语言操作） | `npm install @midscene/web` | 需要写 E2E 用例 + 接入 Playwright |
+| 工具 | 用途 | 安装命令 | 集成门槛 |
+|---|---|---|---|
+| ragas | RAG / Knowledge base 健康监测（faithfulness / answer relevancy / context precision） | `pip install ragas` | 需要写 ragas 适配层 + 评估数据集 |
+| radon | 代码复杂度 / 技术债量化（McCabe / Halstead / MI） | `pip install radon` | 需要决定扫描范围 + 阈值策略 |
+| midscene | 多模态 AI 自动化测试（视觉断言 / 自然语言操作） | `npm install @midscene/web` | 需要写 E2E 用例 + 接入 Playwright |
 
 **集成原则**：上述工具不是"装上就用"，需要写适配代码；本版先在 QA 框架里登记，待对应场景（RAG 监控 / 代码债 / 视觉测试）成为瓶颈时再集成，避免预先引入未使用的依赖。
 
@@ -474,18 +470,18 @@ QA 框架本身需要回归保护：
 
 | 方法论 | 原方法核心思想 | main 分支场景适配 | 落地位置 |
 |---|---|---|---|
-| LLM-as-judge 三类偏见消除 | LLM 作为评判者存在位置偏见、冗长偏见、自我偏好偏见；需交换顺序、引入长度惩罚、引入异质审查者 | maker 与 checker 强制不同 agent_id；evaluate 阶段 checker 来自不同模型族；act 阶段 self-check 仅作早返，不作通过依据 | `quality-scoring.policy.json` → `debiasing.maker_checker_isolation`；`coordination.policy.json` → `debate_council.topology` |
-| FActScore 原子化事实核查 | 把长文本拆为原子事实序列，逐条验证是否被可靠知识源支持，计算支持率 | writing role_gate 的 `claims_supported` 维度按原子命题逐条标注支持状态；第一层 QA 在事实类声明上做工具核查 | `quality-scoring.policy.json` → `role_gates.writing.claims_supported`；第一层 QA · Gate A1 素材确认 |
-| CRITIC 工具增强审查 | LLM 输出后调用外部工具（搜索、代码解释器）评估特定方面，不靠模型脑补 | 事实类声明走外验审查（搜索/知识库核查），逻辑/数据类走计算验证；与 `guardrails.registry.json` 的输出护栏协同 | 第一层 QA · 外验审查；`guardrails.registry.json` → `output_guardrails.hallucination_spot_check` |
+| AI 自评偏见消除 | LLM 作为评判者存在位置偏见、冗长偏见、自我偏好偏见；需交换顺序、引入长度惩罚、引入异质审查者 | maker 与 checker 强制不同 agent_id；evaluate 阶段 checker 来自不同模型族；act 阶段 self-check 仅作早返，不作通过依据 | `quality-scoring.policy.json` → `debiasing.maker_checker_isolation`；`coordination.policy.json` → `debate_council.topology` |
+| 原子化事实核查 | 把长文本拆为原子事实序列，逐条验证是否被可靠知识源支持，计算支持率 | writing role_gate 的 `claims_supported` 维度按原子命题逐条标注支持状态；第一层 QA 在事实类声明上做工具核查 | `quality-scoring.policy.json` → `role_gates.writing.claims_supported`；第一层 QA · Gate A1 素材确认 |
+| 工具增强审查 | LLM 输出后调用外部工具（搜索、代码解释器）评估特定方面，不靠模型脑补 | 事实类声明走外验审查（搜索/知识库核查），逻辑/数据类走计算验证；与 `guardrails.registry.json` 的输出护栏协同 | 第一层 QA · 外验审查；`guardrails.registry.json` → `output_guardrails.hallucination_spot_check` |
 | Evals 可演进 | 反复踩坑的场景固化为 evals；改 prompt 时跑评估矩阵防回归 | 每次 eval 失效即更新用例；release-critical 行为有 deterministic eval case；系统变更后跑 smoke.sh | `agent-system/evals/`（含 `runtime-replay-and-multilingual.json`）；`harness/production-gates.json`；`tests/smoke.sh` |
-| MT-Bench 多轮体验衰减 | 单轮评分不可靠，多轮中第二/三轮能力衰减才是真问题 | PM-as-QA 的 `value_validation` 做多段式体验扫描，不只看首尾；中层审查节奏防止中段空转 | `quality-scoring.policy.json` → `role_gates.product.value_validation`；`coordination.policy.json` → `midlayer_review_cadence` |
+| 多轮体验扫描 | 单轮评分不可靠，多轮中第二/三轮能力衰减才是真问题 | PM-as-QA 的 `value_validation` 做多段式体验扫描，不只看首尾；中层审查节奏防止中段空转 | `quality-scoring.policy.json` → `role_gates.product.value_validation`；`coordination.policy.json` → `midlayer_review_cadence` |
 | HHH 三维价值框架 | Helpful + Honest + Harmless，任一维度 0 分整体归零 | product role_gate 的价值验证对应 Helpful；writing claims_supported 对应 Honest；guardrails 输出护栏对应 Harmless | `quality-scoring.policy.json` → `role_gates.product`；`guardrails.registry.json` → `output_guardrails` |
 | 多 Agent 辩论收敛 | 多个 LLM 实例就同一问题辩论，收敛到共识，降低单一评判者偏见 | debate_council 拓扑：≥2 reviewer + 可选 judge；高风险双通过，中风险多数+judge；异议必记录 | `coordination.policy.json` → `modes.debate_council` |
 | 个性化评判 | 通用 benchmark 有局限，个性化场景需定制评判标准 | stage_thresholds 差异化（context=4 宽松，evaluate=6 严格）；secretary 按项目 north_star 与用户意图动态加权 | `quality-scoring.policy.json` → `stage_thresholds`；`secretary.capabilities.json` → 上下文中枢 |
-| Reflexion 情景记忆 | Agent 失败后生成反思文本存入记忆，后续任务复用，避免重复踩坑 | 迭代提案与 run ledger 留痕；project_memory 累积跨任务认知；踩坑反思写入项目记忆供后续 run 启动读取 | `agent-system/iterations/`；`projects/<id>/project.json` → `project_memory`；`runs/` ledger |
-| Self-Rewarding 自我进化 | 模型在生成任务中同时训练评判能力，评判随生成共同提升 | secretary 作为 QA 协调者收集多角色评分并识别跨角色不一致；judge_agent 输出含 strengths/defects/fix_suggestion 的自评结构 | `quality-scoring.policy.json` → `judge_agent`；secretary · evaluate 节点 QA 协调 |
-| StyleLLM 风格指纹 | 把风格从主观感受量化为可计算指纹（句长/虚词/标点/语义模式） | writing role_gate 的 `voice_consistent` 维度做风格一致性量化；品牌一致性 QA 守护语言品牌 | `quality-scoring.policy.json` → `role_gates.writing.voice_consistent`；第三层 QA · 品牌一致性 |
-| ExpertPrompting 身份条件生成 | 生成前注入专家身份，显著提升输出质量 | 角色 SOUL.md 定义身份边界；host-injection 默认注入 secretary 角色；suite rules 安装后成为权威 | `rules/agents/` → SOUL.md；`host-injection.policy.json` → `default_agent_role: secretary` |
+| 错误反思情景记忆 | Agent 失败后生成反思文本存入记忆，后续任务复用，避免重复踩坑 | 迭代提案与 run ledger 留痕；project_memory 累积跨任务认知；踩坑反思写入项目记忆供后续 run 启动读取 | `agent-system/iterations/`；`projects/<id>/project.json` → `project_memory`；`runs/` ledger |
+| 自我奖励自我进化 | 模型在生成任务中同时训练评判能力，评判随生成共同提升 | secretary 作为 QA 协调者收集多角色评分并识别跨角色不一致；judge_agent 输出含 strengths/defects/fix_suggestion 的自评结构 | `quality-scoring.policy.json` → `judge_agent`；secretary · evaluate 节点 QA 协调 |
+| 风格指纹量化 | 把风格从主观感受量化为可计算指纹（句长/虚词/标点/语义模式） | writing role_gate 的 `voice_consistent` 维度做风格一致性量化；品牌一致性 QA 守护语言品牌 | `quality-scoring.policy.json` → `role_gates.writing.voice_consistent`；第三层 QA · 品牌一致性 |
+| 专家提示身份条件生成 | 生成前注入专家身份，显著提升输出质量 | 角色 SOUL.md 定义身份边界；host-injection 默认注入 secretary 角色；suite rules 安装后成为权威 | `rules/agents/` → SOUL.md；`host-injection.policy.json` → `default_agent_role: secretary` |
 | 认知投降检测 | 逐步把判断权让渡给 AI 会失去独立判断能力；需检测人类是否 rubber-stamp | human_gated 阶段强制人读 diff 写 ≥30 字 Comprehension Debt 总结；judgment 审计字段防 rubber-stamp approval | `judgment.policy.json` → human_gated；`quality-scoring.policy.json` → `role_gates.delivery.comprehension_debt_check` |
 
 以上 13 方法论落地表吸收自 writer-team 分支 qa-framework.md v1.1，main 分支按数字办公场景适配。原表见 writer-team 分支。

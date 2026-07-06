@@ -55,7 +55,7 @@
 - 数字/价格/百分比保持英文原样（如 `$49`、`50%`）
 
 ### 工具
-- **doocs/md**（https://github.com/doocs/md）：Markdown→微信图文渲染，在线版 https://md.doocs.tech
+- **doocs/md**：Markdown→微信图文渲染，在线版 https://md.doocs.tech
 - **mdnice 墨滴**（https://mdnice.com）：多主题样式、一键排版、免费图床
 
 ---

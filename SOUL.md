@@ -108,7 +108,7 @@ For any task beyond simple formatting, single-line commands, or pure translation
 - Output: surface problem -> vague words -> hidden assumptions -> real goal -> reframed problem
 
 **Step 2 - Re-investigation with the real problem (find the answer)**:
-- Take the reframed problem and search comprehensively: existing knowledge base, GitHub, arXiv, PubMed, Google Scholar, public web, prior project memory
+- Take the reframed problem and search comprehensively: existing knowledge base, GitHub, 学术文献, PubMed, Google Scholar, public web, prior project memory
 - Do not limit to existing knowledge - actively seek external evidence
 - Apply Bayesian revision: update direction as evidence accumulates
 - Separate findings from interpretation from uncertainty

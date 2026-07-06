@@ -15,40 +15,6 @@ The task runtime uses four composable work nodes:
 
 A deterministic controller chooses Continue, Replan, Retry, Wait Human, Complete, Fail, Cancel, or Budget Exhausted. Task rework stays inside bounded cycles and budgets. System changes still use separately confirmed `iteration-proposal-*` commands.
 
-## Research Snapshot
-
-Observed on 2026-06-07 through GitHub repository metadata.
-
-High-signal coding-agent references:
-
-- [OpenHands](https://github.com/All-Hands-AI/OpenHands), about 76k stars: use an explicit development runtime with actions, observations, and feedback loops.
-- [SWE-agent](https://github.com/SWE-agent/SWE-agent), about 19k stars: keep the Agent-computer interface narrow and observable for issue-to-patch work.
-- [aider](https://github.com/aider-ai/aider), about 46k stars: repo maps, git-visible diffs, and command/test feedback are central to coding-agent quality.
-- [SWE-bench](https://github.com/princeton-nlp/SWE-bench), about 5k stars: coding-agent quality should be judged with reproducible tasks and deterministic tests.
-
-High-signal multi-Agent and durable workflow references:
-
-- [ReAct](https://arxiv.org/abs/2210.03629): interleave reasoning, action, and observation. This informs Decide and Act inside a bounded controller.
-- [Reflexion](https://arxiv.org/abs/2303.11366): use explicit evaluation feedback to improve a later attempt. This informs Evaluate and controller Replan or Retry decisions.
-- [Generative Agents](https://arxiv.org/abs/2304.03442): separate memory, reflection, and planning. This maps to the separation of project knowledge, company knowledge, KeyMemory relay, and workflow plans.
-- [Voyager](https://arxiv.org/abs/2305.16291): build reusable skills through an explicit library. This supports provider-reviewed Agent plugin packages rather than customer-side skill recomposition.
-- [MetaGPT](https://arxiv.org/abs/2308.00352): role-based SOP and structured handoff. This supports portable orchestration roles and multi-Agent workflows.
-- [AutoGen](https://arxiv.org/abs/2308.08155): multi-Agent conversation needs explicit roles, boundaries, and controllable handoff.
-- [LangGraph durable execution](https://docs.langchain.com/oss/python/langgraph/durable-execution): long-running workflows need persisted state, resumability, checkpoints, and human-in-the-loop decisions.
-- [RAGAS](https://arxiv.org/abs/2309.15217), [Self-RAG](https://arxiv.org/abs/2310.11511), and [CRAG](https://arxiv.org/abs/2401.15884): retrieval must be measured and critiqued, not blindly trusted.
-
-High-signal skill and workflow sources:
-
-- [ECC](https://github.com/affaan-m/ECC), about 210k stars: harness construction and regression testing patterns.
-- [awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills), about 64k stars: curated skill discovery source.
-- [antigravity-awesome-skills](https://github.com/sickn33/antigravity-awesome-skills), about 40k stars: large installable agentic skill library.
-- [awesome-cursorrules](https://github.com/PatrickJS/awesome-cursorrules), about 40k stars: AI editor rules and framework-specific coding conventions.
-- [claude-task-master](https://github.com/eyaltoledano/claude-task-master), about 27k stars: task decomposition and implementation status discipline.
-- [12-factor-agents](https://github.com/humanlayer/12-factor-agents), about 23k stars: durable LLM application control principles.
-- [ai-dev-tasks](https://github.com/snarktank/ai-dev-tasks), about 8k stars: task lifecycle and AI dev-agent status management.
-
-These sources are not installed directly into production. They are candidate sources and design references. Enterprise deployments must stage, review, adapt, verify, and approve before any external skill becomes active.
-
 ## Harness Model
 
 The production harness uses eight layers:

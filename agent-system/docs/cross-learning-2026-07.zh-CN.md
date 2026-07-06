@@ -21,7 +21,7 @@
 
 | 来源 → 目标 | 学到的经验 |
 |---|---|
-| writer-team → main | 13 方法论 QA 执行准则（LLM-as-judge 偏见消除 / FActScore / CRITIC / MT-Bench / HHH / 多 Agent 辩论 / Reflexion / Self-Rewarding / StyleLLM / ExpertPrompting / 认知投降检测等）。main 分支按数字办公场景适配，落地为 `agent-team-qa-framework.zh-CN.md` 附录 C 的工程化落地表，标注每条方法论在 main 的具体落地位置（policy 文件 / 角色 / Gate）。 |
+| writer-team → main | 13 方法论 QA 执行准则（AI 自评偏见消除 / 原子化事实核查 / 工具增强审查 / 多轮体验扫描 / HHH / 多 Agent 辩论 / 错误反思情景记忆 / 自我奖励自我进化 / 风格指纹量化 / 专家提示身份条件生成 / 认知投降检测等）。main 分支按数字办公场景适配，落地为 `agent-team-qa-framework.zh-CN.md` 附录 C 的工程化落地表，标注每条方法论在 main 的具体落地位置（policy 文件 / 角色 / Gate）。 |
 | writer-team → main | 11 类关键动作人工把关清单（对外发送 / 公开发布 / 上线部署 / 删除 / 覆盖 / 付款 / 数据导出 / 记入长期记忆 / 晋升为公司知识 / 受监管专业建议 / 最终交付）。main 分支将其结构化为独立策略文件 `human-gate-actions.policy.json`，与现有 `judgment.policy.json` 的 human_gated 模式对齐，超阈值（0.65）自动暂停请人确认。 |
 | research-team → main | loop-status 单命令状态查询：research-team 用 Python 实现了 `loop-status.py`，提供 Run Readiness / Cost / Score Trend / Integrity Gates 一屏可读。main 分支的 `bin/` 多为无后缀的 bash/python 混合脚本，故用 bash 重写为 `bin/loop-status`，读取 main 自有的注册表与策略文件，输出 4 个区块。 |
 | research-team → main | enhancement_version + enhancement_source 顶层标记模式：research-team 在 `coordination.policy.json` 顶部标注增强版本与来源，便于追溯每次补强的出处与时间。main 分支吸收此模式，在 `coordination.policy.json` 新增 `enhancement_version` 与 `enhancement_source` 两个字段，标记本轮 cross-learning 来源。 |

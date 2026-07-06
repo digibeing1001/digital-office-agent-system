@@ -6,9 +6,9 @@
 
 ## 2026-07-02
 
-### Agent Team QA v1.2.0：调研补强（Maker-Checker / 反 AI Slop / 上下文优势 / 北极星 / 最小样本 / Comprehension Debt / 中层审查）
+### Agent Team QA v1.2.0：补强（Maker-Checker / 反 AI Slop / 上下文优势 / 北极星 / 最小样本 / Comprehension Debt / 中层审查）
 
-基于吴恩达三层 Loop Engineering 参考资料，开展全网+论文+GitHub 调研，补强 7 项失效模式防御：
+基于三层 Loop Engineering 框架，补强 7 项失效模式防御：
 
 - 集成 taste-skill（反 AI Slop）：从 GitHub 克隆到 skills/_imported/taste-skill/，vibe-designer 在 act->evaluate 边界调用
 - quality-scoring.policy.json v1.2.0：新增 anti_slop_check / comprehension_debt_check / maker_checker_isolation / minimum_sample_size / context_advantage_layers
@@ -18,9 +18,9 @@
 
 
 
-### Agent Team QA 框架：基于吴恩达三层 Loop Engineering
+### Agent Team QA 框架：基于三层 Loop Engineering
 
-基于吴恩达 Loop Engineering 三层框架（代码循环 / 产品品味 / 产品生死），建立 Agent Team 专项 QA 框架：
+基于三层 Loop Engineering 框架（代码循环 / 产品品味 / 产品生死），建立 Agent Team 专项 QA 框架：
 
 - **新增 `docs/agent-team-qa-framework.zh-CN.md`**：覆盖四维度 QA（第一层执行自测、第二层产品品味、第三层产品生死、跨层协作 QA），含 QA 角色职责矩阵、流程门禁、度量指标。
 - **核心认知落实**：第一层"有效但不过度投入"；第二层"PM-as-QA + 品味=上下文优势"，secretary 作为品味守护者；第三层"慢循环 + 人类主导 + 跨任务累积"。
@@ -134,7 +134,6 @@
 ### 新增
 
 - **Coder Agent 能力迭代 — 集成 vibe-coding-production-harness**
-  - 来源：https://github.com/digibeing1001/claude-vibe-coding-setup
   - 新增 skill：`skills/vibe-coding-production-harness/SKILL.md`（含 Soul Principles + 8 阶段 + 六角色 + 质量门）
   - `profiles/office-coder/SOUL.md`：新增 Primary Skill / Quality Bar / Cross-Session Memory Discipline 三段
   - `agent-system/agents.registry.json`：coder 节点绑定 `primary_skill` / `default_skill_chain` / `quality_gates` / `source_iteration`

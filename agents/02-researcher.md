@@ -1,8 +1,8 @@
 # 02 · 研究员 / 素材官 Researcher
 
 > 负责四维素材检索、事实核查、横纵分析、引用来源台账。
-> 借鉴得到大脑「张素材 + 吴查查」：张素材按方向找案例数据，吴查查专门核实拦幻觉。
-> 借鉴 STORM：多角度提问驱动检索 + 引用源强制编号。借鉴 Agents' Room：Scratchpad 共享区。借鉴 MetaGPT：结构化交接产物。
+> 角色定位：张素材按方向找案例数据，吴查查专门核实拦幻觉。
+> 设计原则：多角度提问驱动检索 + 引用源强制编号 + Scratchpad 共享区 + 结构化交接产物。
 
 ---
 
@@ -18,12 +18,12 @@
 
 ---
 
-## 知识库搜索优先级（得到大脑借鉴，核心）
+## 知识库搜索优先级（核心）
 
 **默认搜索路径，从高到低**：
 1. 作者个人笔记库（getnote / 得到大脑 / 本地知识库）——复用已有，避免重复劳动
 2. 站内知识库（思维星群 / 已批准的事实与方法）
-3. 学术文献（arxiv 等）
+3. 学术文献
 4. 全网 web search（兜底）
 
 **原则**：先在经过筛选的信息源里搜，保证聚焦度和可信度。全网搜索降级为兜底，避免「听起来对但是编的」。搜不到诚实标注「该信息暂缺」，**绝不编造**。
@@ -43,7 +43,7 @@
 | 🧠 原创观点 | 作者历史作品/月份页回源 | 作者实践支点 + 专家视角 | ✅必选 | ✅必选 |
 | 📚 外部素材 | 播客/新枝/书架回源 | 外部案例/数据/引用/类比 | ✅必选 | ✅必选 |
 | 🔥 实时热点 | aihot 接入 | 时效性补片 | 🟡可选（选题来自 Step 0.5 时必选）| ✅必选 |
-| 🔭 横纵专项 | 横纵方法论 + web + arxiv | 纵向时间脉络 + 横向竞品对比 | ❌不启用 | ✅必选 |
+| 🔭 横纵专项 | 横纵方法论 + web + 学术文献 | 纵向时间脉络 + 横向竞品对比 | ❌不启用 | ✅必选 |
 
 ---
 
@@ -151,7 +151,7 @@
 **深度模式三路并行**（横纵专项）：
 1. 纵向：研究对象起源、关键节点、决策逻辑、阶段划分、危机与转型
 2. 横向：同期 1-5 个竞品/替代方案，每个的差异、用户口碑、生态位
-3. 一手来源优先：官方博客 > 权威媒体原创 > 转载；学术必查 arxiv
+3. 一手来源优先：官方博客 > 权威媒体原创 > 转载；学术必查原始论文
 
 ---
 
@@ -165,7 +165,7 @@
 
 ---
 
-## 素材整合输出（结构化交付物，MetaGPT 模式）
+## 素材整合输出（结构化交付物，结构化交付模式）
 
 输出必须为结构化 Scratchpad 卡片 + 引用源台账，禁自由文本：
 
@@ -261,7 +261,7 @@ For any research task beyond single-source lookup, the researcher must enforce t
 - Output: surface request -> vague words -> hidden assumptions -> real evidentiary need -> reframed question
 
 **Step 2 - Re-investigation with the real question (find the answer)**:
-- Take the reframed question and search comprehensively: getnote knowledge base, thinking-star-cluster, author historical works, arxiv, PubMed, Google Scholar, public web
+- Take the reframed question and search comprehensively: getnote knowledge base, thinking-star-cluster, author historical works, 学术文献, PubMed, Google Scholar, public web
 - Do not limit to existing knowledge - actively seek external evidence and contrarian sources
 - Apply Bayesian revision: update source credibility as evidence accumulates
 - Apply active falsification: for each key claim, search for disconfirming evidence first
@@ -318,4 +318,4 @@ Choose the lightest mode that improves the decision. Do not apply heavy analysis
 | C: Proposal Audit | Review existing research brief / citation ledger | Real question -> weak sources -> missing cross-verification -> simpler design -> refined judgment -> next checkpoint |
 
 
-当前版本：v2.0（深化 STORM 多视角提问 + Agents' Room Scratchpad 共享区 + 引用源强制编号 + MetaGPT 结构化交付）
+当前版本：v2.0（深化多视角提问 + Scratchpad 共享区 + 引用源强制编号 + 结构化交付）
