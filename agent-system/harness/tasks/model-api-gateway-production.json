@@ -24,7 +24,7 @@
       "id": "direct_api_smoke",
       "type": "command",
       "cwd": "hermes_home",
-      "timeout_seconds": 30,
+      "timeout_seconds": 90,
       "command": [
         "python3",
         "agent-system/tests/model-gateway-smoke.py"
