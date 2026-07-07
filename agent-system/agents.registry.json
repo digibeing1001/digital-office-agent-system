@@ -19,7 +19,7 @@
           "technical verification or regression coverage is required"
         ]
       },
-      "display_name": "Digital Office Coder",
+      "display_name": "Research Engineer",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -31,8 +31,8 @@
       "orchestration_roles": [
         "implementation"
       ],
-      "portable_role": "implementation-specialist",
-      "profile": "office-coder",
+      "portable_role": "research-implementation-and-reproducibility-engineer",
+      "profile": "office-research-engineer",
       "provider": "kimi-coding",
       "routing": {
         "default_workflow": "single",
@@ -182,7 +182,7 @@
           "a workflow needs a product owner before design or implementation"
         ]
       },
-      "display_name": "Digital Office Product Manager",
+      "display_name": "Principal Investigator",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -198,8 +198,8 @@
       "orchestration_roles": [
         "product"
       ],
-      "portable_role": "product-strategy-and-office-manager",
-      "profile": "office-product-manager",
+      "portable_role": "research-question-and-project-owner",
+      "profile": "office-research-pi",
       "provider": "openai-codex",
       "routing": {
         "default_workflow": "single",
@@ -414,7 +414,7 @@
           "the task depends on uncertain assumptions that should be verified first"
         ]
       },
-      "display_name": "Digital Office Researcher",
+      "display_name": "Literature Researcher",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -426,8 +426,8 @@
       "orchestration_roles": [
         "evidence"
       ],
-      "portable_role": "research-and-evidence-specialist",
-      "profile": "office-researcher",
+      "portable_role": "literature-and-evidence-specialist",
+      "profile": "office-literature-researcher",
       "provider": "kimi-coding",
       "routing": {
         "default_workflow": "single",
@@ -548,7 +548,7 @@
           "the router has low confidence or multiple plausible owners"
         ]
       },
-      "display_name": "Digital Office Secretary",
+      "display_name": "Research Secretary",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -560,8 +560,8 @@
       "orchestration_roles": [
         "intake"
       ],
-      "portable_role": "intake-orchestration-staffing-and-operations-advisor",
-      "profile": "__default__",
+      "portable_role": "research-intake-orchestration-and-risk-controller",
+      "profile": "office-research-secretary",
       "provider": "minimax-cn",
       "routing": {
         "default_workflow": "single",
@@ -827,7 +827,7 @@
           "the task concerns GUI consistency, usability, accessibility, or visual quality"
         ]
       },
-      "display_name": "Digital Office Designer",
+      "display_name": "Methodologist",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -839,8 +839,8 @@
       "orchestration_roles": [
         "design"
       ],
-      "portable_role": "interaction-and-visual-design-specialist",
-      "profile": "office-designer",
+      "portable_role": "methodology-design-and-reproducibility-specialist",
+      "profile": "office-methodologist",
       "provider": "kimi-coding",
       "routing": {
         "default_workflow": "single",
@@ -978,7 +978,7 @@
           "the task is about tone, structure, readability, or audience fit"
         ]
       },
-      "display_name": "Digital Office Writer",
+      "display_name": "Academic Writer",
       "fallbacks": [
         {
           "model": "mimo-v2.5-pro",
@@ -990,8 +990,8 @@
       "orchestration_roles": [
         "writing"
       ],
-      "portable_role": "writing-and-editorial-specialist",
-      "profile": "office-writer",
+      "portable_role": "academic-writing-and-citation-specialist",
+      "profile": "office-academic-writer",
       "provider": "minimax-cn",
       "routing": {
         "default_workflow": "single",
@@ -1088,7 +1088,7 @@
           "the work needs scope, milestones, dependencies, or risk ordering"
         ]
       },
-      "display_name": "Digital Office Planner",
+      "display_name": "Data Analyst",
       "fallbacks": [
         {
           "model": "deepseek/deepseek-v4-pro",
@@ -1100,8 +1100,8 @@
       "orchestration_roles": [
         "planning"
       ],
-      "portable_role": "planning-and-architecture-specialist",
-      "profile": "office-planner",
+      "portable_role": "data-analysis-and-statistical-planning-specialist",
+      "profile": "office-data-analyst",
       "provider": "openai-codex",
       "routing": {
         "default_workflow": "research_then_plan",
@@ -1192,7 +1192,7 @@
           "multiple legal skill lanes must be synthesized into one business-facing recommendation draft"
         ]
       },
-      "display_name": "Digital Office Digital Lawyer",
+      "display_name": "Research Ethics Officer",
       "fallbacks": [
         {
           "model": "MiniMax-M3",
@@ -1204,8 +1204,8 @@
       "orchestration_roles": [
         "legal"
       ],
-      "portable_role": "enterprise-digital-lawyer",
-      "profile": "office-legal",
+      "portable_role": "research-ethics-compliance-and-integrity-reviewer",
+      "profile": "office-research-ethics",
       "provider": "minimax-cn",
       "routing": {
         "default_workflow": "legal_triage",
@@ -1345,12 +1345,20 @@
     "product": "pm",
     "research": "researcher",
     "vibe_designer": "vibe-designer",
-    "planer": "planner"
+    "planer": "planner",
+    "academic-writer": "writer",
+    "data-analyst": "planner",
+    "ethics": "legal",
+    "literature": "researcher",
+    "methodologist": "vibe-designer",
+    "pi": "pm",
+    "research-engineer": "coder",
+    "research-secretary": "secretary"
   },
   "defaults": {
     "fallback_agent": "secretary",
     "fallback_model": "MiniMax-M3",
-    "fallback_profile": "__default__",
+    "fallback_profile": "office-research-secretary",
     "fallback_provider": "minimax-cn",
     "memory_policy": "keymemory",
     "notification_template": "AGENT_SWITCH: {agent} ({profile}) / model: {model} / provider: {provider} / workflow: {workflow} step {step_index}/{step_count}"

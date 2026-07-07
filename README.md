@@ -136,6 +136,8 @@ pip install arxiv scholarly semanticscholar pdfplumber \
 
 GROBID（PDF 全文解析）和 JPlag（代码查重）需单独部署，看各自 GitHub 仓库说明。
 
+图形界面可以用 `web-config` 配置端口、访问令牌、模型连接和内网访问策略，再用 `web-serve` 启动 Web UI 与 PWA。普通入口是 `/`，管理后台入口是 `/admin`；PWA 会缓存离线壳，适合科研小组在实验室服务器、单机工作站或中小企业内网中部署。
+
 ### 第二步：跟科研秘书说一句话
 
 ```text
