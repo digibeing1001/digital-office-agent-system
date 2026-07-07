@@ -532,8 +532,10 @@ def split_command(command: str) -> list[str]:
     command = command.strip()
     if not command:
         return []
+    if os.name == "nt" and Path(command).exists():
+        return [command]
     try:
-        return shlex.split(command)
+        return shlex.split(command, posix=os.name != "nt")
     except ValueError:
         return [command]
 
@@ -546,6 +548,24 @@ def local_agent_prompt(prompt: str, system_prompt: str) -> str:
 
 def model_gateway(home: Path) -> str:
     return os.environ.get("DIGITAL_OFFICE_MODEL_GATEWAY") or str(home / "agent-system" / "bin" / "model-gateway")
+
+
+def script_command(executable: str | Path) -> list[str]:
+    text = str(executable)
+    candidate = Path(text)
+    if os.name == "nt" and candidate.exists() and candidate.suffix == ".py":
+        return [sys.executable, str(candidate)]
+    if os.name == "nt" and candidate.exists() and not candidate.suffix:
+        try:
+            first_line = candidate.read_text(encoding="utf-8", errors="replace").splitlines()[0]
+        except (OSError, IndexError):
+            first_line = ""
+        if "python" in first_line:
+            return [sys.executable, str(candidate)]
+        if "sh" in first_line or "bash" in first_line:
+            return ["bash", str(candidate)]
+        return [sys.executable, str(candidate)]
+    return [text]
 
 
 def model_runtime_config(home: Path) -> dict[str, Any]:
@@ -565,6 +585,10 @@ def model_runtime_config(home: Path) -> dict[str, Any]:
     return value
 
 
+def office_system_command(home: Path) -> str:
+    return os.environ.get("DIGITAL_OFFICE_OFFICE_SYSTEM") or str(home / "agent-system" / "bin" / "office-system")
+
+
 def effective_runtime(home: Path, agent_name: str, cfg: dict[str, Any], requested_mode: str) -> dict[str, Any]:
     runtime = model_runtime_config(home)
     override = runtime.get("agents", {}).get(agent_name, {})
@@ -576,7 +600,7 @@ def effective_runtime(home: Path, agent_name: str, cfg: dict[str, Any], requeste
     model = str(override.get("model") or execution.get("model") or cfg.get("model", ""))
     gateway = model_gateway(home)
     cmd = [
-        gateway,
+        *script_command(gateway),
         "resolve",
         "--agent",
         agent_name,
@@ -748,7 +772,7 @@ def run_step(prompt: str, cfg: dict[str, Any], home: Path, agent_name: str, runt
         if not Path(gateway).exists() and not shutil.which(gateway):
             return subprocess.CompletedProcess([gateway], 2, "", f"agent-router: model gateway not found: {gateway}\n")
         cmd = [
-            gateway,
+            *script_command(gateway),
             "invoke",
             "--provider",
             runtime["provider"],
@@ -763,6 +787,8 @@ def run_step(prompt: str, cfg: dict[str, Any], home: Path, agent_name: str, runt
         runtime_id = str(runtime.get("local_runtime") or "hermes")
         command = str(runtime.get("local_runtime_command") or "")
         base = split_command(command) or [hermes_binary()]
+        if base:
+            base = [*script_command(base[0]), *base[1:]]
         if runtime_id == "claude_code":
             cmd = [*base, "--print", "--output-format", "text"]
             if runtime.get("model"):
@@ -818,9 +844,9 @@ def normalize_model_result(proc: subprocess.CompletedProcess[str], runtime: dict
 def record_model_observation(home: Path, run_id: str, agent_name: str, runtime: dict[str, str], usage: dict[str, int], succeeded: bool) -> tuple[bool, str]:
     if not run_id:
         return True, ""
-    office = str(home / "agent-system" / "bin" / "office-system")
+    office = office_system_command(home)
     usage_cmd = [
-        office,
+        *script_command(office),
         "loop-usage-add",
         "--run-id",
         run_id,
@@ -844,7 +870,7 @@ def record_model_observation(home: Path, run_id: str, agent_name: str, runtime: 
         if not budget_reached:
             return False, usage_proc.stderr.strip() or usage_proc.stdout.strip()
     ledger_cmd = [
-        office,
+        *script_command(office),
         "run-ledger-add",
         "--run-id",
         run_id,

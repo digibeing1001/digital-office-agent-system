@@ -210,10 +210,29 @@ def command_parts(command: str) -> list[str]:
     command = command.strip()
     if not command:
         return []
+    if os.name == "nt" and Path(command).exists():
+        return [command]
     try:
-        return shlex.split(command)
+        return shlex.split(command, posix=os.name != "nt")
     except ValueError:
         return [command]
+
+
+def executable_parts(parts: list[str]) -> list[str]:
+    if os.name != "nt" or not parts:
+        return parts
+    candidate = Path(parts[0])
+    if not candidate.exists() or candidate.suffix:
+        return parts
+    try:
+        first_line = candidate.read_text(encoding="utf-8", errors="replace").splitlines()[0]
+    except (OSError, IndexError):
+        first_line = ""
+    if "python" in first_line:
+        return [sys.executable, str(candidate), *parts[1:]]
+    if "sh" in first_line or "bash" in first_line:
+        return ["bash", str(candidate), *parts[1:]]
+    return [str(candidate), *parts[1:]]
 
 
 def first_existing_path(paths: list[Path]) -> str:
@@ -221,7 +240,7 @@ def first_existing_path(paths: list[Path]) -> str:
 
 
 def probe_local_runtime(command: str, runtime_id: str) -> tuple[bool, str]:
-    parts = command_parts(command)
+    parts = executable_parts(command_parts(command))
     if not parts:
         return False, "command_not_found"
     try:
