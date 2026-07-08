@@ -156,6 +156,12 @@ TASK_STATUSES = {
     "cancelled",
 }
 WORKFLOW_CONTROL_ACTIONS = {"run", "pause", "stop", "resume"}
+RESUMABLE_WAIT_BLOCKERS = {
+    "clarification_required",
+    "human_judgment_pending",
+    "loop_human_input_required",
+    "loop_progress_stagnant",
+}
 CANVAS_NODE_TYPES = {
     "start",
     "agent_task",
@@ -4677,6 +4683,174 @@ def linked_tasks(root: Path, run: dict[str, Any]) -> list[str]:
     return [safe_component(task_id, "task id") for task_id in run.get("tasks", []) if task_id]
 
 
+def queued_linked_tasks(root: Path, run: dict[str, Any]) -> list[dict[str, Any]]:
+    tasks = []
+    for task_id in linked_tasks(root, run):
+        try:
+            task = load_task(root, task_id)
+        except SystemExit:
+            continue
+        if task.get("status") == "queued":
+            tasks.append(task)
+    return tasks
+
+
+def pending_run_approval_ids(root: Path, run: dict[str, Any]) -> list[str]:
+    pending = []
+    for approval_id in run.get("approvals", []) or []:
+        try:
+            approval = load_approval(root, str(approval_id))
+        except SystemExit:
+            pending.append(str(approval_id))
+            continue
+        if approval.get("status") == "pending":
+            pending.append(str(approval_id))
+    return pending
+
+
+def build_resume_signal(
+    root: Path,
+    run: dict[str, Any],
+    *,
+    source: str,
+    actor_id: str = "",
+    actor_role: str = "",
+    decision_id: str = "",
+    reason: str = "",
+) -> dict[str, Any]:
+    run_id = str(run.get("run_id", ""))
+    stage = normalize_loop_stage(str(run.get("current_stage", "context")))
+    queued_tasks = queued_linked_tasks(root, run)
+    pending_approvals = pending_run_approval_ids(root, run)
+    open_cases = open_judgment_cases(root, run)
+    command_args: list[dict[str, Any]] = []
+    if pending_approvals:
+        command_args.append({"command": "approval-list", "args": ["--status", "pending"]})
+        command_args.append({"command": "workflow-status", "args": ["--run-id", run_id]})
+    elif open_cases:
+        command_args.append({"command": "judgment-list", "args": ["--workflow-run", run_id, "--status", "pending"]})
+        command_args.append({"command": "workflow-status", "args": ["--run-id", run_id]})
+    elif queued_tasks:
+        command_args.append(
+            {
+                "command": "workflow-dispatch-next",
+                "args": [
+                    "--run-id",
+                    run_id,
+                    "--requested-by",
+                    actor_id or str(run.get("requested_by", "")),
+                    "--role",
+                    actor_role or str(run.get("requested_by_role", "project_manager")),
+                    "--confirmed",
+                ],
+            }
+        )
+    else:
+        stage_state = run.get("stages", {}).get(stage, {}) or {}
+        stage_status = str(stage_state.get("status", "pending"))
+        if stage_status in {"pending", "blocked", "failed"}:
+            command_args.append(
+                {
+                    "command": "loop-stage",
+                    "args": ["--run-id", run_id, "--stage", stage, "--status", "started"],
+                }
+            )
+        command_args.append({"command": "loop-status", "args": ["--run-id", run_id]})
+    return {
+        "version": "1.0.0",
+        "kind": "digital-office-resume-signal",
+        "run_id": run_id,
+        "source": source,
+        "decision_id": decision_id,
+        "created_at": now_iso(),
+        "created_by": safe_claim(actor_id, "resume actor", required=False),
+        "created_by_role": safe_component(actor_role, "resume actor role") if actor_role else "",
+        "control_decision": "wait_human" if pending_approvals or open_cases else "continue",
+        "resume_from_stage": stage,
+        "run_status": run.get("status", ""),
+        "queued_task_ids": [str(task.get("task_id", "")) for task in queued_tasks],
+        "pending_approval_ids": pending_approvals,
+        "open_judgment_case_ids": [str(case.get("case_id", "")) for case in open_cases],
+        "requires_dispatch": bool(queued_tasks) and not pending_approvals and not open_cases,
+        "command_args": command_args,
+        "next_actions": [" ".join([item["command"], *item["args"]]).strip() for item in command_args],
+        "reason": reason,
+    }
+
+
+def apply_resume_signal(
+    root: Path,
+    run: dict[str, Any],
+    *,
+    source: str,
+    actor_id: str = "",
+    actor_role: str = "",
+    decision_id: str = "",
+    reason: str = "",
+    clear_blockers: set[str] | None = None,
+) -> dict[str, Any]:
+    clear = set(clear_blockers or set()) | RESUMABLE_WAIT_BLOCKERS
+    run.setdefault("blockers", [])
+    run["blockers"] = [item for item in run["blockers"] if item not in clear]
+    pending_approvals = pending_run_approval_ids(root, run)
+    open_cases = open_judgment_cases(root, run)
+    if pending_approvals:
+        run["status"] = "waiting_user_confirmation"
+        for blocker in ("approval_pending",):
+            if blocker not in run["blockers"]:
+                run["blockers"].append(blocker)
+    elif open_cases:
+        run["status"] = "waiting_human_judgment"
+        if "human_judgment_pending" not in run["blockers"]:
+            run["blockers"].append("human_judgment_pending")
+    else:
+        run["status"] = status_for_current_stage(run)
+    signal = build_resume_signal(
+        root,
+        run,
+        source=source,
+        actor_id=actor_id,
+        actor_role=actor_role,
+        decision_id=decision_id,
+        reason=reason,
+    )
+    signal["blockers_remaining"] = list(run.get("blockers", []))
+    run["resume_signal"] = signal
+    run.setdefault("control", initial_loop_control(root)).setdefault("decision_history", []).append(
+        {
+            "time": signal["created_at"],
+            "requested_decision": "continue",
+            "effective_decision": signal["control_decision"],
+            "target_stage": signal["resume_from_stage"],
+            "source": source,
+            "decision_id": decision_id,
+            "reason": reason,
+        }
+    )
+    run.setdefault("events", []).append(
+        {
+            "time": signal["created_at"],
+            "event": "resume_signal_created",
+            "source": source,
+            "decision_id": decision_id,
+            "next_actions": signal["next_actions"],
+        }
+    )
+    append_run_ledger_event(
+        root,
+        str(run.get("run_id", "")),
+        "loop_resume_signal",
+        stage=signal["resume_from_stage"],
+        action="loop.resume.continue",
+        agent_id=str(run.get("agent_id", "")),
+        actor_id=actor_id,
+        actor_role=actor_role,
+        input_payload={"source": source, "decision_id": decision_id, "reason": reason},
+        output_payload=signal,
+    )
+    return signal
+
+
 def sync_run_status_from_tasks(root: Path, run_id: str) -> dict[str, Any] | None:
     if not run_id:
         return None
@@ -4797,23 +4971,109 @@ def workflow_resume(args: argparse.Namespace) -> int:
     if run.get("status") == "completed":
         print("office-system: completed workflow cannot be resumed", file=sys.stderr)
         return 2
+    pending_approvals = pending_run_approval_ids(root, run)
+    if pending_approvals:
+        print(json.dumps({"status": "blocked", "reason": "approval_pending", "pending_approvals": pending_approvals}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
     open_cases = open_judgment_cases(root, run)
     if open_cases:
         print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
-    run["status"] = LOOP_STATUS_BY_STAGE.get(normalize_loop_stage(str(run.get("current_stage", "context"))), "created")
-    run["updated_at"] = now_iso()
-    run.setdefault("blockers", [])
-    run["blockers"] = [item for item in run["blockers"] if item != "clarification_required"]
-    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_resumed", "reason": args.reason or ""})
     for task_id in linked_tasks(root, run):
         task = load_task(root, task_id)
         if task.get("status") in {"blocked", "waiting_approval"}:
             update_task_status(root, task_id, "queued", message=args.reason or "workflow resumed", actor_id=args.requested_by or "", actor_role=args.role or "")
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "workflow_resumed", "reason": args.reason or ""})
+    signal = apply_resume_signal(
+        root,
+        run,
+        source="workflow_resume",
+        actor_id=args.requested_by or "",
+        actor_role=args.role or "",
+        reason=args.reason or "",
+    )
     write_json(run_record_path(root, args.run_id), run)
     append_audit_event(root, "workflow_resumed", actor_id=args.requested_by or "", actor_role=args.role or "", project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome="resumed", reason=args.reason or "")
-    print(json.dumps({"run_id": args.run_id, "status": run["status"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"run_id": args.run_id, "status": run["status"], "resume_signal": signal}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
+
+
+def workflow_dispatch_next(args: argparse.Namespace) -> int:
+    root = system_root()
+    if not args.confirmed:
+        print("office-system: workflow-dispatch-next requires --confirmed", file=sys.stderr)
+        return 2
+    run = load_run_record(root, args.run_id)
+    if run.get("status") in {"cancelled", "completed"}:
+        print(f"office-system: workflow is {run.get('status')} and cannot dispatch queued work", file=sys.stderr)
+        return 2
+    auth = authorize_workflow_mutation(root, run, args.requested_by, args.role, "agent.delegate")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    pending_approvals = pending_run_approval_ids(root, run)
+    if pending_approvals:
+        print(json.dumps({"status": "blocked", "reason": "approval_pending", "pending_approvals": pending_approvals, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    open_cases = open_judgment_cases(root, run)
+    if open_cases:
+        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    signal = apply_resume_signal(
+        root,
+        run,
+        source="workflow_dispatch_next",
+        actor_id=args.requested_by or "",
+        actor_role=args.role or "",
+        reason=args.reason or "dispatch next queued workflow task",
+    )
+    write_json(run_record_path(root, args.run_id), run)
+    queued_tasks = queued_linked_tasks(root, run)
+    if not queued_tasks:
+        append_audit_event(root, "workflow_dispatch_next", actor_id=args.requested_by or "", actor_role=args.role or "", project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome="idle", reason=args.reason or "no queued task")
+        print(json.dumps({"run_id": args.run_id, "status": "idle", "authorization": auth, "resume_signal": signal, "next_actions": ["workflow-status --run-id " + args.run_id]}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 0
+    task = queued_tasks[0]
+    task_id = str(task.get("task_id") or run.get("task_id") or "")
+    agent_id = str(task.get("assigned_agent") or task.get("agent_id") or run.get("agent_id") or "secretary")
+    route = task.get("route") if isinstance(task.get("route"), dict) else run.get("route", {})
+    if not isinstance(route, dict):
+        route = {}
+    task_body = str(task.get("body") or run.get("task") or "")
+    execution = execute_agent_task(
+        root,
+        run_id=args.run_id,
+        task_id=task_id,
+        task=task_body,
+        agent_id=agent_id,
+        route=route,
+        project_id=str(task.get("project_id") or run.get("project_id") or ""),
+        context_pack=run.get("context_pack"),
+        user=args.requested_by or "",
+        role=args.role or "",
+        runtime_mode=args.runtime or "auto",
+        timeout_seconds=int(args.execution_timeout or 300),
+    )
+    final_run = load_run_record(root, args.run_id)
+    append_audit_event(root, "workflow_dispatch_next", actor_id=args.requested_by or "", actor_role=args.role or "", project_id=final_run.get("project_id", ""), agent_id=agent_id, resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, task_id=task_id, outcome=str(execution.get("status", "unknown")), reason=args.reason or "dispatched queued task")
+    print(
+        json.dumps(
+            {
+                "run_id": args.run_id,
+                "task_id": task_id,
+                "agent_id": agent_id,
+                "status": final_run.get("status", ""),
+                "authorization": auth,
+                "resume_signal": signal,
+                "execution": execution,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if execution.get("status") == "completed" else 1
 
 
 def project_archive(args: argparse.Namespace) -> int:
@@ -5432,6 +5692,7 @@ def judgment_decision(args: argparse.Namespace) -> int:
 
     run_id = str(case.get("workflow_run_id", ""))
     task_id = str(case.get("task_id", ""))
+    resume_signal = None
     if run_id:
         run = load_run_record(root, run_id)
         run["updated_at"] = now_iso()
@@ -5439,8 +5700,29 @@ def judgment_decision(args: argparse.Namespace) -> int:
         if status == "approved":
             remaining = open_judgment_cases(root, run)
             if not remaining:
-                run["blockers"] = [item for item in run.get("blockers", []) if item != "human_judgment_pending"]
-                run["status"] = status_for_current_stage(run)
+                if task_id:
+                    task = load_task(root, task_id)
+                    if task.get("status") == "waiting_human_judgment":
+                        update_task_status(root, task_id, "queued", message=args.message or f"judgment {status}", actor_id=args.decided_by, actor_role=args.role)
+                resume_signal = apply_resume_signal(
+                    root,
+                    run,
+                    source="judgment_decision",
+                    actor_id=args.decided_by,
+                    actor_role=args.role,
+                    decision_id=args.case_id,
+                    reason=args.message or "",
+                )
+            else:
+                resume_signal = apply_resume_signal(
+                    root,
+                    run,
+                    source="judgment_decision",
+                    actor_id=args.decided_by,
+                    actor_role=args.role,
+                    decision_id=args.case_id,
+                    reason=args.message or "",
+                )
         elif status == "needs_evidence":
             run["status"] = "waiting_human_judgment"
             run.setdefault("blockers", [])
@@ -5454,7 +5736,7 @@ def judgment_decision(args: argparse.Namespace) -> int:
                 run["blockers"].append(blocker)
         write_json(run_record_path(root, run_id), run)
     if task_id:
-        if status == "approved":
+        if status == "approved" and not run_id:
             task = load_task(root, task_id)
             if task.get("status") == "waiting_human_judgment":
                 update_task_status(root, task_id, "queued", message=args.message or f"judgment {status}", actor_id=args.decided_by, actor_role=args.role)
@@ -5493,7 +5775,7 @@ def judgment_decision(args: argparse.Namespace) -> int:
             output_payload={"case_status": status, "run_status": load_run_record(root, run_id).get("status", "")},
         )
     emit_notification(root, user_id="", title=f"Judgment {status}", body=case.get("reason", ""), topic="judgment", resource_type="judgment", resource_id=args.case_id, severity="info" if status == "approved" else "warning")
-    print(json.dumps({"judgment": case, "authorization": auth, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"judgment": case, "authorization": auth, "audit_event_id": event["event_id"], "resume_signal": resume_signal}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -5508,15 +5790,21 @@ def judgment_resume(args: argparse.Namespace) -> int:
     if remaining:
         print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": remaining}, ensure_ascii=False, indent=2, sort_keys=True))
         return 2
-    run["blockers"] = [item for item in run.get("blockers", []) if item != "human_judgment_pending"]
-    run["status"] = status_for_current_stage(run)
-    run["updated_at"] = now_iso()
-    run.setdefault("events", []).append({"time": run["updated_at"], "event": "judgment_resume", "requested_by": args.requested_by, "reason": args.reason or ""})
-    write_json(run_record_path(root, args.run_id), run)
     for task_id in linked_tasks(root, run):
         task = load_task(root, task_id)
         if task.get("status") == "waiting_human_judgment":
             update_task_status(root, task_id, "queued", message=args.reason or "judgment resume", actor_id=args.requested_by, actor_role=args.role)
+    run["updated_at"] = now_iso()
+    run.setdefault("events", []).append({"time": run["updated_at"], "event": "judgment_resume", "requested_by": args.requested_by, "reason": args.reason or ""})
+    resume_signal = apply_resume_signal(
+        root,
+        run,
+        source="judgment_resume",
+        actor_id=args.requested_by,
+        actor_role=args.role,
+        reason=args.reason or "",
+    )
+    write_json(run_record_path(root, args.run_id), run)
     append_audit_event(root, "judgment_resume", actor_id=args.requested_by, actor_role=args.role, project_id=run.get("project_id", ""), agent_id=run.get("agent_id", ""), resource_type="workflow_run", resource_id=args.run_id, workflow_run_id=args.run_id, outcome=run["status"], reason=args.reason or "")
     execution = None
     try:
@@ -5539,7 +5827,7 @@ def judgment_resume(args: argparse.Namespace) -> int:
         write_json(run_record_path(root, args.run_id), run)
     except Exception as exc:
         execution = {"status": "failed", "error": str(exc)}
-    print(json.dumps({"run_id": args.run_id, "status": run.get("status", ""), "authorization": auth, "execution": execution}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"run_id": args.run_id, "status": run.get("status", ""), "authorization": auth, "resume_signal": resume_signal, "execution": execution}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -5637,6 +5925,7 @@ def approval_decision(args: argparse.Namespace) -> int:
         print("office-system: approval decision requires --confirmed", file=sys.stderr)
         return 2
     approval_path_value = approval_path(root, args.approval_id)
+    resume_signal = None
     # Acquire exclusive lock on the approval file to prevent race conditions
     lock_file = approval_path_value.with_name(f".{approval_path_value.name}.lock")
     with JsonFileLock(lock_file):
@@ -5680,13 +5969,15 @@ def approval_decision(args: argparse.Namespace) -> int:
         if approval.get("workflow_run_id"):
             run = load_run_record(root, approval["workflow_run_id"])
             if status == "approved":
-                if open_judgment_cases(root, run):
-                    run["status"] = "waiting_human_judgment"
-                    run.setdefault("blockers", [])
-                    if "human_judgment_pending" not in run["blockers"]:
-                        run["blockers"].append("human_judgment_pending")
-                else:
-                    run["status"] = LOOP_STATUS_BY_STAGE.get(normalize_loop_stage(str(run.get("current_stage", "context"))), "created")
+                resume_signal = apply_resume_signal(
+                    root,
+                    run,
+                    source="approval_decision",
+                    actor_id=args.decided_by,
+                    actor_role=args.role,
+                    decision_id=args.approval_id,
+                    reason=args.message or "",
+                )
             else:
                 run["status"] = "blocked"
                 run.setdefault("blockers", []).append(f"approval_{status}")
@@ -5695,7 +5986,7 @@ def approval_decision(args: argparse.Namespace) -> int:
             write_json(run_record_path(root, approval["workflow_run_id"]), run)
     event = append_audit_event(root, "approval_decision", actor_id=args.decided_by, actor_role=args.role, tenant_id=approval.get("tenant_id", ""), deployment_id=approval.get("deployment_id", ""), project_id=approval.get("project_id", ""), agent_id=approval.get("agent_id", ""), resource_type="approval", resource_id=args.approval_id, workflow_run_id=approval.get("workflow_run_id", ""), task_id=approval.get("task_id", ""), approval_id=args.approval_id, outcome=status, reason=args.message or "")
     emit_notification(root, user_id=approval.get("requested_by", ""), title=f"Approval {status}", body=approval.get("title", ""), topic="approval", resource_type="approval", resource_id=args.approval_id, severity="info" if status == "approved" else "warning")
-    print(json.dumps({"approval": approval, "audit_event_id": event["event_id"]}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"approval": approval, "audit_event_id": event["event_id"], "resume_signal": resume_signal}, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -9782,7 +10073,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "first_run_onboarding", "status": "ready", "commands": ["onboarding-options", "onboarding-apply"]},
         {"id": "web_ui_pwa", "status": "ready", "commands": ["digital-office-gui", "web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
         {"id": "secretary_intent_preview", "status": "ready", "commands": ["secretary-chat"], "routes": ["/api/secretary/chat"]},
-        {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-retry", "workflow-control"]},
+        {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-dispatch-next", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
         {"id": "direct_model_api_gateway", "status": "ready", "commands": ["model-gateway status", "model-gateway connection-set", "model-gateway test", "model-gateway resolve", "model-gateway invoke"]},
         {"id": "workflow_canvas_revisions", "status": "ready", "commands": ["workflow-draft-create", "workflow-draft-patch", "workflow-draft-validate", "workflow-draft-activate", "workflow-node-context"]},
@@ -10568,7 +10859,7 @@ def web_serve(args: argparse.Namespace) -> int:
                 if code == 0 and decision == "approve":
                     run_id = str(body.get("workflow_run_id", "")).strip()
                     if run_id:
-                        resume_command = ["judgment-resume", "--run-id", run_id, "--requested-by", user, "--role", role]
+                        resume_command = ["workflow-resume", "--run-id", run_id, "--requested-by", user, "--role", role]
                         if body.get("reason"):
                             resume_command.extend(["--reason", str(body["reason"])])
                         rcode, rpayload = run_office_json_command(root, resume_command)
@@ -10581,9 +10872,26 @@ def web_serve(args: argparse.Namespace) -> int:
             workflow_resume_match = re.fullmatch(r"/api/workflows/([^/]+)/resume", parsed.path)
             if workflow_resume_match:
                 run_id = urllib.parse.unquote(workflow_resume_match.group(1))
-                command = ["judgment-resume", "--run-id", run_id, "--requested-by", user, "--role", role]
+                command = ["workflow-resume", "--run-id", run_id, "--requested-by", user, "--role", role]
                 if body.get("reason"):
                     command.extend(["--reason", str(body["reason"])])
+                self.command_response(command)
+                return
+
+            workflow_dispatch_match = re.fullmatch(r"/api/workflows/([^/]+)/dispatch-next", parsed.path)
+            if workflow_dispatch_match:
+                run_id = urllib.parse.unquote(workflow_dispatch_match.group(1))
+                command = ["workflow-dispatch-next", "--run-id", run_id, "--requested-by", user, "--role", role]
+                if body.get("reason"):
+                    command.extend(["--reason", str(body["reason"])])
+                if bool(body.get("confirmed", False)):
+                    command.append("--confirmed")
+                runtime = str(body.get("runtime", "")).strip()
+                if runtime:
+                    command.extend(["--runtime", runtime])
+                timeout = str(body.get("execution_timeout", "")).strip()
+                if timeout:
+                    command.extend(["--execution-timeout", timeout])
                 self.command_response(command)
                 return
 
@@ -11270,6 +11578,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--role", required=True)
     p.add_argument("--reason")
     p.set_defaults(func=workflow_resume)
+
+    p = sub.add_parser("workflow-dispatch-next")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--requested-by", required=True)
+    p.add_argument("--role", required=True)
+    p.add_argument("--reason")
+    p.add_argument("--confirmed", action="store_true")
+    p.add_argument("--runtime", choices=["auto", "host", "direct_api"], default="auto")
+    p.add_argument("--execution-timeout", type=int, default=300)
+    p.set_defaults(func=workflow_dispatch_next)
 
     p = sub.add_parser("project-archive")
     p.add_argument("--project", required=True)
