@@ -28,7 +28,7 @@ The production harness uses eight layers:
 7. `agent-system/evals/*.json`: deterministic eval suites for judgment gates, coordination policy, multilingual regressions, and rule-scope inference.
 8. `agent-system/bin/harness-check` and `agent-system/bin/harness-runner`: deterministic local checks that validate registry wiring, loop policy, route stability, replayability, and CLI behavior.
 
-The required task set includes `workflow-control-plane-production`, which verifies the GUI-facing workflow run, task inbox, approval center, authorization decision, audit event, notification, and secretary clarification loop. It also includes `runtime-replay-production` and `multilingual-agent-eval-production`, which verify checkpointed replay, typed handoff envelopes, coordination policy decisions, and multilingual judgment regressions.
+The required task set includes `workflow-control-plane-production`, which verifies the GUI-facing workflow run, task inbox, approval center, authorization decision, audit event, notification, confirmation-to-resume signal, and secretary clarification loop. It also includes `runtime-replay-production` and `multilingual-agent-eval-production`, which verify checkpointed replay, typed handoff envelopes, coordination policy decisions, and multilingual judgment regressions.
 
 ## Runtime Replay Contract
 
@@ -53,6 +53,12 @@ The secretary must choose a coordination mode from `coordination.policy.json` in
 - `human_gated`: risk is high, regulated, externally visible, or irreversible.
 
 Every cross-Agent handoff needs `handoff-create`; every pause/resume boundary needs `checkpoint-create`; every production release needs the multilingual eval suite to pass.
+
+Every approval or human-judgment confirmation must produce a structured
+`resume_signal`. If that signal says `control_decision=continue` and
+`requires_dispatch=true`, the next backend action is
+`workflow-dispatch-next --confirmed`; the Agent should not respond with another
+pre-execution plan and stop.
 
 ## Production Loop Contract
 

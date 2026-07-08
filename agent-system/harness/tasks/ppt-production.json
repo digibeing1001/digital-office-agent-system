@@ -31,9 +31,9 @@
       "type": "command",
       "cwd": "hermes_home",
       "command": [
-        "python3",
+        "python",
         "-c",
-        "import json; data=json.load(open('agent-system/secretary.capabilities.json')); rules=data['routing_orchestration_policy']['workflow_rules']; rule=next(item for item in rules if item.get('workflow') == 'ppt_production'); assert rule['role_steps'] == ['intake', 'writing', 'design', 'intake']"
+        "import json; data=json.load(open('agent-system/secretary.capabilities.json', encoding='utf-8')); rules=data['routing_orchestration_policy']['workflow_rules']; rule=next(item for item in rules if item.get('workflow') == 'ppt_production'); assert rule['role_steps'] == ['intake', 'writing', 'design', 'intake']"
       ]
     },
     {
