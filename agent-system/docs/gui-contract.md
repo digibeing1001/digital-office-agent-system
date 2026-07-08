@@ -64,6 +64,9 @@ Browser routes:
 - `POST /api/agents/{agent_id}/status`
 - `DELETE /api/agents/{agent_id}?confirmed=true`
 - `POST /api/approvals/{approval_id}/decision`
+- `POST /api/judgments/{case_id}/decision`
+- `POST /api/workflows/{run_id}/resume`
+- `POST /api/workflows/{run_id}/dispatch-next`
 
 Agent lifecycle rules:
 
@@ -120,9 +123,17 @@ The GUI should prefer the workflow control plane for normal users. It creates a 
 ~/.hermes/agent-system/bin/office-system workflow-status --run-id <run_id>
 ~/.hermes/agent-system/bin/office-system workflow-list --project <project_id>
 ~/.hermes/agent-system/bin/office-system workflow-resume --run-id <run_id> --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-dispatch-next --run-id <run_id> --requested-by <user_id> --role <role> --confirmed
 ~/.hermes/agent-system/bin/office-system workflow-retry --run-id <run_id> --stage act --requested-by <user_id> --role <role>
 ~/.hermes/agent-system/bin/office-system workflow-cancel --run-id <run_id> --requested-by <user_id> --role <role> --confirmed
 ```
+
+`workflow-resume`, `approval-decision --confirmed`, and `judgment-decision --confirmed`
+return a `resume_signal`. When `resume_signal.control_decision == "continue"`
+and `resume_signal.requires_dispatch == true`, the GUI should present or invoke
+the listed `workflow-dispatch-next --confirmed` command. If it returns
+`wait_human`, the GUI must keep the workflow in the approval or judgment queue
+shown by `resume_signal.next_actions`.
 
 Task inbox:
 
@@ -151,6 +162,7 @@ high-risk, ambiguous, externally visible, or evidence-sensitive work.
 ~/.hermes/agent-system/bin/office-system judgment-list --status pending
 ~/.hermes/agent-system/bin/office-system judgment-decision --case-id <case_id> --decision approve --decided-by <user_id> --role <required_role> --confirmed
 ~/.hermes/agent-system/bin/office-system judgment-resume --run-id <run_id> --requested-by <user_id> --role <role>
+~/.hermes/agent-system/bin/office-system workflow-dispatch-next --run-id <run_id> --requested-by <user_id> --role <role> --confirmed
 ```
 
 - `workflow-start`, `agent-invoke`, and `loop-start` evaluate judgment policy before dispatch.
@@ -158,6 +170,7 @@ high-risk, ambiguous, externally visible, or evidence-sensitive work.
 - `workflow-resume`, `workflow-retry`, `task-update --status completed`, and `loop-stage` must not bypass an open judgment case.
 - The GUI should show the risk, triggers, blocked actions, evidence references, recommended option, and required human role before rendering decision buttons.
 - A human decision writes a `digital-office-judgment-case` record plus an audit event; Agent-generated stop signals cannot delete or approve their own cases.
+- After the final human decision closes all blockers, the GUI should follow the returned `resume_signal` instead of asking the Agent to describe a plan again.
 
 Authorization, audit, and notifications:
 

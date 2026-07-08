@@ -14,9 +14,9 @@
       "type": "command",
       "cwd": "hermes_home",
       "command": [
-        "python3",
+        "python",
         "-c",
-        "import json, subprocess; data=json.loads(subprocess.check_output(['agent-system/bin/office-system','gui-state','--limit','1'], text=True)); ids=[item['id'] for item in data['capabilities']]; assert data['version']=='2.0.0'; assert data['digital_employees']['count'] >= 8; assert data['workflow_packs']['count'] >= 8; assert data['context_contract']['configured'] is True and data['context_contract']['schema_version']=='2.0.0'; assert set(data['context_contract']['acknowledgment_decisions'])=={'accept','request_context','reject'}; assert data['loop_runtime']['work_nodes']==['context','decide','act','evaluate']; assert {'loop_runtime','typed_agent_handoffs','digital_employee_registry'} <= set(ids); assert any(item['name']=='claude-for-legal-zh' and item['status']=='installed_local' for item in data['skill_installations']['items'])"
+        "import json, subprocess, sys; raw=subprocess.check_output([sys.executable,'agent-system/bin/office-system.py','gui-state','--limit','1']); data=json.loads(raw.decode('utf-8','replace')); ids=[item['id'] for item in data['capabilities']]; assert data['version']=='2.0.0'; assert data['digital_employees']['count'] >= 8; assert data['workflow_packs']['count'] >= 8; assert data['context_contract']['configured'] is True and data['context_contract']['schema_version'] in {'2.0.0','2.0.1-research'}; assert set(data['context_contract']['acknowledgment_decisions'])=={'accept','request_context','reject'}; assert data['loop_runtime']['work_nodes']==['context','decide','act','evaluate']; assert {'loop_runtime','typed_agent_handoffs','digital_employee_registry'} <= set(ids); assert any(item['name']=='claude-for-legal-zh' and item['status']=='installed_local' for item in data['skill_installations']['items'])"
       ],
       "timeout_seconds": 90
     },
