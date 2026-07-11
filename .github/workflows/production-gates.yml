@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - research-team
+      - writer-team
   pull_request:
 
 permissions:
@@ -24,13 +26,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Detect source Web UI
+        id: web-ui
+        shell: bash
+        run: |
+          if [[ -f web-ui/package-lock.json ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Set up Node.js
+        if: steps.web-ui.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: web-ui/package-lock.json
       - name: Build user and admin applications
+        if: steps.web-ui.outputs.enabled == 'true'
         working-directory: web-ui
         run: |
           npm ci
@@ -56,13 +69,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Detect source Web UI
+        id: web-ui
+        shell: bash
+        run: |
+          if [[ -f web-ui/package-lock.json ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Set up Node.js
+        if: steps.web-ui.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: web-ui/package-lock.json
       - name: Build user and admin applications
+        if: steps.web-ui.outputs.enabled == 'true'
         working-directory: web-ui
         run: |
           npm ci
