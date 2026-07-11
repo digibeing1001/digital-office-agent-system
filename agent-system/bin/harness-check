@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -169,7 +170,15 @@ def main() -> int:
 
     router = hermes / "scripts" / "agent-router"
     if router.exists():
-        proc = subprocess.run([sys.executable, str(router), "--health"], text=True, capture_output=True)
+        # A repository checkout is itself a valid portable Hermes home. Without
+        # this explicit environment the router silently reads ~/.hermes and the
+        # health result depends on unrelated profiles installed for the user.
+        proc = subprocess.run(
+            [sys.executable, str(router), "--health"],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "HERMES_HOME": str(hermes)},
+        )
         if proc.returncode != 0:
             errors.append("agent-router health failed")
             if proc.stdout:
