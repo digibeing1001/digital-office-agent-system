@@ -76,11 +76,12 @@ def executable_command(command: list[Any], cwd: Path) -> list[str]:
         return items
     if items[0] == "bash":
         wsl_cwd = shlex.quote(wsl_path(cwd))
+        wsl_hermes_home = shlex.quote(wsl_path(hermes_home()))
         if len(items) >= 3 and items[1] == "-lc":
             shell = items[2]
         else:
             shell = shlex.join(items)
-        return ["wsl", "-e", "bash", "-lc", f"cd {wsl_cwd} && {shell}"]
+        return ["wsl", "-e", "bash", "-lc", f"cd {wsl_cwd} && export HERMES_HOME={wsl_hermes_home} && {shell}"]
     if items[0] == "python3":
         items[0] = sys.executable
         return items
@@ -148,11 +149,17 @@ def command_gate(gate: dict[str, Any]) -> dict[str, Any]:
         return {"status": "error", "summary": "command gate requires a non-empty command list"}
     timeout_seconds = int(gate.get("timeout_seconds", 120))
     cwd = cwd_for(gate)
+    environment = {
+        **os.environ,
+        "HERMES_HOME": str(hermes_home()),
+        "PYTHONIOENCODING": "utf-8",
+    }
     try:
         proc = subprocess.run(
             executable_command(command, cwd),
             cwd=cwd,
             capture_output=True,
+            env=environment,
             timeout=timeout_seconds,
         )
     except FileNotFoundError as exc:
