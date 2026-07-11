@@ -8872,8 +8872,9 @@ def validate_context_envelope(
     errors = validate_json_schema_instance(normalized, schema, schema)
     if normalized.get("kind") != "digital-office-context-envelope":
         errors.append("kind must be digital-office-context-envelope")
-    if normalized.get("version") != "2.0.0":
-        errors.append("version must be 2.0.0")
+    expected_version = str(schema.get("properties", {}).get("version", {}).get("const", "2.0.0"))
+    if normalized.get("version") != expected_version:
+        errors.append(f"version must be {expected_version}")
     if normalized.get("run_id") != run_id:
         errors.append("run_id does not match the handoff run")
     for key in ("context_id", "task_id", "goal", "summary", "handoff_reason", "state_hash"):
