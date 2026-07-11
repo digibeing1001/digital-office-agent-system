@@ -6,6 +6,8 @@
 
 写作团队版已具备 GUI readiness 的后端闭环：`gui-state` 提供首页状态快照，`settings-update` 支持安装后的偏好增量更新，首次启动会生成 default secretary persona，并把写作工作流、任务、审批、通知、数字员工、技能安装、循环状态和上下文合约一起暴露给前端。用户在界面里同意继续后，后端会返回可执行的 `resume_signal`，由 GUI 调用下一步命令，而不是让 AI 再解释一遍准备怎么做。
 
+2026-07-11 起，writer-team 与另外两个分支共享同一套耐久运行时：同一文章 `run_id` 只能由一个 worker 派发，崩溃后按租约 TTL 恢复，重复点击或并发服务不会同时叫两个主笔写同一任务；租约事件进入哈希链账本，`workflow-status` 可见。CI 也会识别本分支没有源码 `web-ui/`，改为验证已打包 PWA 与写作工作流，不再因不存在的 Node 工程假失败。
+
 ## 给谁用
 
 只要你做新媒体内容创作、又被 AI 写作的「AI 味」「没人味」「方向跑偏」折磨过，这支团队就适合你：
@@ -87,6 +89,8 @@
 - **有去 AI 味**：撰稿人按风格路由写 + 审查员四层金字塔审查 + 风格官 9 维指纹画像，三重保障从源头到终审。
 - **有风格学习**：你每次改稿都被记录分析，P0/P1/P2 分级沉淀进风格库，越写越像你。
 - **有预算护栏**：循环次数、时长、工具调用、花费都设上限，烧不动你的钱空转。
+- **耐久派发**：同一文章 run 只有一个 worker 能执行，租约有 owner、TTL、崩溃恢复和哈希链证据。
+- **Solo 优先**：单个角色能完成的原子任务不拉全编辑部开会；事实核验、作者/编辑隔离、独立并行确有收益时才组队。
 
 ## 怎么用
 
@@ -138,6 +142,8 @@ cd digital-office-agent-system
 - [style-library/kenny-writer.md](style-library/kenny-writer.md) —— 卡兹克风格库，核心资产，9 维画像 + 技法 + 禁用清单 + 四层自检
 - [style-library/platform-adapt.md](style-library/platform-adapt.md) —— 公众号/知乎/小红书排版规范
 - [docs/cross-learning-2026-07.zh-CN.md](docs/cross-learning-2026-07.zh-CN.md) —— 2026-07 三分支相互学习记录
+- [agent-system/docs/durable-runtime-contract.zh-CN.md](agent-system/docs/durable-runtime-contract.zh-CN.md) —— 单运行单派发、过期恢复和外部发布幂等边界
+- [agent-system/docs/multi-agent-research-foundations-2026-07.zh-CN.md](agent-system/docs/multi-agent-research-foundations-2026-07.zh-CN.md) —— 多 Agent 论文证据、反例、等预算评测与写作分支决策
 
 ---
 

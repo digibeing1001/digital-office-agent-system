@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-11
+
+### 写作分支耐久派发与 Solo-first 编辑部
+
+- 同步 run 级 durable dispatch lease：owner-bound release、TTL 崩溃恢复、损坏租约 fail closed 和哈希链审计。
+- 新增双进程争抢租约回归测试，防止重复点击或多个服务同时派发同一文章任务。
+- 修复 checkout health 读取用户 Hermes profiles 的环境污染；harness 增加逐 gate 进度、耗时、异常隔离和 Windows/WSL 输出解码。
+- GitHub Actions 开始监听 writer-team；没有源码 `web-ui/` 时安全跳过 Node source build，仍运行 PWA、安装与写作 runtime 门禁。
+- 新增 `durable-dispatch-production` 与 `solo-first-coordination-production`，原子任务默认单角色，只有事实核验、独立并行或 maker-checker 有收益时才组队。
+- 新增论文与开源实践研究文档，禁止用同质 Agent 自由讨论或多数共识替代来源和发布审批。
+
 ## 2026-07-02
 
 ### Agent Team QA v1.2.0：补强（Maker-Checker / 反 AI Slop / 上下文优势 / 北极星 / 最小样本 / Comprehension Debt / 中层审查）
