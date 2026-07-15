@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0",
+  "task_id": "feishu-team-frontend-production",
+  "description": "Verify project-scoped Feishu teams use dry-run provisioning, explicit mentions, typed handoffs, message deduplication, and loop limits.",
+  "roles": ["secretary", "researcher", "implementation"],
+  "workflow": "feishu_team_frontend",
+  "gates": [
+    {"id": "feishu_team_policy_exists", "type": "file_exists", "cwd": "hermes_home", "path": "agent-system/feishu-team.policy.json"},
+    {"id": "feishu_team_manifest_exists", "type": "file_exists", "cwd": "hermes_home", "path": "agent-system/feishu-team.example.json"},
+    {"id": "feishu_team_bootstrap_exists", "type": "file_exists", "cwd": "hermes_home", "path": "agent-system/bin/feishu-team-bootstrap.mjs"},
+    {"id": "feishu_team_gateway_compiles", "type": "command", "cwd": "hermes_home", "command": ["python3", "-m", "py_compile", "agent-system/bin/feishu-team-gateway.py"]},
+    {"id": "feishu_team_bootstrap_dry_run", "type": "command", "cwd": "hermes_home", "command": ["node", "agent-system/bin/feishu-team-bootstrap.mjs", "--manifest", "agent-system/feishu-team.example.json"]},
+    {"id": "feishu_team_contract_smoke", "type": "command", "cwd": "hermes_home", "command": ["python3", "agent-system/tests/feishu-team-smoke.py"]}
+  ]
+}
