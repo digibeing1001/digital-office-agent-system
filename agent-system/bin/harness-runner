@@ -76,11 +76,12 @@ def executable_command(command: list[Any], cwd: Path) -> list[str]:
         return items
     if items[0] == "bash":
         wsl_cwd = shlex.quote(wsl_path(cwd))
+        wsl_hermes_home = shlex.quote(wsl_path(hermes_home()))
         if len(items) >= 3 and items[1] == "-lc":
             shell = items[2]
         else:
             shell = shlex.join(items)
-        return ["wsl", "-e", "bash", "-lc", f"cd {wsl_cwd} && {shell}"]
+        return ["wsl", "-e", "bash", "-lc", f"cd {wsl_cwd} && export HERMES_HOME={wsl_hermes_home} && {shell}"]
     if items[0] == "python3":
         items[0] = sys.executable
         return items
@@ -97,6 +98,30 @@ def executable_command(command: list[Any], cwd: Path) -> list[str]:
     if "bash" in first_line:
         return ["bash", str(candidate), *items[1:]]
     return items
+
+
+def decode_process_output(value: bytes | str | None) -> str:
+    """Decode native output, including UTF-16LE emitted by wsl.exe on Windows."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if not value:
+        return ""
+    if value.startswith((b"\xff\xfe", b"\xfe\xff")):
+        encoding = "utf-16"
+    else:
+        sample = value[:512]
+        odd_nuls = sample[1::2].count(0)
+        even_nuls = sample[0::2].count(0)
+        pairs = max(1, len(sample) // 2)
+        if odd_nuls / pairs > 0.2:
+            encoding = "utf-16-le"
+        elif even_nuls / pairs > 0.2:
+            encoding = "utf-16-be"
+        else:
+            encoding = "utf-8"
+    return value.decode(encoding, errors="replace").replace("\x00", "")
 
 
 def list_tasks() -> list[Path]:
@@ -124,14 +149,17 @@ def command_gate(gate: dict[str, Any]) -> dict[str, Any]:
         return {"status": "error", "summary": "command gate requires a non-empty command list"}
     timeout_seconds = int(gate.get("timeout_seconds", 120))
     cwd = cwd_for(gate)
+    environment = {
+        **os.environ,
+        "HERMES_HOME": str(hermes_home()),
+        "PYTHONIOENCODING": "utf-8",
+    }
     try:
         proc = subprocess.run(
             executable_command(command, cwd),
             cwd=cwd,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             capture_output=True,
+            env=environment,
             timeout=timeout_seconds,
         )
     except FileNotFoundError as exc:
@@ -147,15 +175,17 @@ def command_gate(gate: dict[str, Any]) -> dict[str, Any]:
             "status": "error",
             "summary": f"command timed out after {timeout_seconds}s",
             "returncode": None,
-            "stdout": (exc.stdout or b"").decode("utf-8", errors="replace")[-4000:] if isinstance(exc.stdout, bytes) else (exc.stdout or "")[-4000:],
-            "stderr": (exc.stderr or b"").decode("utf-8", errors="replace")[-4000:] if isinstance(exc.stderr, bytes) else (exc.stderr or "")[-4000:],
+            "stdout": decode_process_output(exc.stdout)[-4000:],
+            "stderr": decode_process_output(exc.stderr)[-4000:],
         }
+    stdout = decode_process_output(proc.stdout)
+    stderr = decode_process_output(proc.stderr)
     return {
         "status": "success" if proc.returncode == 0 else "error",
         "summary": "command passed" if proc.returncode == 0 else f"command failed with exit {proc.returncode}",
         "returncode": proc.returncode,
-        "stdout": proc.stdout[-4000:],
-        "stderr": proc.stderr[-4000:],
+        "stdout": stdout[-4000:],
+        "stderr": stderr[-4000:],
     }
 
 
@@ -310,26 +340,58 @@ GATE_RUNNERS = {
 }
 
 
+def progress(message: str) -> None:
+    """Emit machine-safe progress without corrupting the JSON report on stdout."""
+    print(f"[harness] {message}", file=sys.stderr, flush=True)
+
+
 def run_gate(gate: dict[str, Any]) -> dict[str, Any]:
     runner = GATE_RUNNERS.get(str(gate.get("type", "")))
     if not runner:
         return {"status": "error", "summary": f"unknown gate type: {gate.get('type')}"}
-    result = runner(gate)
-    return {"gate_id": gate.get("id", ""), "type": gate.get("type", ""), **result}
+    started = dt.datetime.now(dt.timezone.utc)
+    try:
+        result = runner(gate)
+    except Exception as exc:
+        result = {
+            "status": "error",
+            "summary": f"gate raised {type(exc).__name__}: {exc}",
+        }
+    finished = dt.datetime.now(dt.timezone.utc)
+    return {
+        "gate_id": gate.get("id", ""),
+        "type": gate.get("type", ""),
+        "duration_ms": int((finished - started).total_seconds() * 1000),
+        **result,
+    }
 
 
 def run_task(path: Path, task: dict[str, Any]) -> dict[str, Any]:
     started = dt.datetime.now(dt.timezone.utc)
-    gate_results = [run_gate(gate) for gate in task.get("gates", [])]
+    task_id = str(task.get("task_id", path.stem))
+    gates = list(task.get("gates", []))
+    progress(f"task {task_id} started ({len(gates)} gates)")
+    gate_results = []
+    for index, gate in enumerate(gates, start=1):
+        gate_id = str(gate.get("id", f"gate-{index}"))
+        progress(f"task {task_id} gate {index}/{len(gates)} {gate_id} started")
+        result = run_gate(gate)
+        gate_results.append(result)
+        progress(
+            f"task {task_id} gate {index}/{len(gates)} {gate_id} "
+            f"{result.get('status')} ({result.get('duration_ms', 0)} ms)"
+        )
     status = "success" if all(item.get("status") == "success" for item in gate_results) else "error"
     finished = dt.datetime.now(dt.timezone.utc)
+    duration_ms = int((finished - started).total_seconds() * 1000)
+    progress(f"task {task_id} {status} ({duration_ms} ms)")
     return {
-        "task_id": task.get("task_id", path.stem),
+        "task_id": task_id,
         "task_file": str(path),
         "status": status,
         "started_at": started.isoformat(),
         "finished_at": finished.isoformat(),
-        "duration_ms": int((finished - started).total_seconds() * 1000),
+        "duration_ms": duration_ms,
         "roles": task.get("roles", []),
         "workflow": task.get("workflow", ""),
         "gates": gate_results,
@@ -360,13 +422,23 @@ def main() -> int:
             print(f"{task.get('task_id', path.stem)}\t{task.get('description', '')}")
         return 0
 
+    started = dt.datetime.now(dt.timezone.utc)
     task_paths = list_tasks() if args.task == "all" else [load_task(args.task)[0]]
     reports = []
     for path in task_paths:
         reports.append(run_task(path, read_json(path)))
+    finished = dt.datetime.now(dt.timezone.utc)
     aggregate = {
         "task_id": args.task,
         "status": "success" if all(report["status"] == "success" for report in reports) else "error",
+        "started_at": started.isoformat(),
+        "finished_at": finished.isoformat(),
+        "duration_ms": int((finished - started).total_seconds() * 1000),
+        "task_counts": {
+            "total": len(reports),
+            "passed": sum(report["status"] == "success" for report in reports),
+            "failed": sum(report["status"] != "success" for report in reports),
+        },
         "reports": reports,
     }
     if not args.no_write:

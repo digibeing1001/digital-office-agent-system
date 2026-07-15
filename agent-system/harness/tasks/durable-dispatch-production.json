@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0",
+  "task_id": "durable-dispatch-production",
+  "description": "Verify that concurrent workers cannot dispatch the same queued Agent task and that crashed-worker leases recover safely.",
+  "roles": [
+    "secretary",
+    "operations",
+    "implementation"
+  ],
+  "workflow": "workflow_control_plane",
+  "gates": [
+    {
+      "id": "dispatch_lease_contract_is_documented",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/durable-runtime-contract.zh-CN.md",
+      "patterns": [
+        "单运行单派发",
+        "dispatch-lease.json",
+        "过期恢复",
+        "幂等"
+      ]
+    },
+    {
+      "id": "dispatch_lease_runtime_smoke",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 60,
+      "command": [
+        "python3",
+        "agent-system/tests/runtime-contract-smoke.py"
+      ]
+    }
+  ]
+}

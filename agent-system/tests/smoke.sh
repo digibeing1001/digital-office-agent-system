@@ -120,6 +120,7 @@ bash -n agent-system/bin/digital-office-gui
 python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/model-gateway agent-system/bin/harness-check agent-system/bin/harness-runner scripts/agent-router
 python3 -m py_compile agent-system/bin/install-skill-sources
 python3 agent-system/tests/model-gateway-smoke.py
+python3 agent-system/tests/feishu-team-smoke.py
 bash agent-system/tests/secretary-intent-and-runtime-smoke.sh
 bash agent-system/tests/workflow-execute-smoke.sh
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -166,6 +167,7 @@ critical_files = [
     "agent-system/bin/office-system.py",
     "agent-system/bin/model-gateway",
     "agent-system/tests/model-gateway-smoke.py",
+    "agent-system/tests/feishu-team-smoke.py",
     "agent-system/tests/secretary-intent-and-runtime-smoke.sh",
     "agent-system/harness/tasks/model-api-gateway-production.json",
     "agent-system/harness/tasks/project-context-intake-production.json",
