@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SYSTEM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SDK_DIR="$SYSTEM_DIR/feishu-bootstrap"
+
+command -v node >/dev/null 2>&1 || { echo "feishu-team-bootstrap: Node.js 20+ is required" >&2; exit 2; }
+command -v npm >/dev/null 2>&1 || { echo "feishu-team-bootstrap: npm is required" >&2; exit 2; }
+
+npm --prefix "$SDK_DIR" ci --omit=dev --ignore-scripts
+exec node "$SYSTEM_DIR/bin/feishu-team-bootstrap.mjs" --sdk-root "$SDK_DIR" "$@"
