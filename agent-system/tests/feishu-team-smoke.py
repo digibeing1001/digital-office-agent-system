@@ -27,11 +27,14 @@ def environment():
 def main():
     env = environment()
     GATEWAY.validate(MANIFEST)
-    inventory = {"agents": {item["agent_id"]: {
+    inventory = {"version": "2.0.0", "bots": {f"{MANIFEST['team_id']}/{item['agent_id']}": {
+        "team_id": MANIFEST["team_id"], "agent_id": item["agent_id"],
         "app_id": env[item["app_id_env"]], "open_id": env[item["open_id_env"]]
     } for item in MANIFEST["agents"]}}
     inventory_env = GATEWAY.inventory_environment(MANIFEST, inventory, {})
     assert inventory_env == {key: value for key, value in env.items() if key != MANIFEST["chat_id_env"]}
+    other_team = dict(MANIFEST, team_id="another-team")
+    assert GATEWAY.inventory_environment(other_team, inventory, {}) == {}
     specialists = ["pm", "researcher", "planner", "vibe-designer", "coder", "writer"]
     proposal = GATEWAY.staffing_proposal(
         MANIFEST, objective="Run a seven-bot project team", specialists=specialists
