@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0",
+  "task_id": "solo-first-coordination-production",
+  "description": "Verify that Digital Office defaults to the smallest sufficient topology and escalates only for dependency, parallelism, or risk.",
+  "roles": [
+    "secretary",
+    "researcher",
+    "writer"
+  ],
+  "workflow": "coordination_policy",
+  "gates": [
+    {
+      "id": "research_foundation_is_explicit",
+      "type": "file_contains",
+      "cwd": "hermes_home",
+      "path": "agent-system/docs/multi-agent-research-foundations-2026-07.zh-CN.md",
+      "patterns": [
+        "多 Agent 不是默认模式",
+        "typed artifact",
+        "没有等预算对照"
+      ]
+    },
+    {
+      "id": "topology_escalation_is_deterministic",
+      "type": "command",
+      "cwd": "hermes_home",
+      "timeout_seconds": 90,
+      "command": [
+        "bash",
+        "-lc",
+        "set -euo pipefail; tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT; office=agent-system/bin/office-system; \"$office\" coordination-plan --task 'Draft one short internal note.' --agent writer > \"$tmp/solo.json\"; \"$office\" coordination-plan --task 'Research evidence, then draft the approved summary.' --agent researcher --agent writer --sequential > \"$tmp/chain.json\"; \"$office\" coordination-plan --task 'Compare independent sources in parallel.' --agent researcher --agent writer --parallelizable > \"$tmp/parallel.json\"; \"$office\" coordination-plan --task 'Publish a regulated legal conclusion to a customer.' --agent writer --risk high > \"$tmp/human.json\"; python3 -c 'import json,sys; solo,chain,parallel,human=[json.load(open(p)) for p in sys.argv[1:]]; assert solo[\"mode\"]==\"single_agent\" and solo[\"max_parallel_agents\"]==1; assert chain[\"mode\"]==\"sequential_specialist_chain\"; assert parallel[\"mode\"]==\"parallel_expert_dag\" and parallel[\"max_parallel_agents\"]>=2; assert human[\"mode\"]==\"human_gated\" and human[\"stop_required_before_execution\"] is True' \"$tmp/solo.json\" \"$tmp/chain.json\" \"$tmp/parallel.json\" \"$tmp/human.json\""
+      ]
+    }
+  ]
+}

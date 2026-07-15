@@ -786,6 +786,139 @@ def run_ledger_path(root: Path, run_id: str) -> Path:
     return run_dir(root, run_id) / "ledger.jsonl"
 
 
+def dispatch_lease_path(root: Path, run_id: str) -> Path:
+    """Return the durable single-dispatch lease for one workflow run."""
+    return run_dir(root, run_id) / "dispatch-lease.json"
+
+
+def _parse_utc_timestamp(value: str) -> dt.datetime | None:
+    try:
+        parsed = dt.datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def acquire_dispatch_lease(
+    root: Path,
+    run_id: str,
+    *,
+    owner: str = "",
+    ttl_seconds: int = 360,
+) -> dict[str, Any]:
+    """Acquire a crash-recoverable lease before executing a queued Agent task.
+
+    The short critical section is guarded by a cross-process file lock. The
+    lease itself remains on disk while the external Agent process runs so a
+    second CLI/web worker fails fast instead of dispatching the same task.
+    Expired leases may be replaced after a crashed worker stops heartbeating.
+    """
+    run_id = safe_component(run_id, "run id")
+    path = dispatch_lease_path(root, run_id)
+    lock_path = path.with_name(f".{path.name}.lock")
+    now = dt.datetime.now(dt.timezone.utc)
+    ttl_seconds = max(1, min(int(ttl_seconds), 86_400))
+    with JsonFileLock(lock_path):
+        existing: dict[str, Any] | None = None
+        if path.exists():
+            try:
+                existing = read_json(path)
+            except (OSError, json.JSONDecodeError) as exc:
+                return {
+                    "acquired": False,
+                    "reason": "dispatch_lease_corrupt",
+                    "error": str(exc),
+                    "path": str(path.relative_to(root)),
+                }
+        if existing and existing.get("status") == "active":
+            expires_at = _parse_utc_timestamp(str(existing.get("expires_at", "")))
+            if expires_at is None:
+                return {
+                    "acquired": False,
+                    "reason": "dispatch_lease_invalid_expiry",
+                    "lease": existing,
+                    "path": str(path.relative_to(root)),
+                }
+            if expires_at > now:
+                return {
+                    "acquired": False,
+                    "reason": "dispatch_already_leased",
+                    "lease": existing,
+                    "path": str(path.relative_to(root)),
+                }
+        lease = {
+            "version": "1.0.0",
+            "kind": "digital-office-dispatch-lease",
+            "lease_id": uuid.uuid4().hex,
+            "run_id": run_id,
+            "owner": safe_claim(owner, "dispatch lease owner", required=False),
+            "status": "active",
+            "acquired_at": now.isoformat(),
+            "expires_at": (now + dt.timedelta(seconds=ttl_seconds)).isoformat(),
+            "ttl_seconds": ttl_seconds,
+        }
+        write_json_unlocked(path, lease)
+    return {
+        "acquired": True,
+        "reason": "dispatch_lease_acquired",
+        "lease": lease,
+        "path": str(path.relative_to(root)),
+    }
+
+
+def release_dispatch_lease(
+    root: Path,
+    run_id: str,
+    lease_id: str,
+    *,
+    outcome: str = "released",
+) -> dict[str, Any]:
+    """Release only the lease owned by ``lease_id`` and keep its audit record."""
+    run_id = safe_component(run_id, "run id")
+    lease_id = safe_component(lease_id, "dispatch lease id")
+    path = dispatch_lease_path(root, run_id)
+    lock_path = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(lock_path):
+        if not path.exists():
+            return {"released": False, "reason": "dispatch_lease_missing"}
+        try:
+            lease = read_json(path)
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"released": False, "reason": "dispatch_lease_corrupt", "error": str(exc)}
+        if not hmac.compare_digest(str(lease.get("lease_id", "")), lease_id):
+            return {"released": False, "reason": "dispatch_lease_owner_mismatch", "lease": lease}
+        if lease.get("status") != "active":
+            return {"released": True, "reason": "dispatch_lease_already_released", "lease": lease}
+        lease["status"] = "released"
+        lease["released_at"] = now_iso()
+        lease["outcome"] = safe_component(outcome, "dispatch lease outcome")
+        write_json_unlocked(path, lease)
+    return {"released": True, "reason": "dispatch_lease_released", "lease": lease}
+
+
+def dispatch_lease_status(root: Path, run_id: str) -> dict[str, Any]:
+    """Return an operator-facing lease snapshot without mutating it."""
+    run_id = safe_component(run_id, "run id")
+    path = dispatch_lease_path(root, run_id)
+    lock_path = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(lock_path):
+        if not path.exists():
+            return {"active": False, "status": "none"}
+        try:
+            lease = read_json(path)
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"active": True, "status": "corrupt", "reason": "dispatch_lease_corrupt", "error": str(exc)}
+    expires_at = _parse_utc_timestamp(str(lease.get("expires_at", "")))
+    active = bool(
+        lease.get("status") == "active"
+        and expires_at is not None
+        and expires_at > dt.datetime.now(dt.timezone.utc)
+    )
+    return {"active": active, **lease}
+
+
 def checkpoint_dir(root: Path, run_id: str) -> Path:
     return run_dir(root, run_id) / "checkpoints"
 
@@ -4657,7 +4790,9 @@ def workflow_start(args: argparse.Namespace) -> int:
 
 def workflow_status(args: argparse.Namespace) -> int:
     root = system_root()
-    print(json.dumps(load_run_record(root, args.run_id), ensure_ascii=False, indent=2, sort_keys=True))
+    run = load_run_record(root, args.run_id)
+    run["dispatch_lease"] = dispatch_lease_status(root, args.run_id)
+    print(json.dumps(run, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -4999,27 +5134,13 @@ def workflow_resume(args: argparse.Namespace) -> int:
     return 0
 
 
-def workflow_dispatch_next(args: argparse.Namespace) -> int:
-    root = system_root()
-    if not args.confirmed:
-        print("office-system: workflow-dispatch-next requires --confirmed", file=sys.stderr)
-        return 2
-    run = load_run_record(root, args.run_id)
-    if run.get("status") in {"cancelled", "completed"}:
-        print(f"office-system: workflow is {run.get('status')} and cannot dispatch queued work", file=sys.stderr)
-        return 2
-    auth = authorize_workflow_mutation(root, run, args.requested_by, args.role, "agent.delegate")
-    if not auth["allowed"]:
-        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 2
-    pending_approvals = pending_run_approval_ids(root, run)
-    if pending_approvals:
-        print(json.dumps({"status": "blocked", "reason": "approval_pending", "pending_approvals": pending_approvals, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 2
-    open_cases = open_judgment_cases(root, run)
-    if open_cases:
-        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 2
+def _workflow_dispatch_next_claimed(
+    args: argparse.Namespace,
+    root: Path,
+    run: dict[str, Any],
+    auth: dict[str, Any],
+) -> int:
+    """Execute one dispatch after the caller owns the durable run lease."""
     signal = apply_resume_signal(
         root,
         run,
@@ -5074,6 +5195,86 @@ def workflow_dispatch_next(args: argparse.Namespace) -> int:
         )
     )
     return 0 if execution.get("status") == "completed" else 1
+
+
+def workflow_dispatch_next(args: argparse.Namespace) -> int:
+    root = system_root()
+    if not args.confirmed:
+        print("office-system: workflow-dispatch-next requires --confirmed", file=sys.stderr)
+        return 2
+    run = load_run_record(root, args.run_id)
+    if run.get("status") in {"cancelled", "completed"}:
+        print(f"office-system: workflow is {run.get('status')} and cannot dispatch queued work", file=sys.stderr)
+        return 2
+    auth = authorize_workflow_mutation(root, run, args.requested_by, args.role, "agent.delegate")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    pending_approvals = pending_run_approval_ids(root, run)
+    if pending_approvals:
+        print(json.dumps({"status": "blocked", "reason": "approval_pending", "pending_approvals": pending_approvals, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    open_cases = open_judgment_cases(root, run)
+    if open_cases:
+        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+
+    lease_ttl = max(60, int(args.execution_timeout or 300) + 60)
+    lease_result = acquire_dispatch_lease(
+        root,
+        args.run_id,
+        owner=args.requested_by or args.role or "local-worker",
+        ttl_seconds=lease_ttl,
+    )
+    if not lease_result.get("acquired"):
+        print(
+            json.dumps(
+                {
+                    "status": "blocked",
+                    "reason": lease_result.get("reason", "dispatch_lease_unavailable"),
+                    "run_id": args.run_id,
+                    "dispatch_lease": lease_result,
+                    "next_actions": ["wait for the active dispatch to finish", "workflow-status --run-id " + args.run_id],
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2
+
+    lease = lease_result["lease"]
+    outcome = "dispatch_failed"
+    try:
+        append_run_ledger_event(
+            root,
+            args.run_id,
+            "dispatch_lease_acquired",
+            stage=str(run.get("current_stage", "act")),
+            action="workflow.dispatch.lease.acquire",
+            agent_id=str(run.get("agent_id", "")),
+            actor_id=args.requested_by or "",
+            actor_role=args.role or "",
+            input_payload={"lease_id": lease["lease_id"], "ttl_seconds": lease["ttl_seconds"]},
+            output_payload={"status": lease["status"], "expires_at": lease["expires_at"]},
+        )
+        return_code = _workflow_dispatch_next_claimed(args, root, run, auth)
+        outcome = "dispatch_completed" if return_code == 0 else "dispatch_error"
+        return return_code
+    finally:
+        released = release_dispatch_lease(root, args.run_id, str(lease["lease_id"]), outcome=outcome)
+        append_run_ledger_event(
+            root,
+            args.run_id,
+            "dispatch_lease_released",
+            stage=str(run.get("current_stage", "act")),
+            action="workflow.dispatch.lease.release",
+            agent_id=str(run.get("agent_id", "")),
+            actor_id=args.requested_by or "",
+            actor_role=args.role or "",
+            input_payload={"lease_id": lease["lease_id"], "outcome": outcome},
+            output_payload=released,
+        )
 
 
 def project_archive(args: argparse.Namespace) -> int:
@@ -8671,8 +8872,9 @@ def validate_context_envelope(
     errors = validate_json_schema_instance(normalized, schema, schema)
     if normalized.get("kind") != "digital-office-context-envelope":
         errors.append("kind must be digital-office-context-envelope")
-    if normalized.get("version") != "2.0.0":
-        errors.append("version must be 2.0.0")
+    expected_version = str(schema.get("properties", {}).get("version", {}).get("const", "2.0.0"))
+    if normalized.get("version") != expected_version:
+        errors.append(f"version must be {expected_version}")
     if normalized.get("run_id") != run_id:
         errors.append("run_id does not match the handoff run")
     for key in ("context_id", "task_id", "goal", "summary", "handoff_reason", "state_hash"):

@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-07-11
+
+### 科研分支耐久运行时与证据优先协作
+
+- 同步 run 级 durable dispatch lease：owner-bound release、TTL 崩溃恢复、损坏租约 fail closed 和哈希链审计。
+- 新增双进程争抢租约回归测试，`workflow-status` 可查看租约快照。
+- 修复 checkout health 错误读取用户 `~/.hermes` 的 profile 污染，科研 registry/profile 在纯仓库环境可独立验证。
+- harness 新增 task/gate 进度、耗时、异常隔离和 Windows/WSL 输出解码；CI 开始监听三个长期分支。
+- 新增 `durable-dispatch-production` 与 `solo-first-coordination-production`，不再用“更多 Agent/多数投票”替代来源、数据和复现实证。
+- 新增论文与开源实践研究文档；反思只作为待验证假设，经外部证据或人工确认后才能沉淀。
+
 ## 2026-06-21
 
 ### 项目上下文、模型接入与专业版 GUI

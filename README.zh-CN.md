@@ -2,6 +2,8 @@
 
 本项目的主 README 已改为完整中文产品说明，请直接阅读 [README.md](README.md)。
 
+2026-07-11 更新：科研分支已同步 durable dispatch lease、checkout 隔离健康检查、逐 gate harness 进度和 Solo-first 协调验证；科研经验只有通过来源、数据、实验或人工确认后才能进入长期记忆。
+
 最快安装：
 
 ```bash

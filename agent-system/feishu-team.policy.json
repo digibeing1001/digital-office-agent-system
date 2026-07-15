@@ -1,0 +1,46 @@
+{
+  "version": "1.0.0",
+  "kind": "digital-office-feishu-team-policy",
+  "frontend_role": "project_space_and_human_interaction",
+  "orchestration_role": "secretary_is_dispatcher_proposes_team_and_operates_after_confirmation",
+  "isolation": {"one_project_per_chat": true, "state_partition_key": "project_id"},
+  "routing": {
+    "human_entry": "secretary_dispatcher_only",
+    "bot_delivery_requires_explicit_mention": true,
+    "bot_delivery_requires_typed_envelope": "DIGITAL_OFFICE_HANDOFF_V1",
+    "allowlisted_team_bots_only": true
+  },
+  "staffing": {
+    "core_agents": ["secretary"],
+    "secretary_and_dispatcher_are_the_same_agent": true,
+    "specialists_are_selected_per_task": true,
+    "staffing_proposal_required": true,
+    "exact_proposal_confirmation_required_before_provisioning": true
+  },
+  "onboarding": {
+    "supported_modes": ["preload_all_teams", "lazy_missing_roles"],
+    "bot_identity_key": "team_id/agent_id",
+    "one_online_confirmation_per_missing_bot_application": true,
+    "reuse_ready_bot_across_project_chats": true,
+    "resume_skips_ready_bots": true,
+    "conversation_notifications": ["authorization_required", "role_ready", "retry_required", "all_ready"],
+    "user_identity_authorization_only_when_role_requires_personal_data": true
+  },
+  "loop_controls": {
+    "deduplicate_by": "message_id",
+    "default_max_hops": 6,
+    "reject_self_route": true,
+    "reject_repeated_edge": true,
+    "fail_closed_on_unconfigured_identity": true
+  },
+  "authority": {
+    "bot_to_bot_does_not_expand_permissions": true,
+    "human_gates_policy": "human-gate-actions.policy.json"
+  },
+  "feishu_limits": {
+    "max_bots_per_chat": 15,
+    "max_bots_per_invite_request": 5,
+    "staffing_basis": "confirmed_project_roster_not_per_request_limit",
+    "example_seven_bot_batches": [5, 2]
+  }
+}

@@ -70,6 +70,7 @@ for file in $json_files; do
   python3 -m json.tool "$file" >/dev/null
 done
 echo "  ok  all tracked JSON files parse"
+python3 agent-system/tests/feishu-team-smoke.py
 
 # ---------------------------------------------------------------------------
 # Test 1: context-envelope schema version is research-specialized
