@@ -8,7 +8,7 @@
 
 ## 飞书与 CLI 现状
 
-2026-07-15 实测：`@larksuite/cli` 最新为 1.0.70，本机 1.0.69 已提供所需命令。创建群时一次最多邀请 5 个 Bot，后续每次也最多邀请 5 个，但一个群最终可以有 15 个 Bot。清单中的 Agent 是候选池，不代表全员入群。
+2026-07-15 实测：`@larksuite/cli` 最新为 1.0.70，本机 1.0.69 已提供所需命令。数字 `5` 只是一次 API 请求的邀请上限，绝不是团队人数预设。系统始终以用户确认的实际名单为准并自动分批：项目需要 7 个 Bot 时，首批建群拉 5 个，再追加 2 个，即 `[5, 2]`；需要 12 个时则是 `[5, 5, 2]`。一个群最终可以有 15 个 Bot。清单中的 Agent 是候选池，不代表全员入群。
 
 每个 Bot 应开通 `im:message.group_at_msg.include_bot:readonly` 并订阅 `im.message.receive_v1`。事件可能重复投递，必须按 `message_id` 去重。
 
@@ -45,7 +45,7 @@ python3 agent-system/bin/feishu-team-gateway.py --manifest agent-system/feishu-t
 python3 agent-system/bin/feishu-team-gateway.py --manifest agent-system/feishu-team.example.json --inventory .digital-office/feishu-bot-inventory.json provision-plan --staffing-file staffing.json --confirm-token <confirmed-token>
 ```
 
-没有匹配的确认令牌，`provision-plan` 会拒绝生成命令。它本身也只输出 argv 数组，绝不建群。人工审阅首条命令并执行，取得 `chat_id` 写入清单指定的环境变量，再执行其余分批拉 Bot 命令。
+没有匹配的确认令牌，`provision-plan` 会拒绝生成命令。它会同时输出实际的 `selected_bot_count` 和 `batch_sizes`；例如 7 人必须显示 `7` 和 `[5, 2]`。命令本身只输出 argv 数组，绝不建群。人工审阅首条命令并执行，取得 `chat_id` 写入清单指定的环境变量，再执行其余分批拉 Bot 命令。
 
 确认 dry-run 后，可以用同一个 proposal/token 一键执行建群和分批拉人。这个命令要求额外的写确认：
 

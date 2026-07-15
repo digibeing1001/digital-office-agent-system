@@ -22,6 +22,16 @@ class ContractError(ValueError):
     pass
 
 
+def invite_batch_sizes(bot_count: int) -> list[int]:
+    """Split the actual confirmed roster by Feishu's per-request ceiling."""
+    if bot_count < 1 or bot_count > MAX_BOTS_PER_CHAT:
+        raise ContractError("confirmed bot count must be between 1 and 15")
+    return [
+        min(MAX_BOTS_PER_INVITE, bot_count - start)
+        for start in range(0, bot_count, MAX_BOTS_PER_INVITE)
+    ]
+
+
 def load_json(path: str | Path) -> dict[str, Any]:
     value = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -338,7 +348,14 @@ def main(argv: list[str] | None = None) -> int:
                     raise ContractError("--confirm-write is required for external Feishu writes")
                 output = apply_provision_plan(manifest, plan)
             else:
-                output = {"dry_run": True, "confirmed_proposal": proposal["confirmation_token"], "commands": plan}
+                selected_count = len(proposal["selected_agents"])
+                output = {
+                    "dry_run": True,
+                    "confirmed_proposal": proposal["confirmation_token"],
+                    "selected_bot_count": selected_count,
+                    "batch_sizes": invite_batch_sizes(selected_count),
+                    "commands": plan,
+                }
         elif args.command == "route-event":
             output = route_event(manifest, load_json(args.event_file), current_agent=args.current_agent, state_dir=args.state_dir, env=runtime_env)
         else:

@@ -32,15 +32,26 @@ def main():
     } for item in MANIFEST["agents"]}}
     inventory_env = GATEWAY.inventory_environment(MANIFEST, inventory, {})
     assert inventory_env == {key: value for key, value in env.items() if key != MANIFEST["chat_id_env"]}
+    specialists = ["pm", "researcher", "planner", "vibe-designer", "coder", "writer"]
     proposal = GATEWAY.staffing_proposal(
-        MANIFEST, objective="Research and write a brief", specialists=["researcher", "writer"]
+        MANIFEST, objective="Run a seven-bot project team", specialists=specialists
     )
     assert proposal["core_agents"] == ["secretary"]
-    assert set(proposal["selected_agents"]) == {"secretary", "researcher", "writer"}
+    assert len(proposal["selected_agents"]) == 7
+    assert GATEWAY.invite_batch_sizes(len(proposal["selected_agents"])) == [5, 2]
     commands = GATEWAY.provision_plan(
         MANIFEST, env, proposal=proposal, confirmation_token=proposal["confirmation_token"]
     )
-    assert len(commands) == 1 and commands[0][3:5] == ["im", "+chat-create"]
+    assert len(commands) == 2 and commands[0][3:5] == ["im", "+chat-create"]
+    first_batch = commands[0][commands[0].index("--bots") + 1].split(",")
+    second_batch = json.loads(commands[1][commands[1].index("--data") + 1])["id_list"]
+    assert len(first_batch) == 5
+    assert len(second_batch) == 2
+    assert first_batch + second_batch == [
+        env[agent["app_id_env"]]
+        for agent in MANIFEST["agents"]
+        if agent["agent_id"] in proposal["selected_agents"]
+    ]
     try:
         GATEWAY.provision_plan(MANIFEST, env, proposal=proposal, confirmation_token="not-confirmed")
         raise AssertionError("unconfirmed staffing must fail closed")
@@ -49,13 +60,17 @@ def main():
     class Result:
         returncode = 0
         stderr = ""
-        stdout = json.dumps({"data": {"chat_id": "oc_created"}})
+        stdout = "{}"
     calls = []
     def runner(command, **_kwargs):
         calls.append(command)
-        return Result()
+        result = Result()
+        if len(calls) == 1:
+            result.stdout = json.dumps({"data": {"chat_id": "oc_created"}})
+        return result
     applied = GATEWAY.apply_provision_plan(MANIFEST, commands, runner=runner)
     assert applied["status"] == "deployed" and applied["chat_id"] == "oc_created"
+    assert len(calls) == 2 and "oc_created" in calls[1]
     handoff = GATEWAY.build_handoff(
         MANIFEST, sender="secretary", target="researcher", task="调研证据",
         correlation_id="corr-1", hop=1, visited_edges=[], env=env,
