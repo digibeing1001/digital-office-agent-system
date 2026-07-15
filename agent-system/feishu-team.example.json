@@ -1,21 +1,21 @@
 {
   "$schema": "./feishu-team.schema.json",
   "schema_version": "1.0",
-  "team_id": "digital-office-product-team",
+  "team_id": "digital-office-research-team",
   "project_id": "replace-with-project-id",
-  "chat_name": "数字办公室｜replace-with-project-id",
-  "description": "一个项目一个群，由秘书 Bot 受控调度专家团队",
-  "chat_id_env": "DIGITAL_OFFICE_FEISHU_CHAT_ID",
+  "chat_name": "研究办公室｜replace-with-project-id",
+  "description": "一个研究项目一个群，由 Research Secretary 按需组队",
+  "chat_id_env": "RESEARCH_OFFICE_FEISHU_CHAT_ID",
   "secretary_agent_id": "secretary",
   "policy": {"max_hops": 6},
   "agents": [
-    {"agent_id": "secretary", "display_name": "Digital Office Secretary", "profile": "office-secretary", "app_id_env": "OFFICE_SECRETARY_APP_ID", "open_id_env": "OFFICE_SECRETARY_OPEN_ID"},
-    {"agent_id": "pm", "display_name": "Digital Office Product Manager", "profile": "office-product-manager", "app_id_env": "OFFICE_PM_APP_ID", "open_id_env": "OFFICE_PM_OPEN_ID"},
-    {"agent_id": "researcher", "display_name": "Digital Office Researcher", "profile": "office-researcher", "app_id_env": "OFFICE_RESEARCHER_APP_ID", "open_id_env": "OFFICE_RESEARCHER_OPEN_ID"},
-    {"agent_id": "planner", "display_name": "Digital Office Planner", "profile": "office-planner", "app_id_env": "OFFICE_PLANNER_APP_ID", "open_id_env": "OFFICE_PLANNER_OPEN_ID"},
-    {"agent_id": "vibe-designer", "display_name": "Digital Office Designer", "profile": "office-designer", "app_id_env": "OFFICE_DESIGNER_APP_ID", "open_id_env": "OFFICE_DESIGNER_OPEN_ID"},
-    {"agent_id": "coder", "display_name": "Digital Office Coder", "profile": "office-coder", "app_id_env": "OFFICE_CODER_APP_ID", "open_id_env": "OFFICE_CODER_OPEN_ID"},
-    {"agent_id": "writer", "display_name": "Digital Office Writer", "profile": "office-writer", "app_id_env": "OFFICE_WRITER_APP_ID", "open_id_env": "OFFICE_WRITER_OPEN_ID"},
-    {"agent_id": "legal", "display_name": "Digital Office Digital Lawyer", "profile": "office-legal", "app_id_env": "OFFICE_LEGAL_APP_ID", "open_id_env": "OFFICE_LEGAL_OPEN_ID"}
+    {"agent_id": "secretary", "display_name": "Research Secretary", "profile": "office-research-secretary", "app_id_env": "RESEARCH_SECRETARY_APP_ID", "open_id_env": "RESEARCH_SECRETARY_OPEN_ID"},
+    {"agent_id": "pm", "display_name": "Principal Investigator", "profile": "office-research-pi", "app_id_env": "RESEARCH_PI_APP_ID", "open_id_env": "RESEARCH_PI_OPEN_ID"},
+    {"agent_id": "researcher", "display_name": "Literature Researcher", "profile": "office-literature-researcher", "app_id_env": "RESEARCH_LITERATURE_APP_ID", "open_id_env": "RESEARCH_LITERATURE_OPEN_ID"},
+    {"agent_id": "planner", "display_name": "Data Analyst", "profile": "office-data-analyst", "app_id_env": "RESEARCH_ANALYST_APP_ID", "open_id_env": "RESEARCH_ANALYST_OPEN_ID"},
+    {"agent_id": "vibe-designer", "display_name": "Methodologist", "profile": "office-methodologist", "app_id_env": "RESEARCH_METHOD_APP_ID", "open_id_env": "RESEARCH_METHOD_OPEN_ID"},
+    {"agent_id": "coder", "display_name": "Research Engineer", "profile": "office-research-engineer", "app_id_env": "RESEARCH_ENGINEER_APP_ID", "open_id_env": "RESEARCH_ENGINEER_OPEN_ID"},
+    {"agent_id": "writer", "display_name": "Academic Writer", "profile": "office-academic-writer", "app_id_env": "RESEARCH_WRITER_APP_ID", "open_id_env": "RESEARCH_WRITER_OPEN_ID"},
+    {"agent_id": "legal", "display_name": "Research Ethics Officer", "profile": "office-research-ethics", "app_id_env": "RESEARCH_ETHICS_APP_ID", "open_id_env": "RESEARCH_ETHICS_OPEN_ID"}
   ]
 }
