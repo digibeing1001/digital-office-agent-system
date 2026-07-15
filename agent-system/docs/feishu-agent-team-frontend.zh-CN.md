@@ -24,7 +24,38 @@ agent-system/bin/feishu-team-bootstrap --manifest agent-system/feishu-team.examp
 agent-system/bin/feishu-team-bootstrap --manifest agent-system/feishu-team.example.json --confirm-create
 ```
 
-Windows 可先运行 `npm --prefix agent-system/feishu-bootstrap ci --omit=dev --ignore-scripts`，再运行 `node agent-system/bin/feishu-team-bootstrap.mjs ...`。可重复传 `--only researcher` 只创建指定 Bot。中断后用相同 `--output` 重跑会跳过 inventory 中已 ready 的 Agent。
+若要一次导入多个团队，重复传入清单；跨团队 Bot 的稳定身份是 `team_id/agent_id`，因此产品团队与研究团队中同名的 `secretary` 不会被错误合并：
+
+```bash
+agent-system/bin/feishu-team-bootstrap \
+  --manifest teams/product.json \
+  --manifest teams/research.json \
+  --manifest teams/writer.json \
+  --confirm-create
+```
+
+Windows 可先运行 `npm --prefix agent-system/feishu-bootstrap ci --omit=dev --ignore-scripts`，再运行 `node agent-system/bin/feishu-team-bootstrap.mjs ...`。可重复传 `--only researcher` 选中所有团队的同名角色，或传 `--only digital-office-research-team/researcher` 精确选择一个 Bot。中断后用相同 `--output` 重跑会跳过 inventory 中已 ready 的 Bot。
+
+### 让首个飞书 Agent 在对话中逐步引导
+
+先手工建立一个安装引导 Agent，并把它的 lark-cli profile 与接收提醒的群 ID 传给导入器。之后每个缺失角色的授权链接、完成进度、失败重试及最终完成消息都会由该 Agent 发到飞书；用户无需盯着服务器终端：
+
+```bash
+agent-system/bin/feishu-team-bootstrap \
+  --manifest teams/product.json \
+  --manifest teams/research.json \
+  --notify-profile office-installer \
+  --notify-chat-id oc_xxx \
+  --confirm-create
+```
+
+这里有三个必须讲清的授权边界：
+
+1. 每个需要成为独立 Bot 身份的角色，首次创建应用时都要分别完成一次在线确认。官方 `registerApp` 的一次调用对应一个应用，不能把多个独立 Bot 合并为一次确认。
+2. 角色完成创建并写入 lark-cli profile 后，可反复加入不同项目群；后续建项目不需要重复创建应用或重复这次确认。
+3. `lark-cli auth login` 是访问用户个人数据的用户身份授权，与 Bot 应用创建不是一回事。纯 Bot 消息和群组编排不应强迫用户做个人授权；只有日历、云盘等确实需要用户身份的角色才单独请求。
+
+因此支持两种产品模式。`全量预装` 是一次选择多个团队清单，系统逐个引导完成所有缺失角色；`按需导入` 是秘书首次分析任务后，仅对候选编组中 inventory 尚未 ready 的 `team_id/agent_id` 运行导入，再请求用户确认组队。两者共用同一 inventory，角色只导入一次。
 
 App Secret 不会进入 inventory、stdout 或 Git。若同名 lark-cli profile 已存在，导入会 fail closed，不会静默覆盖现有凭据。
 
@@ -65,4 +96,4 @@ lark-cli --profile <profile> event consume im.message.receive_v1 --as bot
 
 一个项目一个群、一个 `project_id`、一个状态分区。FDE 团队和研究团队不得共用群 ID 或消息 claim 目录。Bot@Bot 只改变交互入口，不会扩大工具权限；外部发布、付款、权限变更和不可逆操作仍由 `human-gate-actions.policy.json` 控制。
 
-当前工具不会自动升级 lark-cli、创建群、拉 Bot 或发送消息；这些都是需要人工审阅配置后执行的外部写操作。
+工具不会自动升级 lark-cli。Bot 创建、群创建和成员写入都要求显式确认参数；只有配置 `--notify-profile` 与 `--notify-chat-id` 后，导入器才会用已安装的引导 Agent 发送过程提醒。授权链接不会写入 inventory，App Secret 不会进入聊天。
