@@ -11,3 +11,5 @@ Thumbs.db
 __pycache__/
 *.pyc
 logs/
+.digital-office/
+agent-system/feishu-bootstrap/node_modules/
