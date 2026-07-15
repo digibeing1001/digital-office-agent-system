@@ -28,5 +28,10 @@
     "bot_to_bot_does_not_expand_permissions": true,
     "human_gates_policy": "human-gate-actions.policy.json"
   },
-  "feishu_limits": {"max_bots_per_chat": 15, "max_bots_per_invite_request": 5}
+  "feishu_limits": {
+    "max_bots_per_chat": 15,
+    "max_bots_per_invite_request": 5,
+    "staffing_basis": "confirmed_project_roster_not_per_request_limit",
+    "example_seven_bot_batches": [5, 2]
+  }
 }
