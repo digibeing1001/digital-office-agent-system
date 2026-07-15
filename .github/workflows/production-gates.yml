@@ -51,8 +51,9 @@ jobs:
           npm run build
       - name: Validate scripts
         run: |
-          bash -n install.sh update agent-system/tests/smoke.sh agent-system/tests/web-pwa-smoke.sh
-          python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-runner agent-system/bin/harness-check
+          bash -n install.sh update agent-system/bin/feishu-team-bootstrap agent-system/tests/smoke.sh agent-system/tests/web-pwa-smoke.sh
+          node --check agent-system/bin/feishu-team-bootstrap.mjs
+          python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/harness-runner agent-system/bin/harness-check agent-system/bin/feishu-team-gateway.py
       - name: Check harness definitions
         run: agent-system/bin/harness-check
       - name: Run production gates
