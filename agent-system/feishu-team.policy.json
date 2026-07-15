@@ -17,6 +17,15 @@
     "staffing_proposal_required": true,
     "exact_proposal_confirmation_required_before_provisioning": true
   },
+  "onboarding": {
+    "supported_modes": ["preload_all_teams", "lazy_missing_roles"],
+    "bot_identity_key": "team_id/agent_id",
+    "one_online_confirmation_per_missing_bot_application": true,
+    "reuse_ready_bot_across_project_chats": true,
+    "resume_skips_ready_bots": true,
+    "conversation_notifications": ["authorization_required", "role_ready", "retry_required", "all_ready"],
+    "user_identity_authorization_only_when_role_requires_personal_data": true
+  },
   "loop_controls": {
     "deduplicate_by": "message_id",
     "default_max_hops": 6,

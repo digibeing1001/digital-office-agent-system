@@ -73,11 +73,20 @@ def inventory_environment(
     result = dict(base)
     if not inventory:
         return result
-    records = inventory.get("agents", {})
-    if not isinstance(records, Mapping):
-        raise ContractError("bot inventory agents must be an object")
+    if inventory.get("version") == "2.0.0":
+        records = inventory.get("bots", {})
+        if not isinstance(records, Mapping):
+            raise ContractError("bot inventory bots must be an object")
+        key_for = lambda agent_id: f"{manifest['team_id']}/{agent_id}"
+    else:
+        if inventory.get("team_id") and inventory.get("team_id") != manifest["team_id"]:
+            return result
+        records = inventory.get("agents", {})
+        if not isinstance(records, Mapping):
+            raise ContractError("bot inventory agents must be an object")
+        key_for = lambda agent_id: agent_id
     for agent in manifest.get("agents", []):
-        record = records.get(agent["agent_id"], {})
+        record = records.get(key_for(agent["agent_id"]), {})
         if not isinstance(record, Mapping):
             continue
         if record.get("app_id"):
