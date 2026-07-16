@@ -19,7 +19,7 @@ function argumentsOf(argv) {
     const item = argv[index];
     if (item === '--confirm-create') value.confirm = true;
     else if (item === '--manifest') value.manifests.push(argv[++index]);
-    else if (['--output', '--sdk-root', '--notify-chat-id', '--notify-profile'].includes(item)) {
+    else if (['--output', '--sdk-root', '--lark-cli', '--notify-chat-id', '--notify-profile', '--event-file'].includes(item)) {
       value[item.slice(2).replaceAll('-', '_')] = argv[++index];
     } else if (item === '--only') value.only.push(argv[++index]);
     else fail(`unknown argument: ${item}`);
@@ -30,6 +30,7 @@ function argumentsOf(argv) {
   }
   value.output ||= path.resolve('.digital-office/feishu-bot-inventory.json');
   value.sdk_root ||= path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../feishu-bootstrap');
+  value.lark_cli ||= process.platform === 'win32' ? 'lark-cli.cmd' : 'lark-cli';
   return value;
 }
 
@@ -43,9 +44,18 @@ function writeInventory(file, value) {
   try { fs.chmodSync(file, 0o600); } catch { /* Windows ACL is managed by the user profile. */ }
 }
 
-function cli(profile, args, input) {
-  const command = process.platform === 'win32' ? 'lark-cli.cmd' : 'lark-cli';
-  const result = spawnSync(command, profile ? ['--profile', profile, ...args] : args, {
+function appendEvent(args, event, details = {}) {
+  if (!args.event_file) return;
+  const file = path.resolve(args.event_file);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify({
+    schema_version: '1.0', time: new Date().toISOString(), event, ...details,
+  })}\n`, { mode: 0o600 });
+  try { fs.chmodSync(file, 0o600); } catch { /* Windows ACL is managed by the user profile. */ }
+}
+
+function cli(executable, profile, args, input) {
+  const result = spawnSync(executable, profile ? ['--profile', profile, ...args] : args, {
     input, encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32',
   });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || `lark-cli exited ${result.status}`);
@@ -58,7 +68,7 @@ function notificationKey(botKey, phase) {
 
 function notify(args, botKey, phase, markdown) {
   if (!args.notify_chat_id) return;
-  cli(args.notify_profile, [
+  cli(args.lark_cli, args.notify_profile, [
     'im', '+messages-send', '--chat-id', args.notify_chat_id, '--markdown', markdown,
     '--idempotency-key', notificationKey(botKey, phase), '--as', 'bot',
   ]);
@@ -135,14 +145,17 @@ async function main() {
   const lark = await sdkFrom(args.sdk_root);
   const inventory = inventoryOf(args.output);
   let readyCount = 0;
+  appendEvent(args, 'session_started', { bot_count: tasks.length });
   for (const { manifest, agent, botKey } of tasks) {
     if (inventory.bots[botKey]?.status === 'ready') {
       readyCount += 1;
       process.stderr.write(`[skip] ${botKey} already ready in inventory\n`);
+      appendEvent(args, 'already_ready', { bot_key: botKey, display_name: agent.display_name || botKey, ready_count: readyCount, bot_count: tasks.length });
       bestEffortNotify(args, botKey, 'already-ready', `✅ **${agent.display_name || botKey}** 已导入，无需再次授权。（${readyCount}/${tasks.length}）`);
       continue;
     }
     process.stderr.write(`[authorize] ${botKey}\n`);
+    appendEvent(args, 'authorizing', { bot_key: botKey, display_name: agent.display_name || botKey, ready_count: readyCount, bot_count: tasks.length });
     try {
       const created = await lark.registerApp({
         createOnly: true,
@@ -153,6 +166,11 @@ async function main() {
         },
         onQRCodeReady(info) {
           process.stderr.write(`[confirm:${botKey}] ${info.url} (expires in ${info.expireIn}s)\n`);
+          appendEvent(args, 'authorization_required', {
+            bot_key: botKey, display_name: agent.display_name || botKey,
+            authorization_url: info.url, expires_in: info.expireIn,
+            ready_count: readyCount, bot_count: tasks.length,
+          });
           bestEffortNotify(
             args, botKey, `authorization-required:${info.url}`,
             `### 需要授权：${agent.display_name || botKey}\n请在 ${info.expireIn} 秒内[打开飞书授权页面](${info.url})并确认。完成后导入会自动继续。\n\n角色标识：\`${botKey}\``,
@@ -160,8 +178,8 @@ async function main() {
         },
         onStatusChange(info) { process.stderr.write(`[${botKey}] ${info.status}\n`); },
       });
-      cli(null, ['profile', 'add', '--name', agent.profile, '--app-id', created.client_id, '--app-secret-stdin'], `${created.client_secret}\n`);
-      const botInfo = JSON.parse(cli(agent.profile, ['api', 'GET', '/open-apis/bot/v3/info', '--json']));
+      cli(args.lark_cli, null, ['profile', 'add', '--name', agent.profile, '--app-id', created.client_id, '--app-secret-stdin'], `${created.client_secret}\n`);
+      const botInfo = JSON.parse(cli(args.lark_cli, agent.profile, ['api', 'GET', '/open-apis/bot/v3/info', '--json']));
       const bot = botInfo.bot || botInfo.data?.bot || botInfo.data || {};
       inventory.bots[botKey] = {
         status: 'ready', team_id: manifest.team_id, agent_id: agent.agent_id,
@@ -172,6 +190,7 @@ async function main() {
       readyCount += 1;
       writeInventory(args.output, inventory);
       process.stderr.write(`[ready] ${botKey}\n`);
+      appendEvent(args, 'ready', { bot_key: botKey, display_name: agent.display_name || botKey, ready_count: readyCount, bot_count: tasks.length });
       bestEffortNotify(args, botKey, 'ready', `✅ **${agent.display_name || botKey}** 已完成导入。（${readyCount}/${tasks.length}）`);
     } catch (error) {
       inventory.bots[botKey] = {
@@ -179,10 +198,15 @@ async function main() {
         profile: agent.profile, app_id_env: agent.app_id_env, open_id_env: agent.open_id_env,
       };
       writeInventory(args.output, inventory);
+      appendEvent(args, 'failed', {
+        bot_key: botKey, display_name: agent.display_name || botKey,
+        error_code: 'registration_failed', ready_count: readyCount, bot_count: tasks.length,
+      });
       bestEffortNotify(args, botKey, 'retry-required', `⚠️ **${agent.display_name || botKey}** 尚未完成授权。请重新执行导入命令；已完成角色会自动跳过。`);
       throw error;
     }
   }
+  appendEvent(args, 'session_complete', { ready_count: readyCount, bot_count: tasks.length });
   bestEffortNotify(args, 'all-selected-bots', 'complete', `🎉 Agent 导入完成：${readyCount}/${tasks.length}。现在可以发布任务并确认项目编组。`);
   process.stdout.write(`${JSON.stringify({
     status: 'ready', inventory: path.resolve(args.output), bot_keys: tasks.map(({ botKey }) => botKey),

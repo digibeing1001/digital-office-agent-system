@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "task_id": "feishu-installer-production",
+  "workflow": "feishu_team_installer",
+  "roles": ["secretary", "implementation", "qa"],
+  "gates": [
+    {"id": "installer_catalog_exists", "type": "file_exists", "cwd": "hermes_home", "path": "agent-system/feishu-teams/catalog.json"},
+    {"id": "installer_backend_compiles", "type": "command", "cwd": "hermes_home", "command": ["python3", "-m", "py_compile", "agent-system/bin/feishu-team-installer.py"]},
+    {"id": "installer_catalog_loads", "type": "command", "cwd": "hermes_home", "command": ["python3", "agent-system/bin/feishu-team-installer.py", "catalog"]},
+    {"id": "installer_contract_smoke", "type": "command", "cwd": "hermes_home", "command": ["python3", "agent-system/tests/feishu-installer-smoke.py"]},
+    {"id": "installer_web_build_exists", "type": "file_exists", "cwd": "hermes_home", "path": "agent-system/web/app/index.html"}
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "kind": "digital-office-feishu-team-catalog",
+  "teams": [
+    {
+      "team_id": "digital-office-product-team",
+      "name": "产品研发办公室",
+      "eyebrow": "PRODUCT STUDIO",
+      "description": "从需求澄清、产品规划和体验设计，到编码、交付与合规审查。",
+      "accent": "#ff6b35",
+      "manifest": "product.json",
+      "recommended": true,
+      "capabilities": ["产品规划", "体验设计", "软件开发", "交付验收"]
+    },
+    {
+      "team_id": "digital-office-research-team",
+      "name": "研究办公室",
+      "eyebrow": "RESEARCH LAB",
+      "description": "面向文献调研、研究设计、数据分析、研究工程和学术写作。",
+      "accent": "#2f6fed",
+      "manifest": "research.json",
+      "recommended": false,
+      "capabilities": ["文献研究", "方法设计", "数据分析", "学术写作"]
+    },
+    {
+      "team_id": "digital-office-writer-team",
+      "name": "写作出版办公室",
+      "eyebrow": "EDITORIAL DESK",
+      "description": "覆盖选题、资料、结构、写作、视觉包装、出版和内容合规。",
+      "accent": "#8b5cf6",
+      "manifest": "writer.json",
+      "recommended": false,
+      "capabilities": ["内容策划", "深度写作", "视觉包装", "出版运营"]
+    },
+    {
+      "team_id": "fde-team",
+      "name": "FDE 工程团队",
+      "eyebrow": "FDE ENGINEERING",
+      "description": "为 Loop 工程提供问题澄清、方案对比、产品化、验证和知识沉淀。",
+      "accent": "#00a878",
+      "manifest": "fde.json",
+      "recommended": false,
+      "capabilities": ["问题澄清", "方案工程", "质量验证", "知识治理"]
+    }
+  ]
+}

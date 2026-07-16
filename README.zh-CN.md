@@ -46,6 +46,19 @@ web-serve
 
 普通用户入口是 `/`，管理后台入口是 `/admin`。PWA 会注册 `manifest.webmanifest` 和 `service-worker.js`，适合内网、小服务器和单机部署。
 
+### 一键导入 Agent 团队到飞书
+
+进入管理后台 `/admin`，打开“团队安装器”，即可查看并多选产品研发、研究、写作出版和 FDE 工程团队。安装器会先检查 Agent 宿主、Node.js、npm、飞书 CLI 和飞书 SDK，再计算哪些角色可以复用、哪些独立 Bot 需要首次在线确认。勾选明确确认后，点击“一键导入所选团队”即可开始。
+
+- 每个角色使用稳定的 `team_id`、`agent_id` 和独立飞书 CLI profile；已经成功导入的角色不会重复创建。
+- 多团队可以一次提交。授权会按角色逐一推进，页面持续显示当前角色、授权链接、成功数和失败原因。
+- 可选填写一个引导 Agent profile 和飞书群 ID，把授权链接与进度同步发送到飞书对话。
+- 浏览器、事件文件和审计日志不保存飞书密钥；创建动作只对管理员开放，并要求显式确认。
+- 统一部署器会按 lockfile 在系统内部安装官方飞书 CLI 与 SDK，不要求客户预先执行全局 npm 安装。
+- 本页面负责把已安装的 Agent 团队接入飞书。新客户仍应先运行统一部署器，安装 Hermes/OpenClaw 宿主与对应团队能力包。
+
+完整操作、失败恢复和 CLI/API 说明见 [`agent-system/docs/feishu-team-installer.zh-CN.md`](agent-system/docs/feishu-team-installer.zh-CN.md)。
+
 ## 企业使用要求
 
 - 上线前运行 `agent-system/bin/harness-check` 和核心 production harness。
@@ -63,6 +76,7 @@ web-serve
 
 ## 开发更新记录
 
+- 2026-07-16：新增可视化飞书团队安装器，内置 4 个团队、33 个角色，支持多选、环境预检、角色复用、逐角色 OAuth 授权、会话进度、飞书对话提醒和管理员审计。
 - 2026-07-11：增加 durable dispatch lease、崩溃过期恢复、并发进程回归测试和 `workflow-status` 租约快照。
 - 2026-07-11：修复 checkout 健康检查读取用户 Hermes profile 的环境污染；harness 增加逐 gate 进度、耗时、异常隔离和 Windows/WSL 输出解码。
 - 2026-07-11：CI 覆盖三个长期分支，writer 分支没有源码 Web UI 时安全跳过 Node build；新增论文与开源实践驱动的 Solo-first 协调验证。

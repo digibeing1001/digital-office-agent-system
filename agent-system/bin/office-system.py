@@ -10274,6 +10274,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
         {"id": "first_run_onboarding", "status": "ready", "commands": ["onboarding-options", "onboarding-apply"]},
         {"id": "web_ui_pwa", "status": "ready", "commands": ["digital-office-gui", "web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
+        {"id": "feishu_team_installer", "status": "ready", "commands": ["feishu-team-installer.py catalog", "feishu-team-installer.py start", "feishu-team-installer.py status"], "routes": ["/api/installer/catalog", "/api/installer/sessions"]},
         {"id": "secretary_intent_preview", "status": "ready", "commands": ["secretary-chat"], "routes": ["/api/secretary/chat"]},
         {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-dispatch-next", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
@@ -10521,6 +10522,8 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
                 {"method": "GET", "path": "/api/health", "description": "Return office-system health checks and PWA readiness."},
                 {"method": "GET", "path": "/api/gui-state", "description": "Return the home-screen GUI state snapshot."},
                 {"method": "GET", "path": "/api/web-app", "description": "Return this Web/PWA configuration contract."},
+                {"method": "GET", "path": "/api/installer/catalog", "description": "Return selectable Feishu Agent teams, role inventory, and local preflight checks."},
+                {"method": "GET", "path": "/api/installer/sessions/{session_id}", "description": "Return one asynchronous Feishu team installation session."},
             ],
             "mutation_routes": [
                 {"method": "POST", "path": "/api/workflows", "description": "Create a governed workflow through the secretary."},
@@ -10533,6 +10536,7 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
                 {"method": "POST", "path": "/api/model-connections/{provider_id}", "description": "Configure a model API or Token Plan connection without returning its secret."},
                 {"method": "POST", "path": "/api/model-connections/{provider_id}/test", "description": "Run a real bounded connection test."},
                 {"method": "POST", "path": "/api/model-runtime", "description": "Configure local/API automatic selection policy."},
+                {"method": "POST", "path": "/api/installer/sessions", "description": "Start a confirmed, catalog-bound Feishu team import session."},
                 {"method": "DELETE", "path": "/api/model-connections/{provider_id}?confirmed=true", "description": "Disconnect a model provider and remove its locally stored secret."},
                 {"method": "POST", "path": "/api/agents", "description": "Create a template-based custom digital employee."},
                 {"method": "POST", "path": "/api/agents/{agent_id}/status", "description": "Activate, disable, archive, or restore a custom Agent."},
@@ -10622,6 +10626,23 @@ def run_model_gateway_json(root: Path, command: list[str], *, secret_input: str 
         payload = json.loads(raw) if raw else {"status": "error", "error": "empty_gateway_response"}
     except json.JSONDecodeError:
         payload = {"status": "error", "error": "invalid_gateway_response", "message": raw[-1000:]}
+    return completed.returncode, payload
+
+
+def run_feishu_installer_json(root: Path, command: list[str]) -> tuple[int, dict[str, Any]]:
+    installer = root / "bin" / "feishu-team-installer.py"
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(installer), "--root", str(root), *command],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 2, {"status": "error", "error": "feishu_installer_unavailable", "message": str(exc)}
+    raw = completed.stdout.strip() if completed.returncode == 0 else (completed.stderr.strip() or completed.stdout.strip())
+    try:
+        payload = json.loads(raw) if raw else {"status": "error", "error": "empty_installer_response"}
+    except json.JSONDecodeError:
+        payload = {"status": "error", "error": "invalid_installer_response", "message": raw[-1000:]}
     return completed.returncode, payload
 
 
@@ -10814,6 +10835,35 @@ def web_serve(args: argparse.Namespace) -> int:
             tenant, deployment, user, role = self.request_scope()
             if not role:
                 web_json_response(self, 403, {"status": "denied", "error": "The Web server must be started with an authorized --role for mutating actions."})
+                return
+
+            if parsed.path == "/api/installer/sessions":
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can import Agent teams into Feishu."})
+                    return
+                team_ids = body.get("team_ids", [])
+                if not isinstance(team_ids, list) or not all(isinstance(value, str) for value in team_ids):
+                    web_json_response(self, 400, {"status": "error", "error": "team_ids must be an array of strings"})
+                    return
+                command = ["start"]
+                for team_id in team_ids:
+                    command.extend(["--team", team_id])
+                notify_profile = str(body.get("notify_profile", "")).strip()
+                notify_chat_id = str(body.get("notify_chat_id", "")).strip()
+                if notify_profile:
+                    command.extend(["--notify-profile", notify_profile])
+                if notify_chat_id:
+                    command.extend(["--notify-chat-id", notify_chat_id])
+                if body.get("confirmed") is True:
+                    command.append("--confirmed")
+                code, payload = run_feishu_installer_json(root, command)
+                if code == 0:
+                    append_audit_event(
+                        root, "feishu_team_install_started", actor_id=user, actor_role=role,
+                        resource_type="feishu_installer_session", resource_id=str(payload.get("session_id", "")),
+                        outcome="started", extra={"team_ids": team_ids, "bot_count": payload.get("bot_count", 0)},
+                    )
+                web_json_response(self, 202 if code == 0 else 409, payload, headers={"Cache-Control": "no-store"})
                 return
 
             if parsed.path == "/api/secretary/chat":
@@ -11191,6 +11241,23 @@ def web_serve(args: argparse.Namespace) -> int:
                 code = 200 if detail["status"] == "ok" else 503 if detail["status"] == "down" else 200
                 web_json_response(self, code, detail, headers={"Cache-Control": "no-store"})
                 return
+            if parsed.path == "/api/installer/catalog":
+                _, _, _, role = self.request_scope()
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can view the Feishu installer."})
+                    return
+                code, payload = run_feishu_installer_json(root, ["catalog"])
+                web_json_response(self, 200 if code == 0 else 409, payload, headers={"Cache-Control": "no-store"})
+                return
+            installer_session_match = re.fullmatch(r"/api/installer/sessions/([a-f0-9]{32})", parsed.path)
+            if installer_session_match:
+                _, _, _, role = self.request_scope()
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can view installer sessions."})
+                    return
+                code, payload = run_feishu_installer_json(root, ["status", "--session", installer_session_match.group(1)])
+                web_json_response(self, 200 if code == 0 else 404, payload, headers={"Cache-Control": "no-store"})
+                return
             if parsed.path == "/api/gui-state":
                 try:
                     payload = build_gui_state_payload(root, project=one("project", default_scope["project"]), user=one("user", default_scope["user"]), role=one("role", default_scope["role"]), limit=int(one("limit", "20")))
@@ -11209,7 +11276,7 @@ def web_serve(args: argparse.Namespace) -> int:
             super().do_GET()
 
     server = http.server.ThreadingHTTPServer((args.host, args.port), DigitalOfficeHandler)
-    print(json.dumps({"status": "serving", "host": args.host, "port": args.port, "static_root": str(static_root), "url": f"http://{args.host}:{args.port}/", "api": ["/api/health", "/api/gui-state", "/api/web-app"], "api_authentication": "bearer" if auth_token else "loopback_only_without_token", "auth_token_env": auth_env}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": "serving", "host": args.host, "port": args.port, "static_root": str(static_root), "url": f"http://{args.host}:{args.port}/", "api": ["/api/health", "/api/gui-state", "/api/web-app", "/api/installer/catalog", "/api/installer/sessions"], "api_authentication": "bearer" if auth_token else "loopback_only_without_token", "auth_token_env": auth_env}, ensure_ascii=False, indent=2, sort_keys=True))
     try:
         server.serve_forever()
     except KeyboardInterrupt:

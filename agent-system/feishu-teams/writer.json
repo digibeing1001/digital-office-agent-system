@@ -1,0 +1,21 @@
+{
+  "$schema": "../feishu-team.schema.json",
+  "schema_version": "1.0",
+  "team_id": "digital-office-writer-team",
+  "project_id": "project-template",
+  "chat_name": "写作出版办公室",
+  "description": "由写作秘书按选题选择内容专家",
+  "chat_id_env": "WRITER_OFFICE_FEISHU_CHAT_ID",
+  "secretary_agent_id": "secretary",
+  "policy": {"max_hops": 6},
+  "agents": [
+    {"agent_id": "secretary", "display_name": "写作秘书", "profile": "writer-team-secretary", "app_id_env": "WRITER_SECRETARY_APP_ID", "open_id_env": "WRITER_SECRETARY_OPEN_ID"},
+    {"agent_id": "pm", "display_name": "主编", "profile": "writer-team-editor", "app_id_env": "WRITER_EDITOR_APP_ID", "open_id_env": "WRITER_EDITOR_OPEN_ID"},
+    {"agent_id": "researcher", "display_name": "资料研究员", "profile": "writer-team-researcher", "app_id_env": "WRITER_RESEARCHER_APP_ID", "open_id_env": "WRITER_RESEARCHER_OPEN_ID"},
+    {"agent_id": "planner", "display_name": "内容策划师", "profile": "writer-team-planner", "app_id_env": "WRITER_PLANNER_APP_ID", "open_id_env": "WRITER_PLANNER_OPEN_ID"},
+    {"agent_id": "vibe-designer", "display_name": "视觉编辑", "profile": "writer-team-designer", "app_id_env": "WRITER_DESIGNER_APP_ID", "open_id_env": "WRITER_DESIGNER_OPEN_ID"},
+    {"agent_id": "coder", "display_name": "出版工程师", "profile": "writer-team-publisher", "app_id_env": "WRITER_PUBLISHER_APP_ID", "open_id_env": "WRITER_PUBLISHER_OPEN_ID"},
+    {"agent_id": "writer", "display_name": "内容作者", "profile": "writer-team-author", "app_id_env": "WRITER_AUTHOR_APP_ID", "open_id_env": "WRITER_AUTHOR_OPEN_ID"},
+    {"agent_id": "legal", "display_name": "内容法务", "profile": "writer-team-legal", "app_id_env": "WRITER_LEGAL_APP_ID", "open_id_env": "WRITER_LEGAL_OPEN_ID"}
+  ]
+}

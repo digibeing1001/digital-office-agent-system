@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { AdminApp } from './features/admin/AdminApp'
 import { UserApp } from './features/user/UserApp'
-import type { AgentStatus, CreateAgentInput, CreateProjectInput, CreateWorkflowInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, UploadKnowledgeInput } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, CreateWorkflowInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, StartFeishuInstallerInput, UploadKnowledgeInput } from './types'
 
 export default function App() {
   const [state, setState] = useState<GuiState | null>(null)
@@ -78,6 +78,7 @@ export default function App() {
     archiveProject: (projectId: string, restore = false) => mutate(restore ? '正在恢复项目…' : '正在归档项目…', () => api.archiveProject(projectId, restore)),
     archiveWorkflow: (runId: string, restore = false) => mutate(restore ? '正在恢复对话…' : '正在归档对话…', () => api.archiveWorkflow(runId, restore)),
     updatePreferences: (input: PreferenceInput) => mutate('正在保存使用偏好…', () => api.updatePreferences(input)),
+    startFeishuInstaller: (input: StartFeishuInstallerInput) => mutate('正在启动团队导入…', () => api.startFeishuInstaller(input)),
   }
 
   return <>

@@ -121,6 +121,7 @@ python3 -m py_compile agent-system/bin/office-system.py agent-system/bin/model-g
 python3 -m py_compile agent-system/bin/install-skill-sources
 python3 agent-system/tests/model-gateway-smoke.py
 python3 agent-system/tests/feishu-team-smoke.py
+python3 agent-system/tests/feishu-installer-smoke.py
 bash agent-system/tests/secretary-intent-and-runtime-smoke.sh
 bash agent-system/tests/workflow-execute-smoke.sh
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
