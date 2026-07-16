@@ -1,4 +1,4 @@
-import type { AgentStatus, CreateAgentInput, CreateProjectInput, CreateWorkflowInput, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, SecretaryChatResponse, UploadKnowledgeInput } from './types'
+import type { AgentStatus, CreateAgentInput, CreateProjectInput, CreateWorkflowInput, FeishuInstallerCatalog, FeishuInstallerSession, GuiState, ModelConnectionInput, ModelRuntimeInput, PreferenceInput, ProjectContextInput, SecretaryChatInput, SecretaryChatResponse, StartFeishuInstallerInput, UploadKnowledgeInput } from './types'
 
 const TOKEN_KEY = 'digital-office-web-token'
 
@@ -78,6 +78,11 @@ export const api = {
     request<Record<string, unknown>>('/api/model-runtime', { method: 'POST', body: JSON.stringify(input) }),
   updatePreferences: (input: PreferenceInput) =>
     request<Record<string, unknown>>('/api/settings', { method: 'POST', body: JSON.stringify(input) }),
+  getFeishuInstallerCatalog: () => request<FeishuInstallerCatalog>('/api/installer/catalog'),
+  startFeishuInstaller: (input: StartFeishuInstallerInput) =>
+    request<FeishuInstallerSession>('/api/installer/sessions', { method: 'POST', body: JSON.stringify(input) }),
+  getFeishuInstallerSession: (sessionId: string) =>
+    request<FeishuInstallerSession>(`/api/installer/sessions/${encodeURIComponent(sessionId)}`),
   setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
   clearToken: () => localStorage.removeItem(TOKEN_KEY),
 }

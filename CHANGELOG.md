@@ -4,6 +4,29 @@
 
 ---
 
+## 2026-07-16
+
+### 可视化飞书团队安装器
+
+- 管理后台新增“团队安装器”，内置产品研发、研究、写作出版和 FDE 工程 4 个团队、33 个角色的可选择目录。
+- 新增受限的安装 API 与后台会话执行器，支持环境预检、稳定身份、已安装角色复用、逐角色 OAuth 授权、事件进度和失败恢复。
+- 飞书 CLI profile 在团队间保持唯一；多团队可一次提交，不把单次邀请或授权批次限制误当成团队规模限制。
+- 统一部署器按 lockfile 本地安装官方 `@larksuite/cli` 与飞书 Node SDK，运行时优先使用项目内 CLI，不依赖全局 npm profile。
+- 安装开始前必须由管理员明确确认；密钥不进入浏览器、事件流和审计日志，可选把授权链接及进度同步到指定飞书群。
+- 新增 CLI smoke、生产 harness、Web 类型检查、构建门禁和桌面/移动端浏览器验收。
+
+## 2026-07-11
+
+### 耐久派发、三分支生产门禁与研究基础
+
+- `workflow-dispatch-next` 新增 run 级 durable lease：owner-bound release、TTL 崩溃恢复、损坏状态 fail closed，并把获取/释放事件写入哈希链 ledger。
+- `workflow-status` 返回 `dispatch_lease`；新增双进程竞争、重复获取、错误 owner、过期恢复和损坏租约测试。
+- `harness-check` 在 checkout 中显式绑定当前仓库作为 `HERMES_HOME`，不再受用户已安装 profile 污染。
+- `harness-runner` 输出 task/gate 进度、耗时、汇总计数和隔离异常；修复 Windows 下 `wsl.exe` UTF-16 输出进入 JSON 后的渲染损坏。
+- GitHub Actions 同时监听 `main`、`research-team`、`writer-team`，并对 writer 分支已移除的源码 Web UI 使用条件构建。
+- 新增 `durable-dispatch-production` 和 `solo-first-coordination-production` 两个 deterministic harness。
+- 新增多 Agent 论文/开源框架研究文档，明确 Solo-first、typed artifact、maker-checker、等预算评测和三分支共享运行时原则。
+
 ## 2026-07-02
 
 ### Agent Team QA v1.2.0：调研补强（Maker-Checker / 反 AI Slop / 上下文优势 / 北极星 / 最小样本 / Comprehension Debt / 中层审查）

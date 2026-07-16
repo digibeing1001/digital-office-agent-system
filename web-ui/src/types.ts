@@ -322,6 +322,71 @@ export interface PreferenceInput {
   choices: Record<string, string>
 }
 
+export interface FeishuInstallerRole {
+  bot_key: string
+  agent_id: string
+  display_name: string
+  profile: string
+  status: 'ready' | 'not_installed'
+}
+
+export interface FeishuInstallerTeam {
+  team_id: string
+  name: string
+  eyebrow: string
+  description: string
+  accent: string
+  recommended: boolean
+  capabilities: string[]
+  agent_count: number
+  ready_count: number
+  roles: FeishuInstallerRole[]
+}
+
+export interface FeishuInstallerCatalog {
+  kind: string
+  schema_version: string
+  inventory: string
+  preflight: {
+    ready: boolean
+    blocking: string[]
+    checks: Record<string, { ready: boolean; value: string; required: boolean }>
+  }
+  teams: FeishuInstallerTeam[]
+}
+
+export interface FeishuInstallerEvent {
+  time: string
+  event: 'session_started' | 'authorizing' | 'authorization_required' | 'ready' | 'already_ready' | 'failed' | 'session_complete'
+  bot_key?: string
+  display_name?: string
+  authorization_url?: string
+  expires_in?: number
+  ready_count?: number
+  bot_count?: number
+  error_code?: string
+}
+
+export interface FeishuInstallerSession {
+  session_id: string
+  status: 'starting' | 'running' | 'complete' | 'failed'
+  team_ids: string[]
+  bot_count: number
+  initial_ready_count: number
+  missing_count: number
+  ready_count?: number
+  latest_authorization?: FeishuInstallerEvent | null
+  failure?: FeishuInstallerEvent | null
+  events?: FeishuInstallerEvent[]
+}
+
+export interface StartFeishuInstallerInput {
+  team_ids: string[]
+  notify_profile?: string
+  notify_chat_id?: string
+  confirmed: boolean
+}
+
 export interface AppActions {
   secretaryChat: (input: SecretaryChatInput) => Promise<SecretaryChatResponse>
   createProject: (input: CreateProjectInput) => Promise<Record<string, unknown>>
@@ -343,4 +408,5 @@ export interface AppActions {
   archiveProject: (projectId: string, restore?: boolean) => Promise<Record<string, unknown>>
   archiveWorkflow: (runId: string, restore?: boolean) => Promise<Record<string, unknown>>
   updatePreferences: (input: PreferenceInput) => Promise<Record<string, unknown>>
+  startFeishuInstaller: (input: StartFeishuInstallerInput) => Promise<FeishuInstallerSession>
 }

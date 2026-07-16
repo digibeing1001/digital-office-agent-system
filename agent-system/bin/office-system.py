@@ -786,6 +786,139 @@ def run_ledger_path(root: Path, run_id: str) -> Path:
     return run_dir(root, run_id) / "ledger.jsonl"
 
 
+def dispatch_lease_path(root: Path, run_id: str) -> Path:
+    """Return the durable single-dispatch lease for one workflow run."""
+    return run_dir(root, run_id) / "dispatch-lease.json"
+
+
+def _parse_utc_timestamp(value: str) -> dt.datetime | None:
+    try:
+        parsed = dt.datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def acquire_dispatch_lease(
+    root: Path,
+    run_id: str,
+    *,
+    owner: str = "",
+    ttl_seconds: int = 360,
+) -> dict[str, Any]:
+    """Acquire a crash-recoverable lease before executing a queued Agent task.
+
+    The short critical section is guarded by a cross-process file lock. The
+    lease itself remains on disk while the external Agent process runs so a
+    second CLI/web worker fails fast instead of dispatching the same task.
+    Expired leases may be replaced after a crashed worker stops heartbeating.
+    """
+    run_id = safe_component(run_id, "run id")
+    path = dispatch_lease_path(root, run_id)
+    lock_path = path.with_name(f".{path.name}.lock")
+    now = dt.datetime.now(dt.timezone.utc)
+    ttl_seconds = max(1, min(int(ttl_seconds), 86_400))
+    with JsonFileLock(lock_path):
+        existing: dict[str, Any] | None = None
+        if path.exists():
+            try:
+                existing = read_json(path)
+            except (OSError, json.JSONDecodeError) as exc:
+                return {
+                    "acquired": False,
+                    "reason": "dispatch_lease_corrupt",
+                    "error": str(exc),
+                    "path": str(path.relative_to(root)),
+                }
+        if existing and existing.get("status") == "active":
+            expires_at = _parse_utc_timestamp(str(existing.get("expires_at", "")))
+            if expires_at is None:
+                return {
+                    "acquired": False,
+                    "reason": "dispatch_lease_invalid_expiry",
+                    "lease": existing,
+                    "path": str(path.relative_to(root)),
+                }
+            if expires_at > now:
+                return {
+                    "acquired": False,
+                    "reason": "dispatch_already_leased",
+                    "lease": existing,
+                    "path": str(path.relative_to(root)),
+                }
+        lease = {
+            "version": "1.0.0",
+            "kind": "digital-office-dispatch-lease",
+            "lease_id": uuid.uuid4().hex,
+            "run_id": run_id,
+            "owner": safe_claim(owner, "dispatch lease owner", required=False),
+            "status": "active",
+            "acquired_at": now.isoformat(),
+            "expires_at": (now + dt.timedelta(seconds=ttl_seconds)).isoformat(),
+            "ttl_seconds": ttl_seconds,
+        }
+        write_json_unlocked(path, lease)
+    return {
+        "acquired": True,
+        "reason": "dispatch_lease_acquired",
+        "lease": lease,
+        "path": str(path.relative_to(root)),
+    }
+
+
+def release_dispatch_lease(
+    root: Path,
+    run_id: str,
+    lease_id: str,
+    *,
+    outcome: str = "released",
+) -> dict[str, Any]:
+    """Release only the lease owned by ``lease_id`` and keep its audit record."""
+    run_id = safe_component(run_id, "run id")
+    lease_id = safe_component(lease_id, "dispatch lease id")
+    path = dispatch_lease_path(root, run_id)
+    lock_path = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(lock_path):
+        if not path.exists():
+            return {"released": False, "reason": "dispatch_lease_missing"}
+        try:
+            lease = read_json(path)
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"released": False, "reason": "dispatch_lease_corrupt", "error": str(exc)}
+        if not hmac.compare_digest(str(lease.get("lease_id", "")), lease_id):
+            return {"released": False, "reason": "dispatch_lease_owner_mismatch", "lease": lease}
+        if lease.get("status") != "active":
+            return {"released": True, "reason": "dispatch_lease_already_released", "lease": lease}
+        lease["status"] = "released"
+        lease["released_at"] = now_iso()
+        lease["outcome"] = safe_component(outcome, "dispatch lease outcome")
+        write_json_unlocked(path, lease)
+    return {"released": True, "reason": "dispatch_lease_released", "lease": lease}
+
+
+def dispatch_lease_status(root: Path, run_id: str) -> dict[str, Any]:
+    """Return an operator-facing lease snapshot without mutating it."""
+    run_id = safe_component(run_id, "run id")
+    path = dispatch_lease_path(root, run_id)
+    lock_path = path.with_name(f".{path.name}.lock")
+    with JsonFileLock(lock_path):
+        if not path.exists():
+            return {"active": False, "status": "none"}
+        try:
+            lease = read_json(path)
+        except (OSError, json.JSONDecodeError) as exc:
+            return {"active": True, "status": "corrupt", "reason": "dispatch_lease_corrupt", "error": str(exc)}
+    expires_at = _parse_utc_timestamp(str(lease.get("expires_at", "")))
+    active = bool(
+        lease.get("status") == "active"
+        and expires_at is not None
+        and expires_at > dt.datetime.now(dt.timezone.utc)
+    )
+    return {"active": active, **lease}
+
+
 def checkpoint_dir(root: Path, run_id: str) -> Path:
     return run_dir(root, run_id) / "checkpoints"
 
@@ -4657,7 +4790,9 @@ def workflow_start(args: argparse.Namespace) -> int:
 
 def workflow_status(args: argparse.Namespace) -> int:
     root = system_root()
-    print(json.dumps(load_run_record(root, args.run_id), ensure_ascii=False, indent=2, sort_keys=True))
+    run = load_run_record(root, args.run_id)
+    run["dispatch_lease"] = dispatch_lease_status(root, args.run_id)
+    print(json.dumps(run, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
@@ -4999,27 +5134,13 @@ def workflow_resume(args: argparse.Namespace) -> int:
     return 0
 
 
-def workflow_dispatch_next(args: argparse.Namespace) -> int:
-    root = system_root()
-    if not args.confirmed:
-        print("office-system: workflow-dispatch-next requires --confirmed", file=sys.stderr)
-        return 2
-    run = load_run_record(root, args.run_id)
-    if run.get("status") in {"cancelled", "completed"}:
-        print(f"office-system: workflow is {run.get('status')} and cannot dispatch queued work", file=sys.stderr)
-        return 2
-    auth = authorize_workflow_mutation(root, run, args.requested_by, args.role, "agent.delegate")
-    if not auth["allowed"]:
-        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 2
-    pending_approvals = pending_run_approval_ids(root, run)
-    if pending_approvals:
-        print(json.dumps({"status": "blocked", "reason": "approval_pending", "pending_approvals": pending_approvals, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 2
-    open_cases = open_judgment_cases(root, run)
-    if open_cases:
-        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
-        return 2
+def _workflow_dispatch_next_claimed(
+    args: argparse.Namespace,
+    root: Path,
+    run: dict[str, Any],
+    auth: dict[str, Any],
+) -> int:
+    """Execute one dispatch after the caller owns the durable run lease."""
     signal = apply_resume_signal(
         root,
         run,
@@ -5074,6 +5195,86 @@ def workflow_dispatch_next(args: argparse.Namespace) -> int:
         )
     )
     return 0 if execution.get("status") == "completed" else 1
+
+
+def workflow_dispatch_next(args: argparse.Namespace) -> int:
+    root = system_root()
+    if not args.confirmed:
+        print("office-system: workflow-dispatch-next requires --confirmed", file=sys.stderr)
+        return 2
+    run = load_run_record(root, args.run_id)
+    if run.get("status") in {"cancelled", "completed"}:
+        print(f"office-system: workflow is {run.get('status')} and cannot dispatch queued work", file=sys.stderr)
+        return 2
+    auth = authorize_workflow_mutation(root, run, args.requested_by, args.role, "agent.delegate")
+    if not auth["allowed"]:
+        print(json.dumps({"authorization": auth, "status": "denied"}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    pending_approvals = pending_run_approval_ids(root, run)
+    if pending_approvals:
+        print(json.dumps({"status": "blocked", "reason": "approval_pending", "pending_approvals": pending_approvals, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+    open_cases = open_judgment_cases(root, run)
+    if open_cases:
+        print(json.dumps({"status": "blocked", "reason": "human_judgment_pending", "open_judgments": open_cases, "authorization": auth}, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2
+
+    lease_ttl = max(60, int(args.execution_timeout or 300) + 60)
+    lease_result = acquire_dispatch_lease(
+        root,
+        args.run_id,
+        owner=args.requested_by or args.role or "local-worker",
+        ttl_seconds=lease_ttl,
+    )
+    if not lease_result.get("acquired"):
+        print(
+            json.dumps(
+                {
+                    "status": "blocked",
+                    "reason": lease_result.get("reason", "dispatch_lease_unavailable"),
+                    "run_id": args.run_id,
+                    "dispatch_lease": lease_result,
+                    "next_actions": ["wait for the active dispatch to finish", "workflow-status --run-id " + args.run_id],
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 2
+
+    lease = lease_result["lease"]
+    outcome = "dispatch_failed"
+    try:
+        append_run_ledger_event(
+            root,
+            args.run_id,
+            "dispatch_lease_acquired",
+            stage=str(run.get("current_stage", "act")),
+            action="workflow.dispatch.lease.acquire",
+            agent_id=str(run.get("agent_id", "")),
+            actor_id=args.requested_by or "",
+            actor_role=args.role or "",
+            input_payload={"lease_id": lease["lease_id"], "ttl_seconds": lease["ttl_seconds"]},
+            output_payload={"status": lease["status"], "expires_at": lease["expires_at"]},
+        )
+        return_code = _workflow_dispatch_next_claimed(args, root, run, auth)
+        outcome = "dispatch_completed" if return_code == 0 else "dispatch_error"
+        return return_code
+    finally:
+        released = release_dispatch_lease(root, args.run_id, str(lease["lease_id"]), outcome=outcome)
+        append_run_ledger_event(
+            root,
+            args.run_id,
+            "dispatch_lease_released",
+            stage=str(run.get("current_stage", "act")),
+            action="workflow.dispatch.lease.release",
+            agent_id=str(run.get("agent_id", "")),
+            actor_id=args.requested_by or "",
+            actor_role=args.role or "",
+            input_payload={"lease_id": lease["lease_id"], "outcome": outcome},
+            output_payload=released,
+        )
 
 
 def project_archive(args: argparse.Namespace) -> int:
@@ -8671,8 +8872,9 @@ def validate_context_envelope(
     errors = validate_json_schema_instance(normalized, schema, schema)
     if normalized.get("kind") != "digital-office-context-envelope":
         errors.append("kind must be digital-office-context-envelope")
-    if normalized.get("version") != "2.0.0":
-        errors.append("version must be 2.0.0")
+    expected_version = str(schema.get("properties", {}).get("version", {}).get("const", "2.0.0"))
+    if normalized.get("version") != expected_version:
+        errors.append(f"version must be {expected_version}")
     if normalized.get("run_id") != run_id:
         errors.append("run_id does not match the handoff run")
     for key in ("context_id", "task_id", "goal", "summary", "handoff_reason", "state_hash"):
@@ -10072,6 +10274,7 @@ def gui_capabilities() -> list[dict[str, Any]]:
         {"id": "global_settings", "status": "ready", "commands": ["settings-options", "settings-status", "settings-update"]},
         {"id": "first_run_onboarding", "status": "ready", "commands": ["onboarding-options", "onboarding-apply"]},
         {"id": "web_ui_pwa", "status": "ready", "commands": ["digital-office-gui", "web-config", "web-serve"], "routes": ["/", "/manifest.webmanifest", "/service-worker.js", "/api/health", "/api/gui-state", "/api/web-app"]},
+        {"id": "feishu_team_installer", "status": "ready", "commands": ["feishu-team-installer.py catalog", "feishu-team-installer.py start", "feishu-team-installer.py status"], "routes": ["/api/installer/catalog", "/api/installer/sessions"]},
         {"id": "secretary_intent_preview", "status": "ready", "commands": ["secretary-chat"], "routes": ["/api/secretary/chat"]},
         {"id": "workflow_control_plane", "status": "ready", "commands": ["workflow-start", "workflow-status", "workflow-list", "workflow-cancel", "workflow-resume", "workflow-dispatch-next", "workflow-retry", "workflow-control"]},
         {"id": "direct_agent_invocation", "status": "ready", "commands": ["agent-invoke"]},
@@ -10319,6 +10522,8 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
                 {"method": "GET", "path": "/api/health", "description": "Return office-system health checks and PWA readiness."},
                 {"method": "GET", "path": "/api/gui-state", "description": "Return the home-screen GUI state snapshot."},
                 {"method": "GET", "path": "/api/web-app", "description": "Return this Web/PWA configuration contract."},
+                {"method": "GET", "path": "/api/installer/catalog", "description": "Return selectable Feishu Agent teams, role inventory, and local preflight checks."},
+                {"method": "GET", "path": "/api/installer/sessions/{session_id}", "description": "Return one asynchronous Feishu team installation session."},
             ],
             "mutation_routes": [
                 {"method": "POST", "path": "/api/workflows", "description": "Create a governed workflow through the secretary."},
@@ -10331,6 +10536,7 @@ def web_app_config(root: Path, *, public_url: str = "", user: str = "", role: st
                 {"method": "POST", "path": "/api/model-connections/{provider_id}", "description": "Configure a model API or Token Plan connection without returning its secret."},
                 {"method": "POST", "path": "/api/model-connections/{provider_id}/test", "description": "Run a real bounded connection test."},
                 {"method": "POST", "path": "/api/model-runtime", "description": "Configure local/API automatic selection policy."},
+                {"method": "POST", "path": "/api/installer/sessions", "description": "Start a confirmed, catalog-bound Feishu team import session."},
                 {"method": "DELETE", "path": "/api/model-connections/{provider_id}?confirmed=true", "description": "Disconnect a model provider and remove its locally stored secret."},
                 {"method": "POST", "path": "/api/agents", "description": "Create a template-based custom digital employee."},
                 {"method": "POST", "path": "/api/agents/{agent_id}/status", "description": "Activate, disable, archive, or restore a custom Agent."},
@@ -10420,6 +10626,23 @@ def run_model_gateway_json(root: Path, command: list[str], *, secret_input: str 
         payload = json.loads(raw) if raw else {"status": "error", "error": "empty_gateway_response"}
     except json.JSONDecodeError:
         payload = {"status": "error", "error": "invalid_gateway_response", "message": raw[-1000:]}
+    return completed.returncode, payload
+
+
+def run_feishu_installer_json(root: Path, command: list[str]) -> tuple[int, dict[str, Any]]:
+    installer = root / "bin" / "feishu-team-installer.py"
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(installer), "--root", str(root), *command],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 2, {"status": "error", "error": "feishu_installer_unavailable", "message": str(exc)}
+    raw = completed.stdout.strip() if completed.returncode == 0 else (completed.stderr.strip() or completed.stdout.strip())
+    try:
+        payload = json.loads(raw) if raw else {"status": "error", "error": "empty_installer_response"}
+    except json.JSONDecodeError:
+        payload = {"status": "error", "error": "invalid_installer_response", "message": raw[-1000:]}
     return completed.returncode, payload
 
 
@@ -10612,6 +10835,35 @@ def web_serve(args: argparse.Namespace) -> int:
             tenant, deployment, user, role = self.request_scope()
             if not role:
                 web_json_response(self, 403, {"status": "denied", "error": "The Web server must be started with an authorized --role for mutating actions."})
+                return
+
+            if parsed.path == "/api/installer/sessions":
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can import Agent teams into Feishu."})
+                    return
+                team_ids = body.get("team_ids", [])
+                if not isinstance(team_ids, list) or not all(isinstance(value, str) for value in team_ids):
+                    web_json_response(self, 400, {"status": "error", "error": "team_ids must be an array of strings"})
+                    return
+                command = ["start"]
+                for team_id in team_ids:
+                    command.extend(["--team", team_id])
+                notify_profile = str(body.get("notify_profile", "")).strip()
+                notify_chat_id = str(body.get("notify_chat_id", "")).strip()
+                if notify_profile:
+                    command.extend(["--notify-profile", notify_profile])
+                if notify_chat_id:
+                    command.extend(["--notify-chat-id", notify_chat_id])
+                if body.get("confirmed") is True:
+                    command.append("--confirmed")
+                code, payload = run_feishu_installer_json(root, command)
+                if code == 0:
+                    append_audit_event(
+                        root, "feishu_team_install_started", actor_id=user, actor_role=role,
+                        resource_type="feishu_installer_session", resource_id=str(payload.get("session_id", "")),
+                        outcome="started", extra={"team_ids": team_ids, "bot_count": payload.get("bot_count", 0)},
+                    )
+                web_json_response(self, 202 if code == 0 else 409, payload, headers={"Cache-Control": "no-store"})
                 return
 
             if parsed.path == "/api/secretary/chat":
@@ -10989,6 +11241,23 @@ def web_serve(args: argparse.Namespace) -> int:
                 code = 200 if detail["status"] == "ok" else 503 if detail["status"] == "down" else 200
                 web_json_response(self, code, detail, headers={"Cache-Control": "no-store"})
                 return
+            if parsed.path == "/api/installer/catalog":
+                _, _, _, role = self.request_scope()
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can view the Feishu installer."})
+                    return
+                code, payload = run_feishu_installer_json(root, ["catalog"])
+                web_json_response(self, 200 if code == 0 else 409, payload, headers={"Cache-Control": "no-store"})
+                return
+            installer_session_match = re.fullmatch(r"/api/installer/sessions/([a-f0-9]{32})", parsed.path)
+            if installer_session_match:
+                _, _, _, role = self.request_scope()
+                if role not in AGENT_ADMIN_ROLES:
+                    web_json_response(self, 403, {"status": "denied", "error": "Only an administrator can view installer sessions."})
+                    return
+                code, payload = run_feishu_installer_json(root, ["status", "--session", installer_session_match.group(1)])
+                web_json_response(self, 200 if code == 0 else 404, payload, headers={"Cache-Control": "no-store"})
+                return
             if parsed.path == "/api/gui-state":
                 try:
                     payload = build_gui_state_payload(root, project=one("project", default_scope["project"]), user=one("user", default_scope["user"]), role=one("role", default_scope["role"]), limit=int(one("limit", "20")))
@@ -11007,7 +11276,7 @@ def web_serve(args: argparse.Namespace) -> int:
             super().do_GET()
 
     server = http.server.ThreadingHTTPServer((args.host, args.port), DigitalOfficeHandler)
-    print(json.dumps({"status": "serving", "host": args.host, "port": args.port, "static_root": str(static_root), "url": f"http://{args.host}:{args.port}/", "api": ["/api/health", "/api/gui-state", "/api/web-app"], "api_authentication": "bearer" if auth_token else "loopback_only_without_token", "auth_token_env": auth_env}, ensure_ascii=False, indent=2, sort_keys=True))
+    print(json.dumps({"status": "serving", "host": args.host, "port": args.port, "static_root": str(static_root), "url": f"http://{args.host}:{args.port}/", "api": ["/api/health", "/api/gui-state", "/api/web-app", "/api/installer/catalog", "/api/installer/sessions"], "api_authentication": "bearer" if auth_token else "loopback_only_without_token", "auth_token_env": auth_env}, ensure_ascii=False, indent=2, sort_keys=True))
     try:
         server.serve_forever()
     except KeyboardInterrupt:

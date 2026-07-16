@@ -23,7 +23,7 @@ import sys
 path, expr = sys.argv[1], sys.argv[2]
 with open(path, "r", encoding="utf-8") as handle:
     data = json.load(handle)
-if not eval(expr, {"__builtins__": {"len": len, "any": any}}, {"data": data, "json": json}):
+if not eval(expr, {"__builtins__": {"len": len, "any": any, "sum": sum}}, {"data": data, "json": json}):
     raise SystemExit(f"assertion failed: {expr}\n{json.dumps(data, ensure_ascii=False, indent=2)}")
 PY
 }
@@ -217,6 +217,7 @@ fetch "$BASE_URL/api/health" "$WORK_DIR/health.json"
 
 fetch "$BASE_URL/api/web-app" "$WORK_DIR/web-app.json"
 fetch "$BASE_URL/api/gui-state?limit=5" "$WORK_DIR/gui-state.json"
+fetch "$BASE_URL/api/installer/catalog" "$WORK_DIR/installer-catalog.json"
 fetch "$BASE_URL/manifest.webmanifest" "$WORK_DIR/manifest.webmanifest"
 fetch "$BASE_URL/service-worker.js" "$WORK_DIR/service-worker.js"
 fetch "$BASE_URL/" "$WORK_DIR/index.html"
@@ -236,6 +237,8 @@ request_json POST "$BASE_URL/api/workflows" '{"task":"Prepare the compliance mem
 request_json POST "$BASE_URL/api/model-connections/minimax" "{\"base_url\":\"http://127.0.0.1:$WEB_PORT/v1\",\"model\":\"MiniMax-M3\",\"protocol\":\"openai_chat_completions\",\"secret\":\"web-secret-1234\"}" "$WORK_DIR/model-configured.json"
 request_json POST "$BASE_URL/api/model-runtime" '{"default_mode":"auto","selection_policy":"api_first","provider_order":["minimax","kimi","glm"]}' "$WORK_DIR/model-runtime.json"
 request_json POST "$BASE_URL/api/settings" '{"company_name":"Smoke Company","secretary_name":"Smoke Secretary","choices":{"work_mode":"quality","language":"zh-CN"}}' "$WORK_DIR/settings-updated.json"
+request_json_status 409 POST "$BASE_URL/api/installer/sessions" '{"team_ids":["digital-office-product-team"],"confirmed":false}' "$WORK_DIR/installer-unconfirmed.json"
+request_json_status 409 POST "$BASE_URL/api/installer/sessions" '{"team_ids":["digital-office-product-team"],"confirmed":"false"}' "$WORK_DIR/installer-string-confirmation.json"
 fetch "$BASE_URL/api/gui-state?limit=5" "$WORK_DIR/gui-state-after.json"
 request_json DELETE "$BASE_URL/api/model-connections/minimax?confirmed=true" '' "$WORK_DIR/model-deleted.json"
 
@@ -246,6 +249,9 @@ json_assert "$WORK_DIR/web-app.json" 'any(route["method"] == "POST" and route["p
 json_assert "$WORK_DIR/web-app.json" 'any(route["method"] == "POST" and route["path"] == "/api/projects" for route in data["api"]["mutation_routes"])'
 json_assert "$WORK_DIR/web-app.json" 'any(route["method"] == "POST" and route["path"] == "/api/knowledge/uploads" for route in data["api"]["mutation_routes"])'
 json_assert "$WORK_DIR/gui-state.json" '"web_ui_pwa" in [item["id"] for item in data["capabilities"]]'
+json_assert "$WORK_DIR/installer-catalog.json" 'len(data["teams"]) == 4 and sum(item["agent_count"] for item in data["teams"]) == 33'
+json_assert "$WORK_DIR/installer-unconfirmed.json" '"confirmed=true" in data["error"]'
+json_assert "$WORK_DIR/installer-string-confirmation.json" '"confirmed=true" in data["error"]'
 json_assert "$WORK_DIR/manifest.webmanifest" 'data["display"] == "standalone" and data["start_url"] == "/"'
 json_assert "$WORK_DIR/agent-created.json" 'data["agent_id"] == "web-smoke-writer" and data["status"] == "active"'
 json_assert "$WORK_DIR/agent-archived.json" 'data["agent_id"] == "web-smoke-writer" and data["status"] == "archived"'

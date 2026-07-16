@@ -280,6 +280,7 @@ chmod +x "$INSTALL_ROOT/agent-system/bin/digital-office-gui"
 chmod +x "$INSTALL_ROOT/agent-system/bin/model-gateway"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-check"
 chmod +x "$INSTALL_ROOT/agent-system/bin/harness-runner"
+chmod +x "$INSTALL_ROOT/agent-system/bin/feishu-team-installer.py"
 chmod +x "$INSTALL_ROOT/agent-system/bin/install-skill-sources"
 chmod +x "$INSTALL_ROOT/agent-system/bin/install-local-models"
 chmod +x "$INSTALL_ROOT/agent-system/bin/update-system"
@@ -287,6 +288,16 @@ chmod +x "$INSTALL_ROOT/agent-system/bin/product-update"
 chmod +x "$INSTALL_ROOT/install.sh"
 chmod +x "$INSTALL_ROOT/update"
 chmod +x "$INSTALL_ROOT/digital-office-gui"
+
+FEISHU_BOOTSTRAP_DIR="$INSTALL_ROOT/agent-system/feishu-bootstrap"
+if [ -f "$FEISHU_BOOTSTRAP_DIR/package-lock.json" ]; then
+  if command -v npm >/dev/null 2>&1; then
+    echo "Digital Office: installing the pinned Feishu CLI and SDK"
+    (cd "$FEISHU_BOOTSTRAP_DIR" && npm ci --omit=dev --no-audit --no-fund)
+  else
+    echo "Digital Office: npm is unavailable; the Feishu team installer will remain blocked until Node.js 20+ with npm is installed." >&2
+  fi
+fi
 
 if [ "$RUN_CHECKS" -eq 1 ]; then
   "$INSTALL_ROOT/agent-system/bin/install-skill-sources"
