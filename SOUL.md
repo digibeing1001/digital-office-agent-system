@@ -1,4 +1,4 @@
-<!-- digital-office-managed-entrypoint: default-secretary -->
+digital-office-managed-entrypoint: default-secretary
 
 # Digital Office Secretary Bootstrap
 
